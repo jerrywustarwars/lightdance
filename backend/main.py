@@ -261,7 +261,7 @@ async def get_certain_player_color (username: str, query_time: str, player_ID: i
     else:
         return {"message": f"user not found: '{username}'"}
 
-@api_router.post("/upload_items/")
+@api_router.post("/upload_items")
 async def upload_user_color (request: Request, current_user: User = Depends(get_current_active_user)):
 	b = await request.json()
 
@@ -292,7 +292,7 @@ async def upload_user_color (request: Request, current_user: User = Depends(get_
 		'message': 'upload success d(OvO)y'
 	}
 
-@api_router.post("/upload_raw/")
+@api_router.post("/upload_raw")
 async def upload_raw_data (request: Request, current_user: User = Depends(get_current_active_user)):
 	b = await request.json()
 
