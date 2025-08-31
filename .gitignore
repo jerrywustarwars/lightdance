@@ -1,5 +1,8 @@
 # .gitignore
 
+# 個人用的文件、腳本等等
+local/
+
 # Python 相關
 __pycache__/
 *.pyc

@@ -1,6 +1,6 @@
 from typing import Union, Optional
 from pymongo import MongoClient
-from fastapi import Request, FastAPI, HTTPException, Depends, Path, status, Form
+from fastapi import Request, FastAPI, HTTPException, Depends, Path, status, Form, APIRouter
 from fastapi import File, UploadFile
 from pydantic import BaseModel
 from typing import Optional, Dict, List
@@ -21,11 +21,13 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.encoders import jsonable_encoder
 
 app = FastAPI(
-    root_path="/api",
     title="LightDance API",
     description="API for LightDance project",
     version="1.0.0"
 )
+
+# 建立 API 路由器，統一管理所有 /api 路由
+api_router = APIRouter(prefix="/api")
 
 load_dotenv()
 uri = os.getenv('MONGO_CONNECT_URI')
@@ -70,7 +72,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token") 
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/token") 
 
 class PlayerData(BaseModel):
 	time: int
@@ -129,7 +131,7 @@ async def get_current_active_user(current_user: User = Depends(get_current_user)
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
 
-@app.post("/token")
+@api_router.post("/token")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user_dict = user_list.find_one({"username": form_data.username})
     if not user_dict:
@@ -140,11 +142,11 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 
     return {"access_token": user.username, "token_type": "bearer"}
 
-@app.get("/users/me")
+@api_router.get("/users/me")
 async def read_users_me(current_user: User = Depends(get_current_active_user)):
     return current_user
 
-@app.get("/")
+@api_router.get("/")
 async def read_root():
 	print("Success!! OuOb")
 	return {"Hello": "World"}
@@ -154,7 +156,7 @@ class Item(BaseModel):
     update_time: str
     color: str
 
-@app.get("/timelist/")
+@api_router.get("/timelist/")
 async def front_read_time():
     # Only include user and update_time fields
     all_entries = list(collection_color.find({}, {"user": 1, "update_time": 1}))
@@ -169,7 +171,7 @@ async def front_read_time():
 
     return {"list": final_response}
 
-@app.get("/timelist/{username}")
+@api_router.get("/timelist/{username}")
 async def front_read_time(username: str):
 	# Only include user and update_time fields
 	all_entries = list(collection_color.find({"user": username}, {"user": 1, "update_time": 1}))
@@ -184,7 +186,7 @@ async def front_read_time(username: str):
 
 	return {"list": final_response}
 
-@app.get("/items/{username}/{query_time}")
+@api_router.get("/items/{username}/{query_time}")
 async def get_user_color (username: str, query_time: str):
     if query_time == "LATEST":
         user_data = collection_color.find_one(
@@ -200,7 +202,7 @@ async def get_user_color (username: str, query_time: str):
     else:
         return {"message": f"user not found: '{username}'"}
 
-@app.get("/items/{username}/{query_time}/player={player}/chunk={chunk}")
+@api_router.get("/items/{username}/{query_time}/player={player}/chunk={chunk}")
 async def get_user_color_by_chunk (username: str, query_time: str, chunk: int, player: int):
     CHUNK_SIZE = 10
     
@@ -229,7 +231,7 @@ async def get_user_color_by_chunk (username: str, query_time: str, chunk: int, p
 
     return {"player_data": chunk_data}
 
-@app.get("/raw/{username}/{query_time}")
+@api_router.get("/raw/{username}/{query_time}")
 async def get_user_color (username: str, query_time: str):
     if query_time == "LATEST":
         user_data = collection_color.find_one(
@@ -245,7 +247,7 @@ async def get_user_color (username: str, query_time: str):
     else:
         return {"message": f"user not found: '{username}'"}
 
-@app.get("/items/{username}/{query_time}/{player_ID}")
+@api_router.get("/items/{username}/{query_time}/{player_ID}")
 async def get_certain_player_color (username: str, query_time: str, player_ID: int):
     user_data = collection_color.find_one({"user": username, "update_time": query_time})
 	
@@ -259,7 +261,7 @@ async def get_certain_player_color (username: str, query_time: str, player_ID: i
     else:
         return {"message": f"user not found: '{username}'"}
 
-@app.post("/upload_items/")
+@api_router.post("/upload_items")
 async def upload_user_color (request: Request, current_user: User = Depends(get_current_active_user)):
 	b = await request.json()
 
@@ -290,7 +292,7 @@ async def upload_user_color (request: Request, current_user: User = Depends(get_
 		'message': 'upload success d(OvO)y'
 	}
 
-@app.post("/upload_raw/")
+@api_router.post("/upload_raw")
 async def upload_raw_data (request: Request, current_user: User = Depends(get_current_active_user)):
 	b = await request.json()
 
@@ -321,7 +323,7 @@ async def upload_raw_data (request: Request, current_user: User = Depends(get_cu
 		'message': 'raw data upload success d(OuO)y'
 	}
 
-@app.post("/upload_music")
+@api_router.post("/upload_music")
 async def upload_music(file: UploadFile = File(None), current_user: User = Depends(get_current_active_user)):
 	print(f"Received file: {file.filename}")  # Add this line to debug
 
@@ -344,7 +346,7 @@ async def upload_music(file: UploadFile = File(None), current_user: User = Depen
 	return {"info": f"file '{file.filename}' saved at '{file_location}'"}
 
 
-@app.get("/get_music_list/{username}")
+@api_router.get("/get_music_list/{username}")
 async def get_music(username: str):
 	file_path = f"{MUSIC_FILE_PATH}/{username}"
 	files = os.listdir(file_path)
@@ -358,7 +360,7 @@ async def get_music(username: str):
 	}
 
 
-@app.get("/get_music/{username}/{filename}")
+@api_router.get("/get_music/{username}/{filename}")
 async def get_music(username: str, filename: str):
 	file_location = f'{MUSIC_FILE_PATH}/{username}/{filename}'
 	if not os.path.exists(file_location):
@@ -374,7 +376,7 @@ async def get_music(username: str, filename: str):
 from os import listdir
 from os.path import isfile, join, isdir
 
-@app.get("/get_music_list")
+@api_router.get("/get_music_list")
 async def get_all_music_lists():
     root_path = MUSIC_FILE_PATH
     if not os.path.exists(root_path):
@@ -387,7 +389,7 @@ async def get_all_music_lists():
             user_music_lists[username] = files
     return {"music_lists": user_music_lists, "message": "Retrieved all music lists"}
 
-@app.get("/get_rand_lightlist/cnt={cnt}/seed={seed}")
+@api_router.get("/get_rand_lightlist/cnt={cnt}/seed={seed}")
 async def get_rand_lightlist(cnt : int,seed : int):
     if not (1 <= cnt <= 1500):
         raise HTTPException(status_code=400, detail="cnt 必須介於 1 和 1500 之間")
@@ -419,7 +421,7 @@ async def get_rand_lightlist(cnt : int,seed : int):
     # return json_str
     return response
 
-@app.get("/get_rand_lightlist/cnt={cnt}")
+@api_router.get("/get_rand_lightlist/cnt={cnt}")
 async def get_rand_lightlist(cnt : int):
     if not (1 <= cnt <= 1500):
         raise HTTPException(status_code=400, detail="cnt 必須介於 1 和 1500 之間")
@@ -451,7 +453,7 @@ async def get_rand_lightlist(cnt : int):
     # return json_str
     return response
 
-@app.get("/get_rand_lightlist/json/cnt={cnt}")
+@api_router.get("/get_rand_lightlist/json/cnt={cnt}")
 async def get_rand_lightlist(cnt : int):
     if not (1 <= cnt <= 1500):
         raise HTTPException(status_code=400, detail="cnt 必須介於 1 和 1500 之間")
@@ -479,7 +481,7 @@ async def get_rand_lightlist(cnt : int):
     
     return response
 
-@app.get("/get_test_lightlist/cnt={cnt}")
+@api_router.get("/get_test_lightlist/cnt={cnt}")
 async def get_test_lightlist(cnt : int):
 
     BLACK  = int("0x000000FF", 16) 
@@ -512,7 +514,7 @@ async def get_test_lightlist(cnt : int):
     
     return response
 
-@app.get("/get_test_lightlist/cnt={cnt}/chunk={chunk}")
+@api_router.get("/get_test_lightlist/cnt={cnt}/chunk={chunk}")
 async def get_test_lightlist(cnt : int, chunk : int):
 
     BLACK  = int("0x000000FF", 16) 
@@ -546,6 +548,9 @@ async def get_test_lightlist(cnt : int, chunk : int):
     }
     
     return response
+
+# 將 API 路由器加入到主應用程式
+app.include_router(api_router)
 
 # # saving light color data
 # @app.post("/items/")   # to be determined
