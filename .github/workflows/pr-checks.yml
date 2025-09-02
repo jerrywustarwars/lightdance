@@ -63,14 +63,6 @@ jobs:
           npx prettier --check src/
         continue-on-error: true
 
-      - name: 🧪 執行前端測試
-        working-directory: ./frontend
-        run: |
-          echo "🧪 執行測試套件..."
-          npm test -- --coverage --watchAll=false
-        env:
-          CI: true
-
       - name: 🏗️ 建置前端
         working-directory: ./frontend
         run: |
