@@ -1,9 +1,10 @@
-from typing import Union, Optional
+from typing import Union
 from pymongo import MongoClient
 from fastapi import Request, FastAPI, HTTPException, Depends, Path, status, Form, APIRouter
 from fastapi import File, UploadFile
-from pydantic import BaseModel
-from typing import Optional, Dict, List
+# 從 models.py 匯入所有資料模型
+from models import PlayerData, Player, Data, RAW, Item, User, UserInDB
+# typing.List 已在 models.py 中使用
 # from app import app
 # from flask import Flask, send_file, render_template
 import json
@@ -17,7 +18,7 @@ from time import strftime, localtime
 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm #
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from fastapi.encoders import jsonable_encoder
 
 app = FastAPI(
@@ -74,37 +75,7 @@ app.add_middleware(
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/token") 
 
-class PlayerData(BaseModel):
-	time: int
-	head: int
-	shoulder: int
-	chest: int
-	front: int
-	skirt: int
-	leg: int
-	shoes: int
-	weap_1: int
-	weap_2: int
-
-class Player(BaseModel):
-	data: List[PlayerData]
-    
-class Data(BaseModel):
-    user: str
-    last_updated_time: str
-    players: List[Player] = []
-
-class RAW(BaseModel):
-    user: str
-    last_updated_time: str
-    raw_data: str
-
-class User(BaseModel):
-    username: str
-    disabled: Union[bool, None] = None
-
-class UserInDB(User): 
-    password: str
+# 資料模型已移至 models.py 檔案
 
 def get_user(list, username: str):
     user_now = list.find_one({"username": username})
@@ -131,6 +102,13 @@ async def get_current_active_user(current_user: User = Depends(get_current_user)
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
 
+# ============================================================================
+# 使用者資源 (User Resource) - 身份驗證與個人資訊管理
+# ============================================================================
+
+# 使用者登入驗證，返回存取令牌
+# 使用方法：POST /api/token，Body: username & password (form-data)
+# 使用場景：前端登入、API 權限獲取
 @api_router.post("/token")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user_dict = user_list.find_one({"username": form_data.username})
@@ -142,20 +120,32 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 
     return {"access_token": user.username, "token_type": "bearer"}
 
+# 取得當前登入使用者的基本資訊
+# 使用方法：GET /api/users/me，需要 Bearer Token
+# 使用場景：驗證登入狀態、顯示使用者資訊
 @api_router.get("/users/me")
 async def read_users_me(current_user: User = Depends(get_current_active_user)):
     return current_user
 
+# ============================================================================
+# 系統基礎功能 (System Utilities) - 系統狀態檢查與基礎服務
+# ============================================================================
+
+# 系統健康狀態檢查
+# 使用方法：GET /api/，無需驗證
+# 使用場景：系統狀態監控、服務可用性檢查
 @api_router.get("/")
 async def read_root():
 	print("Success!! OuOb")
 	return {"Hello": "World"}
 
-class Item(BaseModel):
-    ID: int
-    update_time: str
-    color: str
+# ============================================================================
+# 光表項目資源 (Light Item Resource) - 光表資料的查詢與管理
+# ============================================================================
 
+# 取得所有使用者的光表資料時間清單
+# 使用方法：GET /api/timelist/，無需驗證
+# 使用場景：前端載入選單、顯示可用的光表資料列表
 @api_router.get("/timelist/")
 async def front_read_time():
     # Only include user and update_time fields
@@ -171,6 +161,9 @@ async def front_read_time():
 
     return {"list": final_response}
 
+# 取得特定使用者的光表資料時間清單
+# 使用方法：GET /api/timelist/{username}，無需驗證
+# 使用場景：查看特定使用者的所有光表資料版本
 @api_router.get("/timelist/{username}")
 async def front_read_time(username: str):
 	# Only include user and update_time fields
@@ -186,6 +179,9 @@ async def front_read_time(username: str):
 
 	return {"list": final_response}
 
+# 取得特定使用者在特定時間的完整光表資料
+# 使用方法：GET /api/items/{username}/{query_time}，無需驗證
+# 使用場景：載入指定版本的光表資料進行編輯或播放
 @api_router.get("/items/{username}/{query_time}")
 async def get_user_color (username: str, query_time: str):
     if query_time == "LATEST":
@@ -202,6 +198,9 @@ async def get_user_color (username: str, query_time: str):
     else:
         return {"message": f"user not found: '{username}'"}
 
+# 取得特定玩家的分塊光表資料（用於大型資料集分批載入）
+# 使用方法：GET /api/items/{username}/{query_time}/player={player}/chunk={chunk}
+# 使用場景：大資料量時分批載入，提升前端效能
 @api_router.get("/items/{username}/{query_time}/player={player}/chunk={chunk}")
 async def get_user_color_by_chunk (username: str, query_time: str, chunk: int, player: int):
     CHUNK_SIZE = 10
@@ -231,6 +230,13 @@ async def get_user_color_by_chunk (username: str, query_time: str, chunk: int, p
 
     return {"player_data": chunk_data}
 
+# ============================================================================
+# 原始資料資源 (Raw Data Resource) - 原始 JSON 格式資料的存取
+# ============================================================================
+
+# 取得特定使用者在特定時間的原始光表資料
+# 使用方法：GET /api/raw/{username}/{query_time}，無需驗證
+# 使用場景：載入原始編輯資料、資料備份與還原
 @api_router.get("/raw/{username}/{query_time}")
 async def get_user_color (username: str, query_time: str):
     if query_time == "LATEST":
@@ -247,6 +253,9 @@ async def get_user_color (username: str, query_time: str):
     else:
         return {"message": f"user not found: '{username}'"}
 
+# 取得特定玩家的光表資料
+# 使用方法：GET /api/items/{username}/{query_time}/{player_ID}，無需驗證
+# 使用場景：編輯單一玩家光表效果時使用
 @api_router.get("/items/{username}/{query_time}/{player_ID}")
 async def get_certain_player_color (username: str, query_time: str, player_ID: int):
     user_data = collection_color.find_one({"user": username, "update_time": query_time})
@@ -261,6 +270,9 @@ async def get_certain_player_color (username: str, query_time: str, player_ID: i
     else:
         return {"message": f"user not found: '{username}'"}
 
+# 上傳處理後的光表資料（用於硬體播放）
+# 使用方法：POST /api/upload_items，需要 Bearer Token
+# 使用場景：將編輯完成的光表資料上傳至伺服器
 @api_router.post("/upload_items")
 async def upload_user_color (request: Request, current_user: User = Depends(get_current_active_user)):
 	b = await request.json()
@@ -292,6 +304,9 @@ async def upload_user_color (request: Request, current_user: User = Depends(get_
 		'message': 'upload success d(OvO)y'
 	}
 
+# 上傳原始光表資料（JSON 格式）
+# 使用方法：POST /api/upload_raw，需要 Bearer Token
+# 使用場景：儲存編輯中的光表資料，保留完整計時資訊
 @api_router.post("/upload_raw")
 async def upload_raw_data (request: Request, current_user: User = Depends(get_current_active_user)):
 	b = await request.json()
@@ -323,6 +338,13 @@ async def upload_raw_data (request: Request, current_user: User = Depends(get_cu
 		'message': 'raw data upload success d(OuO)y'
 	}
 
+# ============================================================================
+# 音樂資源 (Music Resource) - 音樂檔案的上傳與管理
+# ============================================================================
+
+# 上傳音樂檔案到伺服器
+# 使用方法：POST /api/upload_music，需要 Bearer Token，檔案以 multipart/form-data 格式
+# 使用場景：為光表表演配對音樂檔案、建立音樂庫
 @api_router.post("/upload_music")
 async def upload_music(file: UploadFile = File(None), current_user: User = Depends(get_current_active_user)):
 	print(f"Received file: {file.filename}")  # Add this line to debug
@@ -346,6 +368,9 @@ async def upload_music(file: UploadFile = File(None), current_user: User = Depen
 	return {"info": f"file '{file.filename}' saved at '{file_location}'"}
 
 
+# 取得特定使用者上傳的音樂檔案清單
+# 使用方法：GET /api/get_music_list/{username}，無需驗證
+# 使用場景：瀏覽特定使用者的音樂檔案庫
 @api_router.get("/get_music_list/{username}")
 async def get_music(username: str):
 	file_path = f"{MUSIC_FILE_PATH}/{username}"
@@ -360,6 +385,9 @@ async def get_music(username: str):
 	}
 
 
+# 下載特定使用者的音樂檔案
+# 使用方法：GET /api/get_music/{username}/{filename}，無需驗證
+# 使用場景：播放或下載音樂檔案
 @api_router.get("/get_music/{username}/{filename}")
 async def get_music(username: str, filename: str):
 	file_location = f'{MUSIC_FILE_PATH}/{username}/{filename}'
@@ -376,6 +404,9 @@ async def get_music(username: str, filename: str):
 from os import listdir
 from os.path import isfile, join, isdir
 
+# 取得所有使用者的音樂檔案清單
+# 使用方法：GET /api/get_music_list，無需驗證
+# 使用場景：瀏覽所有可用的音樂檔案
 @api_router.get("/get_music_list")
 async def get_all_music_lists():
     root_path = MUSIC_FILE_PATH
@@ -389,6 +420,13 @@ async def get_all_music_lists():
             user_music_lists[username] = files
     return {"music_lists": user_music_lists, "message": "Retrieved all music lists"}
 
+# ============================================================================
+# 生成工具資源 (Generator Resource) - 隨機與測試資料生成
+# ============================================================================
+
+# 生成指定數量的隨機光表資料（可指定種子值）
+# 使用方法：GET /api/get_rand_lightlist/cnt={cnt}/seed={seed}，無需驗證
+# 使用場景：測試光表效果、產生演示資料
 @api_router.get("/get_rand_lightlist/cnt={cnt}/seed={seed}")
 async def get_rand_lightlist(cnt : int,seed : int):
     if not (1 <= cnt <= 1500):
@@ -421,6 +459,9 @@ async def get_rand_lightlist(cnt : int,seed : int):
     # return json_str
     return response
 
+# 生成指定數量的隨機光表資料（自動種子值）
+# 使用方法：GET /api/get_rand_lightlist/cnt={cnt}，無需驗證
+# 使用場景：快速生成隨機測試資料
 @api_router.get("/get_rand_lightlist/cnt={cnt}")
 async def get_rand_lightlist(cnt : int):
     if not (1 <= cnt <= 1500):
@@ -453,6 +494,9 @@ async def get_rand_lightlist(cnt : int):
     # return json_str
     return response
 
+# 生成指定數量的隨機光表資料（JSON 格式）
+# 使用方法：GET /api/get_rand_lightlist/json/cnt={cnt}，無需驗證
+# 使用場景：獲取原始 JSON 格式的隨機資料
 @api_router.get("/get_rand_lightlist/json/cnt={cnt}")
 async def get_rand_lightlist(cnt : int):
     if not (1 <= cnt <= 1500):
@@ -481,6 +525,9 @@ async def get_rand_lightlist(cnt : int):
     
     return response
 
+# 生成指定數量的測試光表資料（固定模式）
+# 使用方法：GET /api/get_test_lightlist/cnt={cnt}，無需驗證
+# 使用場景：系統測試、效能基準測量
 @api_router.get("/get_test_lightlist/cnt={cnt}")
 async def get_test_lightlist(cnt : int):
 
@@ -514,6 +561,9 @@ async def get_test_lightlist(cnt : int):
     
     return response
 
+# 生成指定數量的測試光表資料（分塊模式）
+# 使用方法：GET /api/get_test_lightlist/cnt={cnt}/chunk={chunk}，無需驗證
+# 使用場景：大量資料測試時分批載入
 @api_router.get("/get_test_lightlist/cnt={cnt}/chunk={chunk}")
 async def get_test_lightlist(cnt : int, chunk : int):
 
@@ -551,71 +601,3 @@ async def get_test_lightlist(cnt : int, chunk : int):
 
 # 將 API 路由器加入到主應用程式
 app.include_router(api_router)
-
-# # saving light color data
-# @app.post("/items/")   # to be determined
-# async def front_upload(request: Request, current_user: User = Depends(get_current_active_user)):
-#     b = await request.body()            # 等 body 傳進來再繼續
-#     print("Raw request body:", b)
-#     try:
-#         body = await request.json()
-#         print("Parsed JSON body:", body)
-#     except JSONDecodeError:
-#         print("Failed to decode JSON body.")
-#         raise HTTPException(status_code=400, detail="Invalid JSON body")
-
-# #    body = await request.form()
-
-#     color = body['color']               # get the "color" attribute
-    
-#     current_time = strftime("%Y-%b-%d %H:%M:%S", localtime())
-#     current_username = current_user.username
-
-#     collection_front.insert_one({
-#         "user": current_username,
-#         "update_time": current_time,
-#         "color": color
-#     })
-
-#     for i in range (1, 4): #1,2,3
-#         search_item = collection_pico.find_one({"ID": i})  
-#         if search_item:
-#             collection_pico.update_one({"ID": i}, {"$set": {"color": color[int(SIZE*3*(i-1)): int(SIZE*3*i)]}})
-#         else:
-#             collection_pico.insert_one({
-#                 "ID": i,
-#                 "color": color[int(SIZE*3*(i-1)): int(SIZE*3*i)]
-#             })
-
-#     search_item = collection_pico.find_one({"ID": 4})  
-#     if search_item:
-#         collection_pico.update_one({"ID": 4}, {"$set": {"color": color[int(SIZE*9): int(SIZE*9+6)]}})
-#     else:
-#         collection_pico.insert_one({
-#             "user": current_username,
-#             "ID": 4,
-#             "color": color[int(SIZE*9): int(SIZE*9+6)]
-#         })
-
-#     return {
-#         "message": "upload success OuOb",
-#         "color": color
-#     }
-
-# @app.get("/items/load/{time}")
-# async def front_load(time: str):
-#     search_item = collection_front.find_one({"update_time": time})
-#     color = search_item["color"]
-#     return {
-#         "color" : color
-#     }
-
-# @app.get("/items/latest/")
-# async def front_latest():
-#     time_list = collection_front.distinct("update_time")
-#     latest_time = time_list[-1]
-#     search_item = collection_front.find_one({"update_time": latest_time})
-#     color = search_item["color"]
-#     return {
-#         "color" : color
-#     }
