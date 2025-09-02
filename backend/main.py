@@ -599,5 +599,24 @@ async def get_test_lightlist(cnt : int, chunk : int):
     
     return response
 
+# 韌體組測試字串測試API
+# 使用方法：GET /api/get_test_lightlist/cnt={cnt}/chunk={chunk}，無需驗證
+# 使用場景：給韌體組測試用的字串
+@api_router.get("/test/get_test_color")
+async def get_test_string():
+    test_color = {
+        "color1": [
+            "0x000000FF", "0xFF0000FF", "0x00FF00FF", "0x0000FFFF",
+            "0xFFFF00FF", "0x00FFFFFF", "0xFF00FFFF", "0xFFFFFFFF",
+            "0x000000FF", "0xFF0000FF", "0x00FF00FF", "0x0000FFFF"
+        ]
+        ,"color2": [
+            "0x000000FF", "0xFF0000FF", "0x00FF00FF", "0x0000FFFF",
+            "0xFFFF00FF", "0x00FFFFFF", "0xFF00FFFF", "0xFFFFFFFF",
+            "0x000000FF", "0xFF0000FF", "0x00FF00FF", "0x0000FFFF"
+        ]
+    }
+    return test_color
+
 # 將 API 路由器加入到主應用程式
 app.include_router(api_router)
