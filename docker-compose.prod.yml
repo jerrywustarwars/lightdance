@@ -34,8 +34,10 @@ services:
   backend:
     build: ./backend
     container_name: backend
+    env_file:
+      - .env.deployment
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -52,7 +54,7 @@ services:
       - mongo
     environment:
       # 連接到此檔案中定義的本地 mongo 服務
-      - MONGO_CONNECT_URI=mongodb://${MONGO_USERNAME:-user}:${MONGO_PASSWORD:-password}@mongo:27017
+      - MONGO_CONNECT_URI=mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017
       # 生產環境關閉熱重載
       - APP_RELOAD=false
       - MUSIC_FILE_PATH=/music
@@ -66,9 +68,11 @@ services:
     image: mongo
     container_name: mongo
     restart: always
+    env_file:
+      - .env.deployment
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME:-user}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-password}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
     volumes:
       # 將資料庫檔案保存在本地的 ./db 資料夾
       # 確保開發和生產環境使用不同的資料庫檔案，或做好備份策略
