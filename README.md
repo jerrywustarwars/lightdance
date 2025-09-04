@@ -5,7 +5,6 @@
 
 ![Tech Stack](https://img.shields.io/badge/Tech-React%20%7C%20FastAPI%20%7C%20MongoDB-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose%20Ready-2496ED?logo=docker)
-![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python)
 ![React](https://img.shields.io/badge/React-18+-61DAFB?logo=react)
 
 ## 📋 專案概述
@@ -60,6 +59,7 @@ LightDance 是一個**全端 Web 應用程式**，讓使用者透過直觀的瀏
 |-----|------|-------------------|
 | **前端** | [React 18](https://reactjs.org/) | 類似 Qt/GTK，負責 GUI 和使用者互動 |
 | **後端** | [FastAPI](https://fastapi.tiangolo.com/) | 類似主程式，處理邏輯和資料處理 |
+| **資料模型** | [Pydantic](https://pydantic-docs.helpmanual.io/) | 類似 C++ struct/class，但支援自動資料驗證 |
 | **資料庫** | [MongoDB](https://www.mongodb.com/) | 類似結構化檔案系統，但支援複雜查詢 |
 | **反向代理** | [Nginx](https://www.nginx.com/) | 類似網路路由器，分發請求到正確服務 |
 | **容器化** | [Docker Compose](https://docs.docker.com/compose/) | 類似 Makefile，但管理整個執行環境 |
@@ -122,7 +122,8 @@ lightdance/
 │   ├── package.json           # 依賴管理 (類似 Makefile)
 │   └── Dockerfile             # 容器建置指令
 ├── ⚡ backend/                 # 後端程式碼 (類似主邏輯)
-│   ├── main.py                # 主程式進入點
+│   ├── main.py                # 主程式進入點與 API 路由定義
+│   ├── models.py              # 資料庫模型定義 (Pydantic BaseModel)
 │   ├── pyproject.toml         # Python 專案配置
 │   └── Dockerfile             # 容器建置指令
 ├── 🗄️ mongo-init/              # 資料庫初始化腳本
@@ -132,12 +133,13 @@ lightdance/
 ├── ⚙️ 配置檔案
 │   ├── docker-compose.dev.yml # 開發環境編排
 │   ├── docker-compose.prod.yml# 生產環境編排
-│   ├── .env                   # 主要環境變數
+│   ├── .env.deployment        # 主要環境變數
 │   └── .env.development       # 開發環境覆蓋設定
 ├── 🚀 執行腳本
 │   ├── start-dev.sh           # 開發環境一鍵啟動
 │   ├── stop-dev.sh            # 停止開發環境
-│   └── run-deploy.sh          # 生產環境部署
+│   ├── run-deploy.sh          # 生產環境部署
+│   └── disable-deploy.sh      # 解除部署生產環境
 └── 📚 說明文件
     ├── README.md              # 本檔案
     ├── docs/                  # 技術文檔資料夾
@@ -149,12 +151,17 @@ lightdance/
 
 ### 對 C++ 開發者的重要概念
 
-1. **熱重載 (Hot Reload)**
+1. **模組化架構 (Modular Architecture)**
+   - **程式碼分離**：`main.py` 負責 API 路由定義，`models.py` 負責資料結構
+   - **類似 C++**：就像 `.h` 標頭檔定義結構體，`.cpp` 檔案實作邏輯
+   - **Pydantic 模型**：自動驗證輸入資料，類似強型別語言的編譯時檢查
+   
+2. **熱重載 (Hot Reload)**
    - 類似某些 IDE 的「邊改邊執行」功能
    - 修改前端程式碼時會自動重新載入頁面
    - 修改後端程式碼時會自動重啟 API 服務
 
-2. **RESTful API**
+3. **RESTful API**
    ```cpp
    // 在 C++ 中您可能這樣呼叫函數：
    User user = getUserById(123);
@@ -263,9 +270,9 @@ REACT_APP_API_BASE_URL=http://localhost:8000/api
 3. **前端編譯錯誤**
    ```bash
    # 清除 Node.js 快取並重新安裝依賴
-   docker compose -f docker-compose.dev.yml down
+   ./stop-dev
    docker volume rm lightdance_frontend_node_modules
-   docker compose -f docker-compose.dev.yml up --build
+   ./start-dev
    ```
 
 4. **資料庫連接失敗**
@@ -283,10 +290,10 @@ REACT_APP_API_BASE_URL=http://localhost:8000/api
 5. **API 請求失敗**
    ```bash
    # 檢查後端服務健康狀態
-   curl http://localhost:8000/
+   curl http://localhost:8000/api
    
    # 查看 API 文件
-   open http://localhost:8000/docs
+   open http://localhost:8000/api/docs
    
    # 檢查後端日誌
    docker compose -f docker-compose.dev.yml logs -f backend
