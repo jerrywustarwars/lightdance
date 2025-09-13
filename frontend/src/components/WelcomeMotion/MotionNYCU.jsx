@@ -17,14 +17,14 @@ const MotionNYCU = () => {
             opacity: { duration: 0.01 },
           },
         },
-        { duration: 0.5, delay: 0.3 }
+        { duration: 0.7, delay: 0.3 }
       );
       animate(
         "line",
         {
           y: -160,
         },
-        { duration: 0.7, delay: 0.3 }
+        { duration: 1, delay: 0.3 }
       );
     } catch {}
   };
