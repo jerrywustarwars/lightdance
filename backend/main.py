@@ -615,6 +615,11 @@ async def get_test_string():
             "0xFFFF00FF", "0x00FFFFFF", "0xFF00FFFF", "0xFFFFFFFF",
             "0x000000FF", "0xFF0000FF", "0x00FF00FF", "0x0000FFFF"
         ]
+        ,"color3": [
+            "0x00FF00FF", "0xFF0000FF", "0x00FF00FF", "0x0000FFFF",
+            "0xFFFF00FF", "0x00FFFFFF", "0xFF00FFFF", "0xFFFFFFFF",
+            "0x000000FF", "0xFF0000FF", "0x00FF00FF", "0x0000FFFF"
+        ]
     }
     return test_color
 
