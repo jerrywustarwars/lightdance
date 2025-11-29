@@ -309,17 +309,17 @@ const Armor = (props) => {
           fill={colors.tie}
           onClick={() => handleColorChange(4)}
         />
-        {/* {render high light} */}
+        {/* 領帶三角形 - 與矩形完美對齊 */}
         {isSelected(4) && (
         <polygon
-         points="111,153 131,153 121,173"
+         points="105,153 137,153 121,173"
          fill="none"
          stroke="white"
          strokeWidth="2"
         />
         )}
         <polygon
-          points="111,153 131,153 121,173"
+          points="105,153 137,153 121,173"
           fill={colors.tie}
           onClick={() => handleColorChange(4)}
         />
