@@ -15,9 +15,23 @@ const Armor = (props) => {
   const selectedBlock = useSelector((state) => state.profiles.selectedBlock);
   const myId = props.index;
   const blackthreshold = 10;
+
   useEffect(() => {
     console.log("actionTable: ", actionTable);
   }, [actionTable]);
+
+  // 新的部位名稱
+  const partNames = [
+    "hat",           // 0: ⬛ 帽子（2個黑色矩形）
+    "head",          // 1: 🟦 頭部（1個藍色圓形）
+    "arms",          // 2: 🟩 手臂（2個深綠矩形）
+    "chest",         // 3: 🔴 胸部（2個紅色矩形）
+    "tie",           // 4: 🟢 領帶（1個亮綠矩形）
+    "glove",         // 5: 🟣 手套（2個紫色矩形）
+    "belt",          // 6: 🟠 腰帶（1個橙色矩形）
+    "leg",           // 7: 🩷 腿部（2個粉紅矩形）
+    "shoe",          // 8: 🔵 鞋子（2個淺藍矩形）
+  ];
 
   // 根據部位名稱和當前時間計算顏色
   const getColorForPart = (part) => {
@@ -29,22 +43,10 @@ const Armor = (props) => {
       B: 0,
       A: 1,
     };
-    return `rgb(${Math.round(colorData.R * colorData.A)}, 
-                ${Math.round(colorData.G * colorData.A)}, 
-                ${Math.round(colorData.B * colorData.A)})`;
+    
+    // ✅ 修復：使用 rgba 而不是 rgb(R*A, G*A, B*A)
+    return `rgba(${colorData.R}, ${colorData.G}, ${colorData.B}, ${colorData.A})`;
   };
-
-  const partNames = [
-    "head",
-    "shoulderPads",
-    "bodyUpper",
-    "belt_arms",
-    "legsUpper",
-    "legsLower",
-    "shoes",
-    "weap_1",
-    "weap_2",
-  ];
 
   const colors = Object.fromEntries(
     partNames.map((name, index) => [name, getColorForPart(index)])
@@ -147,20 +149,19 @@ const Armor = (props) => {
   }
 
   // 二分搜尋找到對應時間
-  // 先定義 binarySearchFirstGreater
   function binarySearchFirstGreater(arr, target) {
     if (!arr) return;
     let left = 0;
     let right = arr?.length - 1;
-    let result = 0; // 默認值為 -1，如果找不到更大的數字
+    let result = 0;
 
     while (left <= right) {
       let mid = Math.floor((left + right) / 2);
       if (arr[mid].time > target) {
-        result = mid; // 找到候選
-        right = mid - 1; // 繼續向左搜尋
+        result = mid;
+        right = mid - 1;
       } else {
-        left = mid + 1; // 向右移動
+        left = mid + 1;
       }
     }
     return result;
@@ -173,10 +174,13 @@ const Armor = (props) => {
       selectedBlock.partIndex === part
     );
   };
+
   // 處理部位顏色更改
   const handleColorChange = (part) => {
     insertArray(part);
   };
+
+  // 渲染高亮邊框
   const renderHighlight = (
     x,
     y,
@@ -185,7 +189,7 @@ const Armor = (props) => {
     shape = "rect",
     options = {}
   ) => {
-    const { r = null, cx = null, cy = null, transform = null } = options;
+    const { r = null, cx = null, cy = null } = options;
 
     if (shape === "rect") {
       return (
@@ -197,7 +201,6 @@ const Armor = (props) => {
           fill="none"
           stroke="white"
           strokeWidth="2"
-          transform={transform || null}
         />
       );
     }
@@ -217,205 +220,178 @@ const Armor = (props) => {
 
     return null;
   };
+
   return (
     <div>
-      <svg width="242" height="459.8" viewBox="10 0 222 459.8">
-        {/* Head */}
-        {isSelected(0) &&
-          renderHighlight(null, null, null, null, "circle", {
-            r: 36.5,
-            cx: 121,
-            cy: 60.5,
-          })}
-        {isSelected(0) && renderHighlight(96.8, 2, 12.5, 40.4)}
-        {isSelected(0) && renderHighlight(133.1, 2, 12.5, 40.4)}
+      <svg width="242" height="480" viewBox="10 0 222 480">
+        {/*0:hat*/}
+        {isSelected(0) && (
+          <path
+            d="M 96.8 5 L 145.2 5 L 145.2 23 L 169.4 23 L 169.4 38 L 72.6 38 L 72.6 23 L 96.8 23 Z"
+            fill="none"
+            stroke="white"
+            strokeWidth="2"
+          />
+        )}
+        <path
+          d="M 96.8 5 L 145.2 5 L 145.2 23 L 169.4 23 L 169.4 38 L 72.6 38 L 72.6 23 L 96.8 23 Z"
+          fill={colors.hat}
+          onClick={() => handleColorChange(0)}
+        />
+
+        {/*1:head*/}
+        {isSelected(1) && renderHighlight(null, null, null, null, "circle", {
+          r: 30,
+          cx: 121,
+          cy: 68
+        })}
         <circle
           cx="121"
-          cy="60.5"
-          r="36.3"
+          cy="68"
+          r="30"
           fill={colors.head}
-          onClick={() => handleColorChange(0)}
-        />
-        <rect
-          x="96.8"
-          y="2"
-          width="12.1"
-          height="40"
-          fill={colors.head}
-          onClick={() => handleColorChange(0)}
-        />
-        <rect
-          x="133.1"
-          y="2"
-          width="12.1"
-          height="40"
-          fill={colors.head}
-          onClick={() => handleColorChange(0)}
-        />
-        {/* Shoulders */}
-        {isSelected(1) && renderHighlight(42.4, 103.8, 36.7, 12.5)}
-        {isSelected(1) && renderHighlight(163.4, 103.8, 36.7, 12.5)}
-        <rect
-          x="42.4"
-          y="103.8"
-          width="36.3"
-          height="12.1"
-          fill={colors.shoulderPads}
           onClick={() => handleColorChange(1)}
         />
+
+        {/*2:arm*/}
+        {isSelected(2) && renderHighlight(35, 103, 32, 65)}
         <rect
-          x="163.4"
-          y="103.8"
-          width="36.3"
-          height="12.1"
-          fill={colors.shoulderPads}
-          onClick={() => handleColorChange(1)}
-        />
-        {/* Upper Body */}
-        {isSelected(2) && renderHighlight(84.7, 113.9, 73, 40.6)}
-        <rect
-          x="84.7"
-          y="113.9"
-          width="72.6"
-          height="40.2"
-          fill={colors.bodyUpper}
+          x="35"
+          y="103"
+          width="32"
+          height="65"
+          fill={colors.arms}
           onClick={() => handleColorChange(2)}
         />
-        {/* Belt & Arms */}
-        {isSelected(3) && renderHighlight(106.7, 174.4, 29.1, 22.5)}
-        {isSelected(3) && renderHighlight(48.4, 121, 24.6, 73)}
-        {isSelected(3) && renderHighlight(169.4, 121, 24.6, 73)}
+
+        {isSelected(2) && renderHighlight(175, 103, 32, 65)}
         <rect
-          x="106.7"
-          y="174.4"
-          width="28.7"
-          height="22.1"
-          fill={colors.belt_arms}
+          x="175"
+          y="103"
+          width="32"
+          height="65"
+          fill={colors.arms}
+          onClick={() => handleColorChange(2)}
+        />
+
+        {/*3:chest*/}
+        {isSelected(3) && renderHighlight(72, 103, 28, 65)}
+        <rect
+          x="72"
+          y="103"
+          width="28"
+          height="65"
+          fill={colors.chest}
           onClick={() => handleColorChange(3)}
         />
+        
+        {isSelected(3) && renderHighlight(142, 103, 28, 65)}
         <rect
-          x="48.4"
-          y="121"
-          width="24.2"
-          height="72.6"
-          fill={colors.belt_arms}
-          onClick={() => handleColorChange(3)}
-        />
-        <rect
-          x="169.4"
-          y="121"
-          width="24.2"
-          height="72.6"
-          fill={colors.belt_arms}
+          x="142"
+          y="103"
+          width="28"
+          height="65"
+          fill={colors.chest}
           onClick={() => handleColorChange(3)}
         />
 
-        {/* 腿上 */}
-        {isSelected(5) && renderHighlight(90.7, 215.1, 24.6, 80.9)}
-        {isSelected(5) && renderHighlight(127.1, 215.1, 24.6, 80.9)}
-        {isSelected(5) && renderHighlight(144.1, 163.1, 14.6, 30.9)}
-        {isSelected(5) && renderHighlight(83.1, 163.1, 14.6, 30.9)}
+        {/* 4:tie*/}
+
+        {isSelected(4) && renderHighlight(105, 103, 32, 50)}
         <rect
-          x="90.7"
-          y="215.1"
-          width="24.2"
-          height="80.5"
-          fill={colors.legsLower}
-          onClick={() => handleColorChange(5)}
-        />
-        <rect
-          x="127.1"
-          y="215.1"
-          width="24.2"
-          height="80.5"
-          fill={colors.legsLower}
-          onClick={() => handleColorChange(5)}
-        />
-        <rect
-          x="144.1"
-          y="163.1"
-          width="14.2"
-          height="30.5"
-          fill={colors.legsLower}
-          onClick={() => handleColorChange(5)}
-        />
-        <rect
-          x="83.7"
-          y="163.1"
-          width="14.2"
-          height="30.5"
-          fill={colors.legsLower}
-          onClick={() => handleColorChange(5)}
-        />
-        {/* 腿下 */}
-        {isSelected(4) &&
-          renderHighlight(150.5, 195.5, 25.2, 55.4, "rect", {
-            transform: "skewX(-20)",
-          })}
-        {isSelected(4) &&
-          renderHighlight(65, 195.5, 25.2, 55.4, "rect", {
-            transform: "skewX(20)",
-          })}
-        <rect
-          x="150.5"
-          y="195.5"
-          width="25.2"
-          height="55.4"
-          transform="skewX(-20)"
-          fill={colors.legsUpper}
+          x="105"
+          y="103"
+          width="32"
+          height="50"
+          fill={colors.tie}
           onClick={() => handleColorChange(4)}
         />
-        <rect
-          x="65"
-          y="195.5"
-          width="25.2"
-          height="55.4"
-          fill={colors.legsUpper}
-          transform="skewX(20)"
+        {/* {render high light} */}
+        {isSelected(4) && (
+        <polygon
+         points="111,153 131,153 121,173"
+         fill="none"
+         stroke="white"
+         strokeWidth="2"
+        />
+        )}
+        <polygon
+          points="111,153 131,153 121,173"
+          fill={colors.tie}
           onClick={() => handleColorChange(4)}
         />
-        {/* Shoes */}
-        {isSelected(6) && renderHighlight(66.6, 302.5, 48.8, 12.5)}
-        {isSelected(6) && renderHighlight(127.1, 302.5, 48.8, 12.5)}
+
+
+        {/*5: glove*/}
+        {isSelected(5) && renderHighlight(35, 173, 32, 35)}
         <rect
-          x="66.6"
-          y="302.5"
-          width="48.4"
-          height="12.1"
-          fill={colors.shoes}
+          x="35"
+          y="173"
+          width="32"
+          height="35"
+          fill={colors.glove}
+          onClick={() => handleColorChange(5)}
+        />
+
+        {isSelected(5) && renderHighlight(175, 173, 32, 35)}
+        <rect
+          x="175"
+          y="173"
+          width="32"
+          height="35"
+          fill={colors.glove}
+          onClick={() => handleColorChange(5)}
+        />
+
+        {/*6: belt*/}
+        {isSelected(6) && renderHighlight(78, 173, 86, 35)}
+        <rect
+          x="78"
+          y="173"
+          width="86"
+          height="35"
+          fill={colors.belt}
           onClick={() => handleColorChange(6)}
         />
+
+        {/*7:leg*/}
+        {isSelected(7) && renderHighlight(85, 213, 28, 80)}
         <rect
-          x="127.1"
-          y="302.5"
-          width="48.4"
-          height="12.1"
-          fill={colors.shoes}
-          onClick={() => handleColorChange(6)}
-        />
-        {/* Sticks */}
-        <rect
-          x="230" // 調整這個數值來確保棍子在適當的位置
-          y="240"
-          width="12"
+          x="85"
+          y="213"
+          width="28"
           height="80"
-          fill={colors.weap_2}
-          onClick={() => handleColorChange(8)}
-        />
-        <rect
-          x="230" // 調整這個數值來確保棍子在適當的位置
-          y="100"
-          width="12"
-          height="140"
-          fill={colors.weap_1}
+          fill={colors.leg}
           onClick={() => handleColorChange(7)}
         />
+        {isSelected(7) && renderHighlight(129, 213, 28, 80)}
         <rect
-          x="230" // 調整這個數值來確保棍子在適當的位置
-          y="20"
-          width="12"
+          x="129"
+          y="213"
+          width="28"
           height="80"
-          fill={colors.weap_2}
+          fill={colors.leg}
+          onClick={() => handleColorChange(7)}
+        />
+
+        {/*8: shoe*/}
+        {isSelected(8) && renderHighlight(75, 298, 45, 25)}
+        <rect
+          x="75"
+          y="298"
+          width="45"
+          height="15"
+          fill={colors.shoe}
+          onClick={() => handleColorChange(8)}
+        />
+
+        {isSelected(8) && renderHighlight(122, 298, 45, 25)}
+        <rect
+          x="122"
+          y="298"
+          width="45"
+          height="15"
+          fill={colors.shoe}
           onClick={() => handleColorChange(8)}
         />
       </svg>
