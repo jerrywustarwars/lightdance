@@ -6,6 +6,9 @@ import { updateActionTable } from "../redux/actions.js";
 function People() {
   const components = Array(7).fill(null);
   const actionTable = useSelector((state) => state.profiles.actionTable);
+  const dancerVisibility = useSelector(
+    (state) => state.profiles.dancerVisibility
+  );
   const dispatch = useDispatch();
 
   // 初始化 actionTable
@@ -24,11 +27,16 @@ function People() {
 
   return (
     <div>
-      {components.map((_, index) => (
-        <div className="personBackGround" key={index}>
-          <Armor index={index} />
-        </div>
-      ))}
+      {components.map((_, index) => {
+        if (!dancerVisibility[index]) {
+          return null;
+        }
+        return (
+          <div className="personBackGround" key={index}>
+            <Armor index={index} />
+          </div>
+        );
+      })}
     </div>
   );
 }

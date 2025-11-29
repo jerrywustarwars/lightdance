@@ -22,15 +22,15 @@ const Armor = (props) => {
 
   // 新的部位名稱
   const partNames = [
-    "hat",           // 0: ⬛ 帽子（2個黑色矩形）
-    "head",          // 1: 🟦 頭部（1個藍色圓形）
-    "arms",          // 2: 🟩 手臂（2個深綠矩形）
-    "chest",         // 3: 🔴 胸部（2個紅色矩形）
-    "tie",           // 4: 🟢 領帶（1個亮綠矩形）
-    "glove",         // 5: 🟣 手套（2個紫色矩形）
-    "belt",          // 6: 🟠 腰帶（1個橙色矩形）
-    "leg",           // 7: 🩷 腿部（2個粉紅矩形）
-    "shoe",          // 8: 🔵 鞋子（2個淺藍矩形）
+    "hat",           // 0:帽子
+    "head",          // 1:頭部
+    "arms",          // 2:手臂
+    "chest",         // 3:胸部
+    "tie",           // 4:領帶
+    "glove",         // 5:手套
+    "belt",          // 6:腰帶
+    "leg",           // 7:腿部
+    "shoe",          // 8:鞋子
   ];
 
   // 根據部位名稱和當前時間計算顏色
@@ -44,7 +44,6 @@ const Armor = (props) => {
       A: 1,
     };
     
-    // ✅ 修復：使用 rgba 而不是 rgb(R*A, G*A, B*A)
     return `rgba(${colorData.R}, ${colorData.G}, ${colorData.B}, ${colorData.A})`;
   };
 
@@ -222,8 +221,12 @@ const Armor = (props) => {
   };
 
   return (
-    <div>
+    <div className="armor-container">
+      {/* 舞者編號標籤 */}
+      <div className="dancer-label">舞者 {myId + 1}</div>
       <svg width="242" height="480" viewBox="10 0 222 480">
+        {/* 將所有 SVG 內容向下移動 35px，為標籤留出空間 */}
+        <g transform="translate(0, 35)">
         {/*0:hat*/}
         {isSelected(0) && (
           <path
@@ -394,6 +397,7 @@ const Armor = (props) => {
           fill={colors.shoe}
           onClick={() => handleColorChange(8)}
         />
+        </g>
       </svg>
     </div>
   );
