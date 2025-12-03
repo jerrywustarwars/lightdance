@@ -13,7 +13,7 @@
 # --- 設定 (請根據您的伺服器環境修改此處) ---
 # 外部 Nginx 指向的靜態檔案根目錄
 # DEPLOY_TARGET_DIR="/var/www/lightdance/html"
-DEPLOY_TARGET_DIR="./local"
+DEPLOY_TARGET_DIR="/usr/share/nginx/html/lightdance"
 
 COMPOSE_FILE="docker-compose.prod.yml"
 ENV_FILE=".env.deployment"
