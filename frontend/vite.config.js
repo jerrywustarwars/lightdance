@@ -2,7 +2,9 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // 開發環境 (serve) 使用根路徑 "/"，生產環境 (build) 使用 "/lightdance/"
+  base: command === "serve" ? "/" : "/lightdance/",
   // 告訴 Vite 將 .glb 檔案視為靜態資產
   assetsInclude: ["**/*.glb"],
   plugins: [react()],
@@ -19,4 +21,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));
