@@ -10,15 +10,20 @@ function EditActionTable() {
   const actionTable = useSelector((state) => state.profiles.actionTable);
 
   const partName = [
-    "頭",
-    "肩甲",
-    "胸甲",
-    "手腰",
-    "腿上",
-    "腿下",
-    "鞋",
-    "棍內",
-    "棍外",
+    "hat",
+    "face",
+    "chestL",
+    "chestR",
+    "armL",
+    "armR",
+    "tie",
+    "belt",
+    "gloveL",
+    "gloveR",
+    "legL",
+    "legR",
+    "shoeL",
+    "shoeR",
   ];
 
   // 選擇 Armor & Part
