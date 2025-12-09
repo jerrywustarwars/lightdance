@@ -35,15 +35,20 @@ function ControlPanel({ setButtonState }) {
   const showPart = useSelector((state) => state.profiles.showPart);
   const dispatch = useDispatch();
   const partName = [
-    "帽子",
-    "頭",
-    "手臂",
-    "胸部",
-    "領帶",
-    "手套",
-    "皮帶",
-    "腳",
-    "鞋子",
+    "帽子",      // 0
+    "頭",        // 1
+    "左手臂",    // 2
+    "右手臂",    // 3
+    "左胸",      // 4
+    "右胸",      // 5
+    "領帶",      // 6
+    "左手套",    // 7
+    "右手套",    // 8
+    "腰帶",      // 9
+    "左腿",      // 10
+    "右腿",      // 11
+    "左鞋",      // 12
+    "右鞋",      // 13
   ];
 
   useEffect(() => {
@@ -323,7 +328,7 @@ function ControlPanel({ setButtonState }) {
 
   // 切换行全选/取消全选
   const toggleRowSelect = (armorIndex) => {
-    const isRowFullySelected = Array.from({ length: 9 }).every((_, partIndex) =>
+    const isRowFullySelected = Array.from({ length: 14 }).every((_, partIndex) =>
       selectedTimelines.some(
         (item) => item.armorIndex === armorIndex && item.partIndex === partIndex
       )
@@ -331,7 +336,7 @@ function ControlPanel({ setButtonState }) {
 
     setSelectedTimelines((prev) => {
       const updated = [...prev];
-      Array.from({ length: 9 }).forEach((_, partIndex) => {
+      Array.from({ length: 14 }).forEach((_, partIndex) => {
         const exists = updated.some(
           (item) =>
             item.armorIndex === armorIndex && item.partIndex === partIndex
@@ -491,7 +496,7 @@ function ControlPanel({ setButtonState }) {
                     <th key={armorIndex}>
                       <button
                         className={`allsel-button ${
-                          Array.from({ length: 9 }).every((_, partIndex) =>
+                          Array.from({ length: 14 }).every((_, partIndex) =>
                             selectedTimelines.some(
                               (item) =>
                                 item.armorIndex === armorIndex &&
@@ -510,7 +515,7 @@ function ControlPanel({ setButtonState }) {
                 </tr>
               </thead>
               <tbody>
-                {Array.from({ length: 9 }).map((_, partIndex) => (
+                {Array.from({ length: 14 }).map((_, partIndex) => (
                   <tr key={partIndex}>
                     <td>
                       <button
@@ -643,7 +648,7 @@ function ControlPanel({ setButtonState }) {
                       )
                     }
                   >
-                    {Array.from({ length: 9 }).map((_, i) => (
+                    {Array.from({ length: 14 }).map((_, i) => (
                       <option key={i} value={i}>
                         {partName[i]}
                       </option>

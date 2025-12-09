@@ -156,15 +156,20 @@ function Home({ rgba, setRgba, setButtonState }) {
         }
         mergedResults.push({
           time: Math.floor(mergedItem.time / 50),
-          hat: mergedItem[0],     // 0: 帽子
-          head: mergedItem[1],    // 1: 頭部
-          arms: mergedItem[2],    // 2: 手臂
-          chest: mergedItem[3],   // 3: 胸部
-          tie: mergedItem[4],     // 4: 領帶
-          glove: mergedItem[5],   // 5: 手套
-          belt: mergedItem[6],    // 6: 腰帶
-          leg: mergedItem[7],     // 7: 腿部
-          shoe: mergedItem[8],    // 8: 鞋子
+          hat: mergedItem[0],      // 0: 帽子
+          head: mergedItem[1],     // 1: 頭部
+          armL: mergedItem[2],     // 2: 左手臂
+          armR: mergedItem[3],     // 3: 右手臂
+          chestL: mergedItem[4],   // 4: 左胸
+          chestR: mergedItem[5],   // 5: 右胸
+          tie: mergedItem[6],      // 6: 領帶
+          gloveL: mergedItem[7],   // 7: 左手套
+          gloveR: mergedItem[8],   // 8: 右手套
+          belt: mergedItem[9],     // 9: 腰帶
+          legL: mergedItem[10],    // 10: 左腿
+          legR: mergedItem[11],    // 11: 右腿
+          shoeL: mergedItem[12],   // 12: 左鞋
+          shoeR: mergedItem[13],   // 13: 右鞋
         });
       }
       console.log(mergedResults);
