@@ -1,7 +1,7 @@
 // 在開發模式下，Vite 的代理伺服器 (在 vite.config.js 中設定) 會將 /api 的請求轉發到後端。
 // 在生產模式下，Nginx 或其他反向代理會處理這個轉發。
 // 因此，我們只需要使用相對路徑即可，這樣最為簡潔且可靠。
-const API_BASE_URL = "/api";
+const API_BASE_URL = import.meta.env.BASE_URL=="/" ? "/api" : "/lightdance/api";
 
 // API endpoints
 export const API_ENDPOINTS = {
