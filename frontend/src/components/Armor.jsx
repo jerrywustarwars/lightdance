@@ -268,7 +268,7 @@ const Armor = (props) => {
           y="103"
           width="32"
           height="65"
-          fill={colors.armL}
+          fill={colors.armR}
           onClick={() => handleColorChange(3)}
         />
 
@@ -279,7 +279,7 @@ const Armor = (props) => {
           y="103"
           width="32"
           height="65"
-          fill={colors.armR}
+          fill={colors.armL}
           onClick={() => handleColorChange(2)}
         />
 
@@ -290,7 +290,7 @@ const Armor = (props) => {
           y="103"
           width="28"
           height="65"
-          fill={colors.chestL}
+          fill={colors.chestR}
           onClick={() => handleColorChange(5)}
         />
 
@@ -301,7 +301,7 @@ const Armor = (props) => {
           y="103"
           width="28"
           height="65"
-          fill={colors.chestR}
+          fill={colors.chestL}
           onClick={() => handleColorChange(4)}
         />
 
@@ -338,7 +338,7 @@ const Armor = (props) => {
           y="173"
           width="32"
           height="35"
-          fill={colors.gloveL}
+          fill={colors.gloveR}
           onClick={() => handleColorChange(8)}
         />
 
@@ -349,7 +349,7 @@ const Armor = (props) => {
           y="173"
           width="32"
           height="35"
-          fill={colors.gloveR}
+          fill={colors.gloveL}
           onClick={() => handleColorChange(7)}
         />
 
@@ -371,7 +371,7 @@ const Armor = (props) => {
           y="213"
           width="28"
           height="80"
-          fill={colors.legL}
+          fill={colors.legR}
           onClick={() => handleColorChange(11)}
         />
 
@@ -382,7 +382,7 @@ const Armor = (props) => {
           y="213"
           width="28"
           height="80"
-          fill={colors.legR}
+          fill={colors.legL}
           onClick={() => handleColorChange(10)}
         />
 
@@ -393,7 +393,7 @@ const Armor = (props) => {
           y="298"
           width="45"
           height="15"
-          fill={colors.shoeL}
+          fill={colors.shoeR}
           onClick={() => handleColorChange(13)}
         />
 
@@ -404,7 +404,7 @@ const Armor = (props) => {
           y="298"
           width="45"
           height="15"
-          fill={colors.shoeR}
+          fill={colors.shoeL}
           onClick={() => handleColorChange(12)}
         />
         </g>
