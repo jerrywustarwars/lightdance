@@ -269,7 +269,7 @@ const Armor = (props) => {
           width="32"
           height="65"
           fill={colors.armL}
-          onClick={() => handleColorChange(2)}
+          onClick={() => handleColorChange(3)}
         />
 
         {/*3:armR*/}
@@ -280,7 +280,7 @@ const Armor = (props) => {
           width="32"
           height="65"
           fill={colors.armR}
-          onClick={() => handleColorChange(3)}
+          onClick={() => handleColorChange(2)}
         />
 
         {/*4:chestL - 左胸*/}
@@ -291,7 +291,7 @@ const Armor = (props) => {
           width="28"
           height="65"
           fill={colors.chestL}
-          onClick={() => handleColorChange(4)}
+          onClick={() => handleColorChange(5)}
         />
 
         {/*5:chestR - 右胸*/}
@@ -302,7 +302,7 @@ const Armor = (props) => {
           width="28"
           height="65"
           fill={colors.chestR}
-          onClick={() => handleColorChange(5)}
+          onClick={() => handleColorChange(4)}
         />
 
         {/*6:tie - 領帶*/}
@@ -339,7 +339,7 @@ const Armor = (props) => {
           width="32"
           height="35"
           fill={colors.gloveL}
-          onClick={() => handleColorChange(7)}
+          onClick={() => handleColorChange(8)}
         />
 
         {/*8:gloveR - 右手套*/}
@@ -350,7 +350,7 @@ const Armor = (props) => {
           width="32"
           height="35"
           fill={colors.gloveR}
-          onClick={() => handleColorChange(8)}
+          onClick={() => handleColorChange(7)}
         />
 
         {/*9:belt - 腰帶*/}
@@ -372,7 +372,7 @@ const Armor = (props) => {
           width="28"
           height="80"
           fill={colors.legL}
-          onClick={() => handleColorChange(10)}
+          onClick={() => handleColorChange(11)}
         />
 
         {/*11:legR - 右腿*/}
@@ -383,7 +383,7 @@ const Armor = (props) => {
           width="28"
           height="80"
           fill={colors.legR}
-          onClick={() => handleColorChange(11)}
+          onClick={() => handleColorChange(10)}
         />
 
         {/*12:shoeL - 左鞋*/}
@@ -394,7 +394,7 @@ const Armor = (props) => {
           width="45"
           height="15"
           fill={colors.shoeL}
-          onClick={() => handleColorChange(12)}
+          onClick={() => handleColorChange(13)}
         />
 
         {/*13:shoeR - 右鞋*/}
@@ -405,7 +405,7 @@ const Armor = (props) => {
           width="45"
           height="15"
           fill={colors.shoeR}
-          onClick={() => handleColorChange(13)}
+          onClick={() => handleColorChange(12)}
         />
         </g>
       </svg>
