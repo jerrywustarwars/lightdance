@@ -4,6 +4,7 @@ import { useSelector, useDispatch } from "react-redux";
 import {
   updateActionTable,
   updateSelectedBlock,
+  updateClipboard,
 } from "../../redux/actions.js";
 import "./audioplayer.css";
 import Waveform from "./waveform.jsx";
@@ -46,6 +47,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   const isColorChangeActive = useSelector(
     (state) => state.profiles.isColorChangeActive
   );
+  const clipboard = useSelector((state) => state.profiles.clipboard);
 
   const audioRef = useRef(null); // 音檔的引用
   const scrollRef = useRef(null); // 滾動條的容器
@@ -213,7 +215,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       event.preventDefault();
       ClickedColorChange();
     }
-    if (event.key === "c") {
+    if (event.key === "c" && !event.ctrlKey) {
       event.preventDefault();
       handleCut();
     }
@@ -224,12 +226,23 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       handleFavoriteColorChoose(parseInt(event.key) - 1);
     }
     if (event.ctrlKey) {
-      if (["1", "2", "3", "4", "5", "6", "7", "8", "9"].includes(event.key)) {
+      // Ctrl+C: 複製
+      if (event.key === "c" || event.key === "C") {
+        event.preventDefault();
+        handleCopy();
+      }
+      // Ctrl+V: 貼上
+      else if (event.key === "v" || event.key === "V") {
+        event.preventDefault();
+        handlePaste();
+      }
+      // Ctrl+數字: 設定透明度
+      else if (["1", "2", "3", "4", "5", "6", "7", "8", "9"].includes(event.key)) {
         event.preventDefault();
         const alphaValue = parseFloat(event.key) / 10;
         handleAlphaChoose(alphaValue);
       } else if (event.key === "0") {
-        // 檢測 Ctrl + *
+        // 檢測 Ctrl + 0
         event.preventDefault();
         handleAlphaChoose(1.0);
       }
@@ -842,6 +855,119 @@ function AudioPlayer({ setButtonState, timelineRef }) {
         armorIndex,
         partIndex,
         blockIndex: blockIndex + 2,
+      })
+    );
+  };
+
+  const handleCopy = () => {
+    console.log("Copy clicked");
+    console.log("selectedBlock:", selectedBlock);
+
+    // 檢查是否有選中的方塊
+    if (
+      !selectedBlock ||
+      selectedBlock.armorIndex === undefined ||
+      selectedBlock.partIndex === undefined
+    ) {
+      console.warn("No block selected. Cannot copy.");
+      return;
+    }
+
+    const { armorIndex, partIndex } = selectedBlock;
+
+    // 取得整個部位的 timeline
+    const timeline = actionTable?.[armorIndex]?.[partIndex];
+
+    if (!timeline || timeline.length === 0) {
+      console.warn("No timeline data found for the selected block.");
+      return;
+    }
+
+    // 深拷貝 timeline 資料
+    const copiedData = JSON.parse(JSON.stringify(timeline));
+
+    // 更新 clipboard 狀態
+    dispatch(
+      updateClipboard({
+        data: copiedData,
+        sourceArmorIndex: armorIndex,
+        sourcePartIndex: partIndex,
+        timestamp: Date.now(),
+      })
+    );
+
+    console.log(
+      `Copied timeline for Armor ${armorIndex}, Part ${partIndex}:`,
+      copiedData
+    );
+    console.log(`Total blocks copied: ${copiedData.length}`);
+  };
+
+  const handlePaste = () => {
+    console.log("Paste clicked");
+    console.log("selectedBlock:", selectedBlock);
+
+    // 檢查剪貼簿是否有資料
+    if (!clipboard || !clipboard.data || clipboard.data.length === 0) {
+      console.warn("Clipboard is empty. Nothing to paste.");
+      return;
+    }
+
+    // 檢查是否有選中的方塊
+    if (
+      !selectedBlock ||
+      selectedBlock.armorIndex === undefined ||
+      selectedBlock.partIndex === undefined
+    ) {
+      console.warn("No block selected. Cannot determine paste target.");
+      return;
+    }
+
+    const { armorIndex: targetArmorIndex, partIndex: targetPartIndex } =
+      selectedBlock;
+
+    console.log(`Pasting to Armor ${targetArmorIndex}, Part ${targetPartIndex}`);
+    console.log(
+      `Source: Armor ${clipboard.sourceArmorIndex}, Part ${clipboard.sourcePartIndex}`
+    );
+
+    // 深拷貝剪貼簿資料
+    const pastedData = JSON.parse(JSON.stringify(clipboard.data));
+
+    // 使用 Immer 更新 actionTable
+    const updatedActionTable = produce(actionTable, (draft) => {
+      // 完全覆蓋目標部位的 timeline
+      draft[targetArmorIndex][targetPartIndex] = pastedData;
+    });
+
+    // 更新 Redux
+    dispatch(updateActionTable(updatedActionTable));
+
+    console.log(
+      `Pasted ${pastedData.length} blocks to Armor ${targetArmorIndex}, Part ${targetPartIndex}`
+    );
+
+    // 貼上後，選中目標部位的第一個有效方塊（非黑色）
+    let newBlockIndex = 0;
+    for (let i = 0; i < pastedData.length; i++) {
+      const block = pastedData[i];
+      if (
+        !(
+          block.color.R === 0 &&
+          block.color.G === 0 &&
+          block.color.B === 0
+        )
+      ) {
+        newBlockIndex = i;
+        break;
+      }
+    }
+
+    dispatch(
+      updateSelectedBlock({
+        armorIndex: targetArmorIndex,
+        partIndex: targetPartIndex,
+        blockIndex: newBlockIndex,
       })
     );
   };
