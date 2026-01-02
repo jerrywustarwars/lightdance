@@ -2,6 +2,9 @@
 
 # 個人用的文件、腳本等等
 local/
+run-deploy.sh
+start-dev.sh
+stop-dev.sh
 
 # Python 相關
 __pycache__/
