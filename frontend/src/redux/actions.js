@@ -18,6 +18,7 @@ export const UPDATEPLAYBACKRATE = "UPDATEPLAYBACKRATE";
 export const UPDATEMAGNETACTIVE = "UPDATEMAGNETACTIVE";
 export const UPDATESHOWPART = "UPDATESHOWPART";
 export const UPDATEFAVORITECOLOR = "UPDATEFAVORITECOLOR";
+export const UPDATEDANCERVISIBILITY = "UPDATEDANCERVISIBILITY";
 
 export const updateUser = (value) => ({ type: UPDATEUSER, payload: value });
 export const updateFullpeaks = (value) => ({
@@ -112,5 +113,10 @@ export const updateShowPart = (value) => ({
 
 export const updateFavoriteColor = (value) => ({
   type: UPDATEFAVORITECOLOR,
+  payload: value,
+});
+
+export const updateDancerVisibility = (value) => ({
+  type: UPDATEDANCERVISIBILITY,
   payload: value,
 });

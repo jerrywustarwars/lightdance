@@ -22,6 +22,7 @@ const initialState = {
     { id: 3, armorIndex: 2, partIndex: 0, hidden: false },
   ],
   favoriteColor: [],
+  dancerVisibility: [false, false, false, false, false, false, false], // 初始全部隱藏
 };
 
 export const profiles = (state = initialState, action) => {
@@ -164,6 +165,8 @@ export const profiles = (state = initialState, action) => {
       return { ...state, showPart: action.payload };
     case "UPDATEFAVORITECOLOR":
       return { ...state, favoriteColor: action.payload };
+    case "UPDATEDANCERVISIBILITY":
+      return { ...state, dancerVisibility: action.payload };
     case "REFRESH":
       return initialState;
     default:

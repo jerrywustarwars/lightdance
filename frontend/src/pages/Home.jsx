@@ -3,6 +3,7 @@ import "./Home.css";
 import ControlPanel from "../components/ControlPanel.jsx";
 import Palette from "../components/Palette.jsx";
 import People from "../components/People.jsx";
+import DancerToggle from "../components/DancerToggle.jsx";
 import { MdOutput, MdInput } from "react-icons/md";
 import { FiEdit } from "react-icons/fi";
 import { useEffect, useState } from "react";
@@ -155,15 +156,20 @@ function Home({ rgba, setRgba, setButtonState }) {
         }
         mergedResults.push({
           time: Math.floor(mergedItem.time / 50),
-          head: mergedItem[0],
-          shoulder: mergedItem[1],
-          chest: mergedItem[2],
-          front: mergedItem[3],
-          skirt: mergedItem[4],
-          leg: mergedItem[5],
-          shoes: mergedItem[6],
-          weap_1: mergedItem[7],
-          weap_2: mergedItem[8],
+          hat: mergedItem[0],      // 0: 帽子
+          head: mergedItem[1],     // 1: 頭部
+          armL: mergedItem[2],     // 2: 左手臂
+          armR: mergedItem[3],     // 3: 右手臂
+          chestL: mergedItem[4],   // 4: 左胸
+          chestR: mergedItem[5],   // 5: 右胸
+          tie: mergedItem[6],      // 6: 領帶
+          gloveL: mergedItem[7],   // 7: 左手套
+          gloveR: mergedItem[8],   // 8: 右手套
+          belt: mergedItem[9],     // 9: 腰帶
+          legL: mergedItem[10],    // 10: 左腿
+          legR: mergedItem[11],    // 11: 右腿
+          shoeL: mergedItem[12],   // 12: 左鞋
+          shoeR: mergedItem[13],   // 13: 右鞋
         });
       }
       console.log(mergedResults);
@@ -294,6 +300,7 @@ function Home({ rgba, setRgba, setButtonState }) {
           {listitem}
           <div className="people-container">
             <People />
+            <DancerToggle />
           </div>
         </div>
 

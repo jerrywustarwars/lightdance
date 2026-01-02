@@ -46,6 +46,7 @@ const MotionNYCU = () => {
         style={{ position: "relative" }}
         ref={scope}
       >
+        {/* N */}
         <motion.line
           x1={startingX}
           y1={startingY}
@@ -70,7 +71,7 @@ const MotionNYCU = () => {
           stroke="yellow"
           initial={{ opacity: 0, pathLength: 0 }}
         />
-
+        {/* Y */}
         <motion.line
           x1={startingX + 2.5 * letterWidth}
           y1={startingY + height}
@@ -95,7 +96,7 @@ const MotionNYCU = () => {
           stroke="yellow"
           initial={{ opacity: 0, pathLength: 0 }}
         />
-
+        {/* C */}
         <motion.line
           x1={startingX + 4 * letterWidth}
           y1={startingY}
@@ -121,6 +122,7 @@ const MotionNYCU = () => {
           initial={{ opacity: 0, pathLength: 0 }}
         />
 
+        {/* U */}
         <motion.line
           x1={startingX + 6 * letterWidth}
           y1={startingY}
@@ -145,7 +147,7 @@ const MotionNYCU = () => {
           stroke="yellow"
           initial={{ opacity: 0, pathLength: 0 }}
         />
-
+        {/* E */}
         <motion.line
           x1={startingX + 9 * letterWidth}
           y1={startingY + height}
@@ -178,7 +180,7 @@ const MotionNYCU = () => {
           stroke="yellow"
           initial={{ opacity: 0, pathLength: 0 }}
         />
-
+        {/* C */}
         <motion.line
           x1={startingX + 11 * letterWidth}
           y1={startingY}
@@ -203,7 +205,7 @@ const MotionNYCU = () => {
           stroke="yellow"
           initial={{ opacity: 0, pathLength: 0 }}
         />
-
+        {/* E */}
         <motion.line
           x1={startingX + 13 * letterWidth}
           y1={startingY + height}
@@ -237,6 +239,32 @@ const MotionNYCU = () => {
           initial={{ opacity: 0, pathLength: 0 }}
         />
       </motion.svg>
+      
+      {/* moving light spot */}
+      {[...Array(20)].map((_, i) => (
+        <motion.div
+          key={i}
+          style={{
+            position: "absolute",
+            width: "3px",
+            height: "3px",
+            background: "yellow",
+            borderRadius: "50%",
+            left: `${20 + Math.random() * 60}%`,
+            top: `${30 + Math.random() * 40}%`,
+          }}
+          animate={{
+            scale: [0, 1, 0],
+            opacity: [0, 0.8, 0],
+            y: [0, -30, -60],
+          }}
+          transition={{
+            duration: 2,
+            repeat: Infinity,
+            delay: i * 0.15,
+          }}
+        />
+      ))}
     </>
   );
 };
