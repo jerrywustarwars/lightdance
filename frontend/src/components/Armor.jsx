@@ -23,19 +23,20 @@ const Armor = (props) => {
   // 新的部位名稱
   const partNames = [
     "hat",           // 0:帽子
-    "head",          // 1:頭部
-    "armL",          // 2:左手臂
-    "armR",          // 3:右手臂
-    "chestL",        // 4:左胸
-    "chestR",        // 5:右胸
+    "face",          // 1:臉部
+    "chestL",        // 2:左胸
+    "chestR",        // 3:右胸
+    "armL",          // 4:左手臂
+    "armR",          // 5:右手臂
     "tie",           // 6:領帶
-    "gloveL",        // 7:左手套
-    "gloveR",        // 8:右手套
-    "belt",          // 9:腰帶
+    "belt",          // 7:腰帶
+    "gloveL",        // 8:左手套
+    "gloveR",        // 9:右手套
     "legL",          // 10:左腿
     "legR",          // 11:右腿
     "shoeL",         // 12:左鞋
     "shoeR",         // 13:右鞋
+    "board",          // 14:板子
   ];
 
   // 根據部位名稱和當前時間計算顏色
