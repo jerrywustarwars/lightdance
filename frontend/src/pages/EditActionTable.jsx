@@ -24,6 +24,7 @@ function EditActionTable() {
     "右腿",      // 11
     "左鞋",      // 12
     "右鞋",      // 13
+    "板子",    // 14
   ];
 
   // 選擇 Armor & Part
