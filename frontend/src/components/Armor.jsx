@@ -20,23 +20,23 @@ const Armor = (props) => {
     console.log("actionTable: ", actionTable);
   }, [actionTable]);
 
-  // 新的部位名稱
+  // 新的部位名稱（對應 Home.jsx 的輸出映射）
   const partNames = [
     "hat",           // 0:帽子
     "face",          // 1:臉部
-    "chestL",        // 2:左胸
-    "chestR",        // 3:右胸
-    "armL",          // 4:左手臂
-    "armR",          // 5:右手臂
+    "armL",          // 2:左手臂
+    "armR",          // 3:右手臂
+    "chestL",        // 4:左胸
+    "chestR",        // 5:右胸
     "tie",           // 6:領帶
-    "belt",          // 7:腰帶
-    "gloveL",        // 8:左手套
-    "gloveR",        // 9:右手套
+    "gloveL",        // 7:左手套
+    "gloveR",        // 8:右手套
+    "belt",          // 9:腰帶
     "legL",          // 10:左腿
     "legR",          // 11:右腿
     "shoeL",         // 12:左鞋
     "shoeR",         // 13:右鞋
-    "board",          // 14:板子
+    "board",         // 14:板子
   ];
 
   // 根據部位名稱和當前時間計算顏色
@@ -248,7 +248,7 @@ const Armor = (props) => {
           onClick={() => handleColorChange(0)}
         />
 
-        {/*1:head*/}
+        {/*1:face - 臉部*/}
         {isSelected(1) && renderHighlight(null, null, null, null, "circle", {
           r: 30,
           cx: 121,
@@ -258,25 +258,14 @@ const Armor = (props) => {
           cx="121"
           cy="68"
           r="30"
-          fill={colors.head}
+          fill={colors.face}
           onClick={() => handleColorChange(1)}
         />
 
-        {/*2:armL*/}
+        {/*2:armL - 左手臂（螢幕左側）*/}
         {isSelected(2) && renderHighlight(35, 103, 32, 65)}
         <rect
           x="35"
-          y="103"
-          width="32"
-          height="65"
-          fill={colors.armR}
-          onClick={() => handleColorChange(3)}
-        />
-
-        {/*3:armR*/}
-        {isSelected(3) && renderHighlight(175, 103, 32, 65)}
-        <rect
-          x="175"
           y="103"
           width="32"
           height="65"
@@ -284,26 +273,37 @@ const Armor = (props) => {
           onClick={() => handleColorChange(2)}
         />
 
-        {/*4:chestL - 左胸*/}
+        {/*3:armR - 右手臂（螢幕右側）*/}
+        {isSelected(3) && renderHighlight(175, 103, 32, 65)}
+        <rect
+          x="175"
+          y="103"
+          width="32"
+          height="65"
+          fill={colors.armR}
+          onClick={() => handleColorChange(3)}
+        />
+
+        {/*4:chestL - 左胸（螢幕左側）*/}
         {isSelected(4) && renderHighlight(72, 103, 28, 65)}
         <rect
           x="72"
           y="103"
           width="28"
           height="65"
-          fill={colors.chestR}
-          onClick={() => handleColorChange(5)}
+          fill={colors.chestL}
+          onClick={() => handleColorChange(4)}
         />
 
-        {/*5:chestR - 右胸*/}
+        {/*5:chestR - 右胸（螢幕右側）*/}
         {isSelected(5) && renderHighlight(142, 103, 28, 65)}
         <rect
           x="142"
           y="103"
           width="28"
           height="65"
-          fill={colors.chestL}
-          onClick={() => handleColorChange(4)}
+          fill={colors.chestR}
+          onClick={() => handleColorChange(5)}
         />
 
         {/*6:tie - 領帶*/}
@@ -332,26 +332,26 @@ const Armor = (props) => {
         />
 
 
-        {/*7:gloveL - 左手套*/}
+        {/*7:gloveL - 左手套（螢幕左側）*/}
         {isSelected(7) && renderHighlight(35, 173, 32, 35)}
         <rect
           x="35"
           y="173"
           width="32"
           height="35"
-          fill={colors.gloveR}
-          onClick={() => handleColorChange(8)}
+          fill={colors.gloveL}
+          onClick={() => handleColorChange(7)}
         />
 
-        {/*8:gloveR - 右手套*/}
+        {/*8:gloveR - 右手套（螢幕右側）*/}
         {isSelected(8) && renderHighlight(175, 173, 32, 35)}
         <rect
           x="175"
           y="173"
           width="32"
           height="35"
-          fill={colors.gloveL}
-          onClick={() => handleColorChange(7)}
+          fill={colors.gloveR}
+          onClick={() => handleColorChange(8)}
         />
 
         {/*9:belt - 腰帶*/}
@@ -365,21 +365,10 @@ const Armor = (props) => {
           onClick={() => handleColorChange(9)}
         />
 
-        {/*10:legL - 左腿*/}
+        {/*10:legL - 左腿（螢幕左側）*/}
         {isSelected(10) && renderHighlight(85, 213, 28, 80)}
         <rect
           x="85"
-          y="213"
-          width="28"
-          height="80"
-          fill={colors.legR}
-          onClick={() => handleColorChange(11)}
-        />
-
-        {/*11:legR - 右腿*/}
-        {isSelected(11) && renderHighlight(129, 213, 28, 80)}
-        <rect
-          x="129"
           y="213"
           width="28"
           height="80"
@@ -387,26 +376,37 @@ const Armor = (props) => {
           onClick={() => handleColorChange(10)}
         />
 
-        {/*12:shoeL - 左鞋*/}
+        {/*11:legR - 右腿（螢幕右側）*/}
+        {isSelected(11) && renderHighlight(129, 213, 28, 80)}
+        <rect
+          x="129"
+          y="213"
+          width="28"
+          height="80"
+          fill={colors.legR}
+          onClick={() => handleColorChange(11)}
+        />
+
+        {/*12:shoeL - 左鞋（螢幕左側）*/}
         {isSelected(12) && renderHighlight(75, 298, 45, 25)}
         <rect
           x="75"
           y="298"
           width="45"
           height="15"
-          fill={colors.shoeR}
-          onClick={() => handleColorChange(13)}
+          fill={colors.shoeL}
+          onClick={() => handleColorChange(12)}
         />
 
-        {/*13:shoeR - 右鞋*/}
+        {/*13:shoeR - 右鞋（螢幕右側）*/}
         {isSelected(13) && renderHighlight(122, 298, 45, 25)}
         <rect
           x="122"
           y="298"
           width="45"
           height="15"
-          fill={colors.shoeL}
-          onClick={() => handleColorChange(12)}
+          fill={colors.shoeR}
+          onClick={() => handleColorChange(13)}
         />
         </g>
       </svg>
