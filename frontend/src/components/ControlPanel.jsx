@@ -36,7 +36,7 @@ function ControlPanel({ setButtonState }) {
   const dispatch = useDispatch();
   const partName = [
     "帽子",      // 0
-    "頭",        // 1
+    "臉",        // 1
     "左手臂",    // 2
     "右手臂",    // 3
     "左胸",      // 4

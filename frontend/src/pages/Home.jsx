@@ -157,15 +157,15 @@ function Home({ rgba, setRgba, setButtonState }) {
         mergedResults.push({
           time: Math.floor(mergedItem.time / 50),
           hat: mergedItem[0],      // 0: 帽子
-          head: mergedItem[1],     // 1: 頭部
-          armL: mergedItem[2],     // 2: 左手臂
-          armR: mergedItem[3],     // 3: 右手臂
-          chestL: mergedItem[4],   // 4: 左胸
-          chestR: mergedItem[5],   // 5: 右胸
+          face: mergedItem[1],     // 1: 臉部
+          chestL: mergedItem[2],   // 2: 左胸
+          chestR: mergedItem[3],   // 3: 右胸
+          armL: mergedItem[4],     // 4: 左手臂
+          armR: mergedItem[5],     // 5: 右手臂
           tie: mergedItem[6],      // 6: 領帶
-          gloveL: mergedItem[7],   // 7: 左手套
-          gloveR: mergedItem[8],   // 8: 右手套
-          belt: mergedItem[9],     // 9: 腰帶
+          belt: mergedItem[7],     // 7: 腰帶
+          gloveL: mergedItem[8],   // 8: 左手套
+          gloveR: mergedItem[9],   // 9: 右手套
           legL: mergedItem[10],    // 10: 左腿
           legR: mergedItem[11],    // 11: 右腿
           shoeL: mergedItem[12],   // 12: 左鞋
