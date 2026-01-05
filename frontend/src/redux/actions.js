@@ -19,6 +19,7 @@ export const UPDATEMAGNETACTIVE = "UPDATEMAGNETACTIVE";
 export const UPDATESHOWPART = "UPDATESHOWPART";
 export const UPDATEFAVORITECOLOR = "UPDATEFAVORITECOLOR";
 export const UPDATEDANCERVISIBILITY = "UPDATEDANCERVISIBILITY";
+export const UPDATECLIPBOARD = "UPDATECLIPBOARD";
 
 export const updateUser = (value) => ({ type: UPDATEUSER, payload: value });
 export const updateFullpeaks = (value) => ({
@@ -118,5 +119,10 @@ export const updateFavoriteColor = (value) => ({
 
 export const updateDancerVisibility = (value) => ({
   type: UPDATEDANCERVISIBILITY,
+  payload: value,
+});
+
+export const updateClipboard = (value) => ({
+  type: UPDATECLIPBOARD,
   payload: value,
 });
