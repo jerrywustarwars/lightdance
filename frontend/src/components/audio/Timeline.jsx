@@ -9,6 +9,11 @@ import {
 } from "../../redux/actions";
 import cloneDeep from "lodash/cloneDeep";
 import { produce } from "immer";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import {
+  faRotateRight,
+  faRotateLeft,
+} from "@fortawesome/free-solid-svg-icons";
 
 // Timeline 組件
 const Timeline = forwardRef(
@@ -457,10 +462,36 @@ const Timeline = forwardRef(
             selectionBorderColor = "#00FFFF"; // 改成青色
           }
 
+          const currentBlockData = actionTable[armorIndex]?.[partIndex]?.[index];
+          const isFade = currentBlockData?.change?.flag === 1 && currentBlockData?.change?.dir === 1;
+
+          let backgroundStyle;
+
+          if (isFade) {
+            const partTimeline = actionTable[armorIndex]?.[partIndex];
+            const nextBlock = partTimeline?.[index + 1];
+            const nextNextBlock = partTimeline?.[index + 2];
+            const isBlack = (c) => c && c.R === 0 && c.G === 0 && c.B === 0;
+
+            let endColor = { R: 0, G: 0, B: 0, A: 1 }; // Default to black
+
+            if (nextBlock && !isBlack(nextBlock.color)) {
+              endColor = nextBlock.color;
+            } else if (nextNextBlock) {
+              endColor = nextNextBlock.color;
+            }
+
+            const startColorString = `rgba(${color.R}, ${color.G}, ${color.B}, ${color.A})`;
+            const endColorString = `rgba(${endColor.R}, ${endColor.G}, ${endColor.B}, ${endColor.A})`;
+            backgroundStyle = `linear-gradient(to right, ${startColorString}, ${endColorString})`;
+          } else {
+            backgroundStyle = `rgba(${color.R}, ${color.G}, ${color.B}, ${color.A})`;
+          }
+
           // 設定 blockStyle
           const blockStyle = {
             display: "inline-block",
-            backgroundColor: `rgba(${color.R}, ${color.G}, ${color.B}, ${color.A})`,
+            background: backgroundStyle,
             width: `${(block.durationTime / duration) * 100}%`,
             height: "90%",
             position: "relative",
@@ -505,9 +536,38 @@ const Timeline = forwardRef(
               className="timeline-block"
               onMouseDown={(e) => handleMouseDown(e, index)} // 點擊方塊選中
             >
+              {actionTable[armorIndex]?.[partIndex]?.[index]?.change?.flag === 1 && (
+                actionTable[armorIndex]?.[partIndex]?.[index]?.change?.dir === 1 ? (
+                  // Clockwise rotation icon
+                  <FontAwesomeIcon
+                    icon={faRotateRight}
+                    size="xl" // Set size to "xl"
+                    style={{
+                      position: "absolute",
+                      top: "5px",
+                      right: "5px",
+                      color: "white",
+                      zIndex: 2,
+                    }}
+                  />
+                ) : (
+                  // Counter-clockwise rotation icon
+                  <FontAwesomeIcon
+                    icon={faRotateLeft}
+                    size="xl" // Set size to "xl"
+                    style={{
+                      position: "absolute",
+                      top: "5px",
+                      right: "5px",
+                      color: "white",
+                      zIndex: 2,
+                    }}
+                  />
+                )
+              )}
               {" "}
               {/*
-              {/* 如果不是黑色方块，渲染左右虚拟检测块  
+              {/* 如果不是黑色方块，渲染左右虛擬檢測塊
               {!(
                 block.color.R === 0 &&
                 block.color.G === 0 &&
