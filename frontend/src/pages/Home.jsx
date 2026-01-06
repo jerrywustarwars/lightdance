@@ -170,6 +170,7 @@ function Home({ rgba, setRgba, setButtonState }) {
           legR: mergedItem[11],    // 11: 右腿
           shoeL: mergedItem[12],   // 12: 左鞋
           shoeR: mergedItem[13],   // 13: 右鞋
+          board: 0,
         });
       }
       console.log(mergedResults);

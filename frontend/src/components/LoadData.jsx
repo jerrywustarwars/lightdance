@@ -87,7 +87,7 @@ function Dropdown({ userName, setIsDirty, isDirty, setIsLoaded, isLoaded }) {
     const apiEndpoint = `${API_ENDPOINTS.BASE}/raw/${user}/${time}`; // Example API
     // Use fetch to send a GET request
     fetch(apiEndpoint)
-      .then((response) => {
+      .then((response) => {a
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -95,24 +95,31 @@ function Dropdown({ userName, setIsDirty, isDirty, setIsLoaded, isLoaded }) {
       })
       .then((data) => {
         console.log("Fetched Data:", data); // Log the returned data
-        // console.log(data.players); // Log the returned data
-        // console.log("Table : ", actionTable);
-        let getData = JSON.parse(data.raw_data);
+
+        // Check if the backend returned an error message in the body
+        if (data && data.message) {
+          throw new Error(`Backend error: ${data.message}`);
+        }
+
+        let getData;
+        if (data && typeof data.raw_data !== "undefined") {
+          // If raw_data exists, parse it
+          getData = JSON.parse(data.raw_data);
+        } else {
+          // Otherwise, assume the data object itself is what we need
+          console.warn(
+            "Response did not contain 'raw_data' field. Assuming the whole data object is the actionTable."
+          );
+          getData = data;
+        }
+
         console.log("getData : ", getData);
         dispatch(updateActionTable(getData));
-        // console.log("After : ", restoredActionTable);
-
-        // let timeListArray = data.list;
-        // setTimeList(timeListArray);
-        // const uniqueArray = [
-        //   ...new Set(timeListArray.map((array) => array.user)),
-        // ];
-        // setUserList(uniqueArray);
-        // // console.log(uniqueArray);
-        // setAnchorIndex(0);
       })
       .catch((error) => {
+        // This will now catch both HTTP errors and backend errors from the response body
         console.error("Error fetching data:", error); // Handle any errors
+        alert(`Failed to load data: ${error.message}`); // Also alert the user
       });
   }
 
