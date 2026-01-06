@@ -247,7 +247,8 @@ function Home({ rgba, setRgba, setButtonState }) {
   
       players.push(mergedResults);
     }
-  
+    
+    console.log("players : ", players);
     const result = { players };
   
     let BearerToken = "";
