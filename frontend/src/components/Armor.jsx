@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import "./Armor.css";
 import {
@@ -24,14 +24,14 @@ const Armor = (props) => {
   const partNames = [
     "hat",           // 0:帽子
     "face",          // 1:臉部
-    "armL",          // 2:左手臂
-    "armR",          // 3:右手臂
-    "chestL",        // 4:左胸
-    "chestR",        // 5:右胸
+    "chestL",        // 2:左胸
+    "chestR",        // 3:右胸
+    "armL",          // 4:左手臂
+    "armR",          // 5:右手臂
     "tie",           // 6:領帶
-    "gloveL",        // 7:左手套
-    "gloveR",        // 8:右手套
-    "belt",          // 9:腰帶
+    "belt",          // 7:腰帶
+    "gloveL",        // 8:左手套
+    "gloveR",        // 9:右手套
     "legL",          // 10:左腿
     "legR",          // 11:右腿
     "shoeL",         // 12:左鞋
@@ -262,47 +262,47 @@ const Armor = (props) => {
           onClick={() => handleColorChange(1)}
         />
 
-        {/*2:armL - 左手臂（螢幕左側）*/}
-        {isSelected(2) && renderHighlight(35, 103, 32, 65)}
-        <rect
-          x="35"
-          y="103"
-          width="32"
-          height="65"
-          fill={colors.armL}
-          onClick={() => handleColorChange(2)}
-        />
-
-        {/*3:armR - 右手臂（螢幕右側）*/}
-        {isSelected(3) && renderHighlight(175, 103, 32, 65)}
-        <rect
-          x="175"
-          y="103"
-          width="32"
-          height="65"
-          fill={colors.armR}
-          onClick={() => handleColorChange(3)}
-        />
-
-        {/*4:chestL - 左胸（螢幕左側）*/}
-        {isSelected(4) && renderHighlight(72, 103, 28, 65)}
+        {/*2:chestL - 左胸（螢幕左側）*/}
+        {isSelected(2) && renderHighlight(72, 103, 28, 65)}
         <rect
           x="72"
           y="103"
           width="28"
           height="65"
           fill={colors.chestL}
-          onClick={() => handleColorChange(4)}
+          onClick={() => handleColorChange(2)}
         />
 
-        {/*5:chestR - 右胸（螢幕右側）*/}
-        {isSelected(5) && renderHighlight(142, 103, 28, 65)}
+        {/*3:chestR - 右胸（螢幕右側）*/}
+        {isSelected(3) && renderHighlight(142, 103, 28, 65)}
         <rect
           x="142"
           y="103"
           width="28"
           height="65"
           fill={colors.chestR}
+          onClick={() => handleColorChange(3)}
+        />
+
+        {/*4:armL - 左手臂（螢幕左側）*/}
+        {isSelected(4) && renderHighlight(35, 103, 32, 65)}
+        <rect
+          x="35"
+          y="103"
+          width="32"
+          height="65"
+          fill={colors.armL}
+          onClick={() => handleColorChange(4)}
+        />
+
+        {/*5:armR - 右手臂（螢幕右側）*/}
+        {isSelected(5) && renderHighlight(175, 103, 32, 65)}
+        <rect
+          x="175"
+          y="103"
+          width="32"
+          height="65"
+          fill={colors.armR}
           onClick={() => handleColorChange(5)}
         />
 
@@ -332,36 +332,36 @@ const Armor = (props) => {
         />
 
 
-        {/*7:gloveL - 左手套（螢幕左側）*/}
-        {isSelected(7) && renderHighlight(35, 173, 32, 35)}
-        <rect
-          x="35"
-          y="173"
-          width="32"
-          height="35"
-          fill={colors.gloveL}
-          onClick={() => handleColorChange(7)}
-        />
-
-        {/*8:gloveR - 右手套（螢幕右側）*/}
-        {isSelected(8) && renderHighlight(175, 173, 32, 35)}
-        <rect
-          x="175"
-          y="173"
-          width="32"
-          height="35"
-          fill={colors.gloveR}
-          onClick={() => handleColorChange(8)}
-        />
-
-        {/*9:belt - 腰帶*/}
-        {isSelected(9) && renderHighlight(78, 173, 86, 35)}
+        {/*7:belt - 腰帶*/}
+        {isSelected(7) && renderHighlight(78, 173, 86, 35)}
         <rect
           x="78"
           y="173"
           width="86"
           height="35"
           fill={colors.belt}
+          onClick={() => handleColorChange(7)}
+        />
+
+        {/*8:gloveL - 左手套（螢幕左側）*/}
+        {isSelected(8) && renderHighlight(35, 173, 32, 35)}
+        <rect
+          x="35"
+          y="173"
+          width="32"
+          height="35"
+          fill={colors.gloveL}
+          onClick={() => handleColorChange(8)}
+        />
+
+        {/*9:gloveR - 右手套（螢幕右側）*/}
+        {isSelected(9) && renderHighlight(175, 173, 32, 35)}
+        <rect
+          x="175"
+          y="173"
+          width="32"
+          height="35"
+          fill={colors.gloveR}
           onClick={() => handleColorChange(9)}
         />
 
