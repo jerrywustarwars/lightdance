@@ -4,17 +4,21 @@ using namespace std;
 
 // 符合韌體位元格式的封裝函數
 unsigned int toFirmwareInt(int r, int g, int b, int bright6bit, int trans, int dir) {
-    // 前 24 位元為 RGB 顏色 (R << 16 | G << 8 | B)
     unsigned int color24 = ((unsigned int)(r & 0xFF) << 16) |
                            ((unsigned int)(g & 0xFF) << 8)  |
                            ((unsigned int)(b & 0xFF));
     
-    // 最後一個 byte 填入: | 亮度(6 bits) | 轉場(1 bit) | 方向(1 bit) |
+    // 封裝格式：| 顏色(24bit) | 亮度(6bit) | 轉場(1bit) | 方向(1bit) |
     unsigned int lastByte = ((bright6bit & 0x3F) << 2) | 
                             ((trans & 0x01) << 1) | 
                             (dir & 0x01);
     
     return (color24 << 8) | lastByte;
+}
+
+// 線性插值函數：計算兩個顏色中間的數值
+int lerp(int start, int end, float fraction) {
+    return (int)(start + (end - start) * fraction);
 }
 
 int main() {
@@ -27,55 +31,47 @@ int main() {
     };
     
     int playerCount = 7;
-    int dataCount = 2; 
-    int timeRange = 1500;
+    int dataCount = 20;   // 增加影格數量以觀察漸變效果
     int partCount = bodyParts.size();
 
     cout << "{\n  \"players\": [\n";
 
     for (int p = 0; p < playerCount; p++) {
-        struct Frame {
-            int time;
-            vector<unsigned int> partValues;
-        };
-        vector<Frame> frames(dataCount);
-        vector<int> used(timeRange, 0);
+        // 定義起始顏色與結束顏色，讓每個部位產生漸變
+        struct Color { int r, g, b; };
+        vector<Color> startColors(partCount);
+        vector<Color> endColors(partCount);
         
-        for (int i = 0; i < dataCount; i++) {
-            int t = rand() % timeRange;
-            while (used[t]) t = rand() % timeRange;
-            used[t] = 1;
-            
-            frames[i].time = t;
-            frames[i].partValues.resize(partCount);
-            
-            for (int j = 0; j < partCount; j++) {
-                int r = rand() % 256; 
-                int g = rand() % 256; 
-                int b = rand() % 256; 
-                int brightness = 63; // 6-bit 最大值
-                int trans = 0;
-                int dir = 0;
-                
-                frames[i].partValues[j] = toFirmwareInt(r, g, b, brightness, trans, dir);
-            }
+        for(int j = 0; j < partCount; j++) {
+            startColors[j] = {rand() % 256, rand() % 256, rand() % 256};
+            endColors[j]   = {rand() % 256, rand() % 256, rand() % 256};
         }
-        
-        sort(frames.begin(), frames.end(), [](const Frame &a, const Frame &b) {
-            return a.time < b.time;
-        });
 
-        // 輸出 JSON，將數值格式化為十六進位
         cout << "    [\n";
         for (int i = 0; i < dataCount; i++) {
-            cout << "      {\"time\": " << frames[i].time;
+            // 計算目前影格佔總進度的比例 (0.0 到 1.0)
+            float fraction = (float)i / (dataCount - 1);
+            
+            // 假設每隔 10 個單位時間一個影格 (韌體讀取後會變為 500ms)
+            int timeValue = i * 10; 
+
+            cout << "      {\"time\": " << timeValue;
             for (int j = 0; j < partCount; j++) {
-                // 使用 hex 輸出十六進位，showbase 加上 0x，uppercase 變大寫
+                // 根據進度計算 R, G, B 的插值
+                int r = lerp(startColors[j].r, endColors[j].r, fraction);
+                int g = lerp(startColors[j].g, endColors[j].g, fraction);
+                int b = lerp(startColors[j].b, endColors[j].b, fraction);
+                
+                int brightness = 63; // 固定最大亮度
+                int trans = 1;      // 開啟轉場旗標，讓韌體端知道要執行漸變
+                int dir = 0;
+                
+                unsigned int val = toFirmwareInt(r, g, b, brightness, trans, dir);
+                
                 cout << ", \"" << bodyParts[j] << "\": \"0x" 
-                     << hex << uppercase << setw(8) << setfill('0') << frames[i].partValues[j] << "\"";
+                     << hex << uppercase << setw(8) << setfill('0') << val << dec << "\"";
             }
-            // 回復為十進位輸出，避免影響下一次迴圈的時間戳 (time)
-            cout << dec << "}" << (i == dataCount - 1 ? "" : ",") << "\n";
+            cout << "}" << (i == dataCount - 1 ? "" : ",") << "\n";
         }
         cout << "    ]" << (p == playerCount - 1 ? "" : ",") << "\n";
     }
