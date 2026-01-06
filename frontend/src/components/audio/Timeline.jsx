@@ -462,10 +462,36 @@ const Timeline = forwardRef(
             selectionBorderColor = "#00FFFF"; // 改成青色
           }
 
+          const currentBlockData = actionTable[armorIndex]?.[partIndex]?.[index];
+          const isFade = currentBlockData?.change?.flag === 1 && currentBlockData?.change?.dir === 1;
+
+          let backgroundStyle;
+
+          if (isFade) {
+            const partTimeline = actionTable[armorIndex]?.[partIndex];
+            const nextBlock = partTimeline?.[index + 1];
+            const nextNextBlock = partTimeline?.[index + 2];
+            const isBlack = (c) => c && c.R === 0 && c.G === 0 && c.B === 0;
+
+            let endColor = { R: 0, G: 0, B: 0, A: 1 }; // Default to black
+
+            if (nextBlock && !isBlack(nextBlock.color)) {
+              endColor = nextBlock.color;
+            } else if (nextNextBlock) {
+              endColor = nextNextBlock.color;
+            }
+
+            const startColorString = `rgba(${color.R}, ${color.G}, ${color.B}, ${color.A})`;
+            const endColorString = `rgba(${endColor.R}, ${endColor.G}, ${endColor.B}, ${endColor.A})`;
+            backgroundStyle = `linear-gradient(to right, ${startColorString}, ${endColorString})`;
+          } else {
+            backgroundStyle = `rgba(${color.R}, ${color.G}, ${color.B}, ${color.A})`;
+          }
+
           // 設定 blockStyle
           const blockStyle = {
             display: "inline-block",
-            backgroundColor: `rgba(${color.R}, ${color.G}, ${color.B}, ${color.A})`,
+            background: backgroundStyle,
             width: `${(block.durationTime / duration) * 100}%`,
             height: "90%",
             position: "relative",
