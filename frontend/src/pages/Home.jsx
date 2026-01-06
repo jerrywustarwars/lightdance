@@ -105,150 +105,166 @@ function Home({ rgba, setRgba, setButtonState }) {
   }
 
   async function handleOutput() {
-    // 生出光表給硬體用
+    console.log("UPLOAD_RAW:", API_ENDPOINTS.UPLOAD_RAW);
+    console.log("UPLOAD_ITEMS:", API_ENDPOINTS.UPLOAD_ITEMS);
     setIsDirty(false);
+  
     const players = [];
-    const armorIndices = Object.keys(actionTable); // 因為actiontable是物件，所以要先取出key
+    const armorIndices = Object.keys(actionTable);
+  
     for (let i = 0; i < armorIndices.length; i++) {
       const armorIndex = armorIndices[i];
-      const partGroup = actionTable[armorIndex]; // 一個人的所有部位
-      console.log(partGroup);
-
+      const partGroup = actionTable[armorIndex];
+  
       let times = new Set();
+  
       for (let key in partGroup) {
         const partArray = partGroup[key];
         if (!Array.isArray(partArray)) continue;
-
+  
         partArray.forEach((item) => {
           const roundedTime = Math.ceil(item.time / 50) * 50;
           times.add(roundedTime);
         });
       }
-
-      // 生成唯一的時間點數組並排序
+  
       let uniqueTimes = [...times]
-        .map((time) => Math.round(time))
+        .map((t) => Math.round(t))
         .sort((a, b) => a - b);
-
+  
       let mergedResults = [];
-
-      // 遍歷 uniqueTimes 中的每個時間點
+  
       for (let j = 0; j < uniqueTimes.length; j++) {
-        // 每個人的每個時間點
-        let mergedItem = {
-          time: uniqueTimes[j],
+        const time = uniqueTimes[j];
+  
+        const mergedItem = {
+          time: Math.floor(time / 50),
         };
+  
         for (let key in partGroup) {
-          // 每個人的每個部位
-          let itemsAtSameTime = partGroup[key].filter(
-            (el) => Math.ceil(el.time / 50) * 50 === uniqueTimes[j]
-          );
-          let item =
-            itemsAtSameTime.find(
-              (el) =>
-                el.color?.R !== 0 || el.color?.G !== 0 || el.color?.B !== 0
-            ) || itemsAtSameTime[0]; // 如果都黑色，就選第一個
-
-          if (item) {
-            // 將對應的 item 的數據合併到 mergedItem 中
-            mergedItem[key] = item.color;
+          const partTimeline = partGroup[key];
+          if (!Array.isArray(partTimeline) || partTimeline.length === 0) continue;
+  
+          let activeBlock = null;
+          let activeIndex = -1;
+  
+          for (let k = 0; k < partTimeline.length; k++) {
+            if (partTimeline[k].time <= time) {
+              activeBlock = partTimeline[k];
+              activeIndex = k;
+            } else {
+              break;
+            }
           }
+  
+          let R = 0,
+            G = 0,
+            B = 0,
+            A = 1,
+            linear = 0;
+  
+          if (activeBlock) {
+            if (activeBlock.linear === 1) {
+              const nextBlock = partTimeline[activeIndex + 1];
+  
+              if (nextBlock && nextBlock.time > activeBlock.time) {
+                const f =
+                  (time - activeBlock.time) /
+                  (nextBlock.time - activeBlock.time);
+  
+                R = Math.round(
+                  activeBlock.color.R * (1 - f) + nextBlock.color.R * f
+                );
+                G = Math.round(
+                  activeBlock.color.G * (1 - f) + nextBlock.color.G * f
+                );
+                B = Math.round(
+                  activeBlock.color.B * (1 - f) + nextBlock.color.B * f
+                );
+                A = activeBlock.color.A * (1 - f) + nextBlock.color.A * f;
+                linear = 1;
+              } else {
+                R = activeBlock.color.R;
+                G = activeBlock.color.G;
+                B = activeBlock.color.B;
+                A = activeBlock.color.A;
+                linear = 1;
+              }
+            } else {
+              R = activeBlock.color.R;
+              G = activeBlock.color.G;
+              B = activeBlock.color.B;
+              A = activeBlock.color.A;
+              linear = 0;
+            }
+          }
+  
+          const alpha7 = Math.min(Math.floor(A * 128), 127);
+          const packedByte = (alpha7 << 1) | (linear & 1);
+  
+          const color32 =
+            ((R & 0xff) << 24) |
+            ((G & 0xff) << 16) |
+            ((B & 0xff) << 8) |
+            (packedByte & 0xff);
+  
+          mergedItem[key] = color32 >>> 0;
         }
+  
         mergedResults.push({
-          time: Math.floor(mergedItem.time / 50),
-          hat: mergedItem[0],      // 0: 帽子
-          face: mergedItem[1],     // 1: 臉部
-          chestL: mergedItem[2],   // 2: 左胸
-          chestR: mergedItem[3],   // 3: 右胸
-          armL: mergedItem[4],     // 4: 左手臂
-          armR: mergedItem[5],     // 5: 右手臂
-          tie: mergedItem[6],      // 6: 領帶
-          belt: mergedItem[7],     // 7: 腰帶
-          gloveL: mergedItem[8],   // 8: 左手套
-          gloveR: mergedItem[9],   // 9: 右手套
-          legL: mergedItem[10],    // 10: 左腿
-          legR: mergedItem[11],    // 11: 右腿
-          shoeL: mergedItem[12],   // 12: 左鞋
-          shoeR: mergedItem[13],   // 13: 右鞋
+          time: mergedItem.time,
+          hat: mergedItem[0] ?? 0,
+          face: mergedItem[1] ?? 0,
+          chestL: mergedItem[2] ?? 0,
+          chestR: mergedItem[3] ?? 0,
+          armL: mergedItem[4] ?? 0,
+          armR: mergedItem[5] ?? 0,
+          tie: mergedItem[6] ?? 0,
+          belt: mergedItem[7] ?? 0,
+          gloveL: mergedItem[8] ?? 0,
+          gloveR: mergedItem[9] ?? 0,
+          legL: mergedItem[10] ?? 0,
+          legR: mergedItem[11] ?? 0,
+          shoeL: mergedItem[12] ?? 0,
+          shoeR: mergedItem[13] ?? 0,
           board: 0,
         });
       }
-      console.log(mergedResults);
-
+  
       for (let j = 0; j < mergedResults.length; j++) {
-        for (let item in mergedResults[j]) {
-          if (item !== "time") {
-            let target = mergedResults[j][item];
-            if (target) {
-              // Scale A to fit in 7 bits (0-127)
-              const alphaVal = Math.min(Math.floor(target.A * 128), 127);
-              
-              // Get the linear value, default to 0
-              const linearVal = target.linear || 0;
-
-              // Pack A into bits [7:1] and linear into bit [0]
-              const packedByte = (alphaVal << 1) | linearVal;
-
-              const color =
-                ((target.R & 0xff) << 24) |
-                ((target.G & 0xff) << 16) |
-                ((target.B & 0xff) << 8) |
-                (packedByte & 0xff);
-              let unsignedColor = color >>> 0;
-              mergedResults[j][item] = unsignedColor;
+        if (j > 0) {
+          for (let k in mergedResults[j - 1]) {
+            if (
+              !(k in mergedResults[j]) ||
+              mergedResults[j][k] === undefined ||
+              mergedResults[j][k] === null
+            ) {
+              mergedResults[j][k] = mergedResults[j - 1][k];
             }
           }
         }
       }
-      // console.log(mergedResults);
+  
       players.push(mergedResults);
     }
-
-    let newPlayer = [];
-
-    players.forEach((group) => {
-      let newGroup = [];
-      let prevElement = null;
-
-      group.forEach((element) => {
-        if (prevElement !== null) {
-          for (let key in prevElement) {
-            // If the key is missing in the current element, copy it from prevElement
-            if (!(key in element) || element[key] === undefined) {
-              element[key] = prevElement[key];
-            }
-          }
-        }
-        prevElement = element;
-        // console.log(prevElement);
-        newGroup.push(element);
-      });
-      newPlayer.push(newGroup);
-    });
-
-    // console.log(JSON.stringify(newPlayer, null, 2));
-
-    // 生成 JSON 對象
-    const result = {
-      players,
-    };
-    // console.log(JSON.stringify(result, null, 2));
-
+  
+    const result = { players };
+  
     let BearerToken = "";
     token === "" ? (BearerToken = " ") : (BearerToken = token);
-
-    // console.log(token);
+  
     handleOutputString(BearerToken);
-
+  
     const response = await fetch(API_ENDPOINTS.UPLOAD_ITEMS, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json", // 這是你後端需要的 Content-Type
-        Authorization: `Bearer ${BearerToken}`, // 如果需要授權，記得帶上 token
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${BearerToken}`,
       },
       body: JSON.stringify(result),
       mode: "cors",
     });
+  
     if (!response.ok) {
       alert("upload failed");
       console.error("Response Error:", response.status, response.statusText);
@@ -257,10 +273,10 @@ function Home({ rgba, setRgba, setButtonState }) {
         `HTTP error! Status: ${response.status}, Message: ${errorText}`
       );
     } else {
-      // alert("upload successful");
       console.log("upload(translated) : ", JSON.stringify(result));
     }
   }
+  
 
   const listitem = [<Palette key="palette-1" rgba={rgba} setRgba={setRgba} />]; // 添加 key
 
