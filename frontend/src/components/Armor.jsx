@@ -73,7 +73,7 @@ const Armor = (props) => {
           const newEntry = {
             time: nowTime,
             color: { ...chosenColor },
-            change: { flag: 0, dir: 0 },
+            linear: 0
           };
 
           const nextElement = updatedPartData[indexToCopy];
@@ -106,27 +106,27 @@ const Armor = (props) => {
             const blackArray2 = {
               time: duration,
               color: { R: 0, G: 0, B: 0, A: 1 },
-              change: { flag: 0, dir: 0 },
+              linear: 0,
             };
             updatedPartData.splice(partData.length, 0, newEntry, blackArray2);
           } else if (!isPreviousBlack && isNextBlack) {
             const blackArray = {
               time: nowTime - blackthreshold,
               color: { R: 0, G: 0, B: 0, A: 1 },
-              change: { flag: 0, dir: 0 },
+              linear: 0,
             };
             updatedPartData.splice(indexToCopy + 1, 0, blackArray, newEntry);
           } else if (!isPreviousBlack && !isNextBlack) {
             const blackArray = {
               time: nowTime - blackthreshold,
               color: { R: 0, G: 0, B: 0, A: 1 },
-              change: { flag: 0, dir: 0 },
+              linear: 0,
             };
             const blackArray2 = {
               time:
                 nextElement?.time - blackthreshold || nowTime + blackthreshold,
               color: { R: 0, G: 0, B: 0, A: 1 },
-              change: { flag: 0, dir: 0 },
+              linear: 0,
             };
             updatedPartData.splice(
               indexToCopy + 1,
@@ -140,7 +140,7 @@ const Armor = (props) => {
               time:
                 nextElement?.time - blackthreshold || nowTime + blackthreshold,
               color: { R: 0, G: 0, B: 0, A: 1 },
-              change: { flag: 0, dir: 0 },
+              linear: 0,
             };
             updatedPartData.splice(indexToCopy + 1, 0, newEntry, blackArray2);
           } else {
