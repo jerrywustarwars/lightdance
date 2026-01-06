@@ -16,7 +16,7 @@ function People() {
     if (!actionTable || actionTable.length === 0) {
       const initialData = Array.from({ length: 7 }, () =>
         Array.from({ length: 14 }, () => [
-          { time: 0, color: { R: 0, G: 0, B: 0, A: 1 } },
+          { time: 0, color: { R: 0, G: 0, B: 0, A: 1 }, change: { flag: 0, dir: 0  } },
         ])
       );
 

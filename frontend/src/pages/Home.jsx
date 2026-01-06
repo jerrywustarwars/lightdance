@@ -180,11 +180,21 @@ function Home({ rgba, setRgba, setButtonState }) {
           if (item !== "time") {
             let target = mergedResults[j][item];
             if (target) {
+              // Calculate the A component (0-63, fits in 6 bits)
+              const alphaVal = Math.min(Math.floor(target.A * 64), 63);
+
+              // Get flag and dir, default to 0 if not present
+              const flagVal = target.change?.flag || 0;
+              const dirVal = target.change?.dir || 0;
+
+              // Pack the values: A into bits [7:2], flag into bit 1, dir into bit 0
+              const packedAlphaAndFlags = (alphaVal << 2) | (flagVal << 1) | dirVal;
+
               const color =
                 ((target.R & 0xff) << 24) |
                 ((target.G & 0xff) << 16) |
                 ((target.B & 0xff) << 8) |
-                ((target.A * 100) & 0xff);
+                (packedAlphaAndFlags & 0xff); // Ensure it fits into a byte
               let unsignedColor = color >>> 0;
               mergedResults[j][item] = unsignedColor;
             }

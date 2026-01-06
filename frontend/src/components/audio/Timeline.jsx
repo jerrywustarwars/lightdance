@@ -9,6 +9,11 @@ import {
 } from "../../redux/actions";
 import cloneDeep from "lodash/cloneDeep";
 import { produce } from "immer";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import {
+  faRotateRight,
+  faRotateLeft,
+} from "@fortawesome/free-solid-svg-icons";
 
 // Timeline 組件
 const Timeline = forwardRef(
@@ -505,9 +510,38 @@ const Timeline = forwardRef(
               className="timeline-block"
               onMouseDown={(e) => handleMouseDown(e, index)} // 點擊方塊選中
             >
+              {actionTable[armorIndex]?.[partIndex]?.[index]?.change?.flag === 1 && (
+                actionTable[armorIndex]?.[partIndex]?.[index]?.change?.dir === 1 ? (
+                  // Clockwise rotation icon
+                  <FontAwesomeIcon
+                    icon={faRotateRight}
+                    size="xl" // Set size to "xl"
+                    style={{
+                      position: "absolute",
+                      top: "5px",
+                      right: "5px",
+                      color: "white",
+                      zIndex: 2,
+                    }}
+                  />
+                ) : (
+                  // Counter-clockwise rotation icon
+                  <FontAwesomeIcon
+                    icon={faRotateLeft}
+                    size="xl" // Set size to "xl"
+                    style={{
+                      position: "absolute",
+                      top: "5px",
+                      right: "5px",
+                      color: "white",
+                      zIndex: 2,
+                    }}
+                  />
+                )
+              )}
               {" "}
               {/*
-              {/* 如果不是黑色方块，渲染左右虚拟检测块  
+              {/* 如果不是黑色方块，渲染左右虛擬檢測塊
               {!(
                 block.color.R === 0 &&
                 block.color.G === 0 &&
