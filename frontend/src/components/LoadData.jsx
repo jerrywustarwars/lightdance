@@ -87,7 +87,7 @@ function Dropdown({ userName, setIsDirty, isDirty, setIsLoaded, isLoaded }) {
     const apiEndpoint = `${API_ENDPOINTS.BASE}/raw/${user}/${time}`; // Example API
     // Use fetch to send a GET request
     fetch(apiEndpoint)
-      .then((response) => {a
+      .then((response) => {
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
