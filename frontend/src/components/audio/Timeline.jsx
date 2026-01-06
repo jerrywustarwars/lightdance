@@ -11,8 +11,7 @@ import cloneDeep from "lodash/cloneDeep";
 import { produce } from "immer";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
-  faRotateRight,
-  faRotateLeft,
+  faWandMagicSparkles,
 } from "@fortawesome/free-solid-svg-icons";
 
 // Timeline 組件
@@ -463,7 +462,7 @@ const Timeline = forwardRef(
           }
 
           const currentBlockData = actionTable[armorIndex]?.[partIndex]?.[index];
-          const isFade = currentBlockData?.change?.flag === 1 && currentBlockData?.change?.dir === 1;
+          const isFade = currentBlockData?.linear === 1;
 
           let backgroundStyle;
 
@@ -536,34 +535,18 @@ const Timeline = forwardRef(
               className="timeline-block"
               onMouseDown={(e) => handleMouseDown(e, index)} // 點擊方塊選中
             >
-              {actionTable[armorIndex]?.[partIndex]?.[index]?.change?.flag === 1 && (
-                actionTable[armorIndex]?.[partIndex]?.[index]?.change?.dir === 1 ? (
-                  // Clockwise rotation icon
-                  <FontAwesomeIcon
-                    icon={faRotateRight}
-                    size="xl" // Set size to "xl"
-                    style={{
-                      position: "absolute",
-                      top: "5px",
-                      right: "5px",
-                      color: "white",
-                      zIndex: 2,
-                    }}
-                  />
-                ) : (
-                  // Counter-clockwise rotation icon
-                  <FontAwesomeIcon
-                    icon={faRotateLeft}
-                    size="xl" // Set size to "xl"
-                    style={{
-                      position: "absolute",
-                      top: "5px",
-                      right: "5px",
-                      color: "white",
-                      zIndex: 2,
-                    }}
-                  />
-                )
+              {currentBlockData?.linear === 1 && (
+                <FontAwesomeIcon
+                  icon={faWandMagicSparkles}
+                  size="xl"
+                  style={{
+                    position: "absolute",
+                    top: "5px",
+                    right: "5px",
+                    color: "white",
+                    zIndex: 2,
+                  }}
+                />
               )}
               {" "}
               {/*

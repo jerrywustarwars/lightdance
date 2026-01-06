@@ -315,7 +315,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
         const newEntry = {
           time: nowTime,
           color: { ...color },
-          change: { flag: 0, dir: 0 },
+          linear: 0,
         };
 
         const nextElement = updatedPartData[indexToCopy];
@@ -354,27 +354,27 @@ function AudioPlayer({ setButtonState, timelineRef }) {
             const blackArray2 = {
               time: duration,
               color: { R: 0, G: 0, B: 0, A: 1 },
-              change: { flag: 0, dir: 0 },
+              linear: 0,
             };
             updatedPartData.splice(partData.length, 0, newEntry, blackArray2);
           } else if (!isPreviousBlack && isNextBlack) {
             const blackArray = {
               time: nowTime - blackthreshold,
               color: { R: 0, G: 0, B: 0, A: 1 },
-              change: { flag: 0, dir: 0 },
+              linear: 0,
             };
             updatedPartData.splice(indexToCopy + 1, 0, blackArray, newEntry);
           } else if (!isPreviousBlack && !isNextBlack) {
             const blackArray = {
               time: nowTime - blackthreshold,
               color: { R: 0, G: 0, B: 0, A: 1 },
-              change: { flag: 0, dir: 0 },
+              linear: 0,
             };
             const blackArray2 = {
               time:
                 nextElement?.time - blackthreshold || nowTime + blackthreshold,
               color: { R: 0, G: 0, B: 0, A: 1 },
-              change: { flag: 0, dir: 0 },
+              linear: 0,
             };
             updatedPartData.splice(
               indexToCopy + 1,
@@ -388,7 +388,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
               time:
                 nextElement?.time - blackthreshold || nowTime + blackthreshold,
               color: { R: 0, G: 0, B: 0, A: 1 },
-              change: { flag: 0, dir: 0 },
+              linear: 0,
             };
             updatedPartData.splice(indexToCopy + 1, 0, newEntry, blackArray2);
           } else if (isPreviousBlack && isNextBlack) {
@@ -397,7 +397,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
             const blackArray2 = {
               time: duration,
               color: { R: 0, G: 0, B: 0, A: 1 },
-              change: { flag: 0, dir: 0 },
+              linear: 0,
             };
             updatedPartData.splice(indexToCopy + 1, 0, newEntry, blackArray2);
           }
@@ -599,7 +599,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     dispatch(updateActionTable(cleanedActionTable)); // 更新 Redux
   };
 
-  const handleClockwiseFade = () => {
+  const handleSetLinear = () => {
     if (
       !selectedBlock ||
       selectedBlock.armorIndex === undefined ||
@@ -615,38 +615,8 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     const updatedActionTable = produce(actionTable, (draft) => {
       const block = draft[armorIndex]?.[partIndex]?.[blockIndex];
       if (block) {
-        if (!block.change) {
-          block.change = { flag: 0, dir: 0 };
-        }
-        block.change.flag = 1;
-        block.change.dir = 1;
-      }
-    });
-
-    dispatch(updateActionTable(updatedActionTable));
-  };
-
-  const handleCounterClockwiseFade = () => {
-    if (
-      !selectedBlock ||
-      selectedBlock.armorIndex === undefined ||
-      selectedBlock.partIndex === undefined ||
-      selectedBlock.blockIndex === undefined
-    ) {
-      console.warn("No block selected or invalid block index.");
-      return;
-    }
-
-    const { armorIndex, partIndex, blockIndex } = selectedBlock;
-
-    const updatedActionTable = produce(actionTable, (draft) => {
-      const block = draft[armorIndex]?.[partIndex]?.[blockIndex];
-      if (block) {
-        if (!block.change) {
-          block.change = { flag: 0, dir: 0 };
-        }
-        block.change.flag = 1;
-        block.change.dir = 0;
+        // Toggle the linear property, ensuring it exists first
+        block.linear = block.linear === 1 ? 0 : 1;
       }
     });
 
@@ -899,7 +869,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       const newBlackBlock = {
         time: currentTime - blackthreshold,
         color: { R: 0, G: 0, B: 0, A: 1 },
-        change: { flag: 0, dir: 0 },
+        linear: 0,
       };
 
       timeline.splice(blockIndex + 1, 0, newBlock, newBlackBlock);
@@ -1142,20 +1112,11 @@ function AudioPlayer({ setButtonState, timelineRef }) {
               <div
                 className="effect-menu-item"
                 onClick={() => {
-                  handleClockwiseFade();
+                  handleSetLinear();
                   setEffectMenuVisible(false);
                 }}
               >
-                順時漸變
-              </div>
-              <div
-                className="effect-menu-item"
-                onClick={() => {
-                  handleCounterClockwiseFade();
-                  setEffectMenuVisible(false);
-                }}
-              >
-                逆時漸變
+                漸變
               </div>
             </div>
           )}
