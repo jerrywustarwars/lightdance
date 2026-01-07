@@ -31,7 +31,8 @@ const Timeline = forwardRef(
     const [dragging, setDragging] = useState(false); // 是否正在拖動方塊位置
     const [resizing, setResizing] = useState(false); // 是否正在調整方塊寬度
     const [draggedBlockIndex, setDraggedBlockIndex] = useState(null); // 被拖動的方塊索引
-    const [dragStartpoint, setDragStartpoint] = useState(null); // 拖動的起始點
+    const [dragStartpoint, setDragStartpoint] = useState(null); // 拖動的起始點（鼠標位置）
+    const [dragStartTime, setDragStartTime] = useState(null); // 拖動開始時的色塊初始 startTime
     const [resizeStartpoint, setResizeStartpoint] = useState(null); // 寬度調整的起始點（鼠標位置）
     const [resizeStartTime, setResizeStartTime] = useState(null); // 寬度調整時的初始時間點
 
@@ -148,30 +149,21 @@ const Timeline = forwardRef(
         return;
       }
 
+      // 新格式: 直接使用 startTime/endTime 生成視覺化方塊
       const newBlocks = [];
-      tempActionTable[armorIndex][partIndex].forEach((entry, index) => {
-        const startTime = entry.time;
-        const nextStartTime =
-          tempActionTable[armorIndex][partIndex]?.[index + 1]?.time || duration;
-
-        const { R, G, B, A } = entry.color || {};
+      tempActionTable[armorIndex][partIndex].forEach((block, index) => {
+        // 新格式已經有 startTime 和 endTime
         const newBlock = {
-          startTime,
-          durationTime: nextStartTime - startTime,
-          color: { R, G, B, A },
+          startTime: block.startTime,
+          durationTime: block.endTime - block.startTime,
+          color: block.color || null,
+          blockIndex: index, // 保留原始索引用於操作
         };
 
-        const lastBlock = newBlocks[index - 1];
-        if (
-          lastBlock &&
-          lastBlock.startTime + lastBlock.durationTime === newBlock.startTime &&
-          JSON.stringify(lastBlock.color) === JSON.stringify(newBlock.color)
-        ) {
-          lastBlock.durationTime += newBlock.durationTime;
-        } else {
-          newBlocks.push(newBlock);
-        }
+        newBlocks.push(newBlock);
       });
+
+      console.log(`[Timeline] Generated ${newBlocks.length} timeline blocks`);
 
       dispatch(
         updateTimelineBlocks({
@@ -184,17 +176,25 @@ const Timeline = forwardRef(
 
     // 處理鼠標按下事件（中心拖動）
     const handleMouseDown = (e, index) => {
-      e.stopPropagation();
-
-      const block = timelineBlocks[index];
-      if (block.color.R === 0 && block.color.G === 0 && block.color.B === 0) {
-        dispatch(updateSelectedBlock({})); // 更新 Redux
+      // 如果點擊在右邊緣（調整寬度區域），則忽略拖動邏輯
+      const blockRect = e.currentTarget.getBoundingClientRect();
+      const distanceFromRight = blockRect.right - e.clientX;
+      if (distanceFromRight <= 10) {
+        // 右邊緣調整，不執行拖動邏輯
         return;
       }
+
+      e.stopPropagation();
+
+      const partData = tempActionTable?.[armorIndex]?.[partIndex];
+      if (!partData || !partData[index]) return;
+
+      const currentBlock = partData[index];
 
       setDragging(true);
       setDraggedBlockIndex(index);
       setDragStartpoint(e.clientX); // 記錄鼠標按下的位置
+      setDragStartTime(currentBlock.startTime); // 記錄色塊的初始 startTime
 
       // 通知父组件更新全局选中状态
       dispatch(
@@ -202,21 +202,74 @@ const Timeline = forwardRef(
       );
     };
 
-    // 處理右邊緣拖動事件（調整寬度）
+    // 處理右邊緣拖動事件（調整當前色塊寬度）
     const handleResizeMouseDown = (e, index) => {
       e.stopPropagation();
       const nextBlockIdx = index + 1;
-      const nextBlockTime = tempActionTable?.[armorIndex]?.[partIndex]?.[nextBlockIdx]?.time;
-      
+      const partData = tempActionTable?.[armorIndex]?.[partIndex];
+
+      // 檢查是否有下一個色塊
+      if (!partData || !partData[nextBlockIdx]) {
+        console.warn("No next block to resize");
+        return;
+      }
+
+      // 新格式: 使用 startTime 和 endTime
+      const currentBlock = partData[index];
+      const currentEndTime = currentBlock.endTime;
+
+      console.log(`[Resize Start] Dragging right edge of block ${index}`);
+      console.log(`  Current block: ${currentBlock.startTime}ms - ${currentEndTime}ms`);
+      console.log(`  Current block width: ${currentEndTime - currentBlock.startTime}ms`);
+
       setResizing(true);
       setDraggedBlockIndex(index);
       setResizeStartpoint(e.clientX);
-      setResizeStartTime(nextBlockTime || 0); // 記錄初始右邊界時間
-      
+      setResizeStartTime(currentEndTime); // 記錄當前色塊的初始結束時間
+
       // 同時選中該方塊
       dispatch(
         updateSelectedBlock({ armorIndex, partIndex, blockIndex: index })
       );
+    };
+
+    // 手動合併相鄰的相同顏色色塊
+    const handleMergeBlocks = () => {
+      if (
+        !selectedBlock ||
+        selectedBlock.armorIndex !== armorIndex ||
+        selectedBlock.partIndex !== partIndex
+      ) {
+        console.warn("No valid block selected for merging");
+        return;
+      }
+
+      const blockIndex = selectedBlock.blockIndex;
+      const timeline = actionTable[armorIndex]?.[partIndex];
+      
+      if (!timeline || blockIndex >= timeline.length - 1) {
+        console.warn("Cannot merge: no next block or invalid selection");
+        return;
+      }
+
+      const currentBlock = timeline[blockIndex];
+      const nextBlock = timeline[blockIndex + 1];
+
+      // 檢查兩個色塊之間是否有間隙
+      if (currentBlock.endTime !== nextBlock.startTime) {
+        console.warn(`Cannot merge: there is a gap between blocks (${currentBlock.endTime}ms to ${nextBlock.startTime}ms)`);
+        return;
+      }
+
+      // 合併兩個色塊 - 將當前色塊的 endTime 設為下一個色塊的 endTime，並刪除下一個色塊
+      const updatedActionTable = produce(actionTable, (draft) => {
+        const draftTimeline = draft[armorIndex][partIndex];
+        draftTimeline[blockIndex].endTime = draftTimeline[blockIndex + 1].endTime;
+        draftTimeline.splice(blockIndex + 1, 1);
+      });
+
+      dispatch(updateActionTable(updatedActionTable));
+      console.log(`Merged block ${blockIndex} (${currentBlock.startTime}-${currentBlock.endTime}ms) with block ${blockIndex + 1} (${nextBlock.startTime}-${nextBlock.endTime}ms)`);
     };
 
     // 處理鼠標放開事件
@@ -224,6 +277,7 @@ const Timeline = forwardRef(
       if (dragging) {
         setDragging(false); // 停止拖動
         setDraggedBlockIndex(null);
+        setDragStartTime(null); // 清除初始時間
         dispatch(updateActionTable(tempActionTable)); // 更新 actionTable
         // console.log(tempActionTable);
       }
@@ -241,23 +295,43 @@ const Timeline = forwardRef(
         if (!timelineRef?.current) return;
 
         const rect = timelineRef.current.getBoundingClientRect();
-        // 計算鼠標移動距離轉換為時間
+        // 計算鼠標移動距離轉換為時間（對齊 50ms）
         const resizedDistance = e.clientX - resizeStartpoint;
         const resizedTime = Math.floor(((resizedDistance / rect.width) * duration) / 50) * 50;
 
         const updatedTable = produce(tempActionTable, (draft) => {
           const partData = draft[armorIndex][partIndex];
-          const nextBlockIdx = draggedBlockIndex + 1;
-          const currentBlockTime = partData[draggedBlockIndex].time;
+          const currentBlock = partData[draggedBlockIndex];
+          const oldEndTime = currentBlock.endTime;
 
-          if (partData[nextBlockIdx]) {
-            // 右邊界的新時間 = 初始時間 + 鼠標移動對應的時間變化
-            // 這樣實現鼠標移動與色塊寬度的 1:1 同步
-            const newRightBoundaryTime = Math.max(
-              currentBlockTime + 50, // 最少寬度 50ms
-              resizeStartTime + resizedTime // 與鼠標位置同步
-            );
-            partData[nextBlockIdx].time = newRightBoundaryTime;
+          // 計算當前色塊的新結束時間
+          let newEndTime = resizeStartTime + resizedTime;
+
+          // 確保當前色塊至少 50ms 寬
+          newEndTime = Math.max(currentBlock.startTime + 50, newEndTime);
+
+          // 確保不超過音頻總長度
+          newEndTime = Math.min(newEndTime, duration);
+
+          // 計算位移量
+          const timeShift = newEndTime - oldEndTime;
+
+          console.log(`[Resize] Block ${draggedBlockIndex} width: ${oldEndTime - currentBlock.startTime}ms → ${newEndTime - currentBlock.startTime}ms`);
+          console.log(`[Resize] Time shift: ${timeShift}ms`);
+
+          // 更新當前色塊的結束時間
+          currentBlock.endTime = newEndTime;
+
+          // 移動所有後續色塊（保持它們的寬度）
+          for (let i = draggedBlockIndex + 1; i < partData.length; i++) {
+            partData[i].startTime += timeShift;
+            partData[i].endTime += timeShift;
+
+            // 確保不超過音頻總長度
+            if (partData[i].endTime > duration) {
+              partData[i].endTime = duration;
+              partData[i].startTime = Math.max(0, duration - (partData[i].endTime - partData[i].startTime));
+            }
           }
         });
 
@@ -278,194 +352,37 @@ const Timeline = forwardRef(
       const rect = timelineRef.current.getBoundingClientRect();
 
       // 计算拖动的距离和对应的时间
-      const draggedDistance = e.clientX - dragStartpoint; // 拖动的像素距离
-      const draggedTime =
-        Math.floor(((draggedDistance / rect.width) * duration) / 50) * 50; // 将拖动距离转换为时间
+      const draggedDistance = e.clientX - dragStartpoint; // 拖動的像素距離
+      const draggedTime = Math.floor(((draggedDistance / rect.width) * duration) / 50) * 50; // 將拖動距離轉換為時間
 
-      // 使用 Immer 深拷贝并更新方块位置
       const updatedTable = produce(tempActionTable, (draft) => {
-        const direction = e.clientX > dragStartpoint ? "right" : "left"; // 判断拖动方向
-        const partData = draft[armorIndex][partIndex]; // 获取当前部位的数据
+        const partData = draft[armorIndex][partIndex]; // 獲取當前部位的數據
+        const block = partData[draggedBlockIndex];
+        if (!block) return;
 
-        // 如果拖动方向是向右
-        if (direction === "right") {
-          if (
-            hoveredBlock?.rightedge && // 当前拖动的方块是右边界
-            hoveredBlock?.rightindex === draggedBlockIndex // 并且是当前拖动的方块
-          ) {
-            // 如果存在下一个方块
-            if (tempActionTable[armorIndex][partIndex][draggedBlockIndex + 2]) {
-              const nextBlockTime =
-                tempActionTable[armorIndex][partIndex][draggedBlockIndex + 2]
-                  .time;
-              const currentBlockTime =
-                tempActionTable[armorIndex][partIndex][draggedBlockIndex + 1]
-                  .time;
+        // 新格式: 計算新的 startTime 和 endTime（保持寬度不變）
+        const blockWidth = block.endTime - block.startTime;
+        let newStartTime = Math.max(0, dragStartTime + draggedTime); // 使用初始 startTime
 
-              // 检查当前和下一个方块之间的时间间隔是否大于 50
-              if (nextBlockTime - currentBlockTime > blackthreshold) {
-                partData[draggedBlockIndex + 1].time =
-                  actionTable[armorIndex][partIndex][draggedBlockIndex + 1]
-                    .time + draggedTime;
-              } else {
-                // 如果时间间隔不足 50，同时调整下一个方块的位置
-                partData[draggedBlockIndex + 1].time =
-                  actionTable[armorIndex][partIndex][draggedBlockIndex + 1]
-                    .time + draggedTime;
-                partData[draggedBlockIndex + 2].time =
-                  actionTable[armorIndex][partIndex][draggedBlockIndex + 1]
-                    .time +
-                  draggedTime +
-                  blackthreshold;
-              }
-            }
-          } else if (
-            hoveredBlock?.leftedge && // 当前拖动的方块是左边界
-            hoveredBlock?.leftindex === draggedBlockIndex
-          ) {
-            // 如果拖动后时间不会超过下一个方块的时间
-            if (
-              tempActionTable[armorIndex][partIndex][draggedBlockIndex].time +
-                draggedTime <
-              tempActionTable[armorIndex][partIndex][draggedBlockIndex + 1].time
-            ) {
-              partData[draggedBlockIndex].time =
-                actionTable[armorIndex][partIndex][draggedBlockIndex].time +
-                draggedTime;
-            }
-          } else {
-            // 普通情况下向右拖动
-            if (tempActionTable[armorIndex][partIndex][draggedBlockIndex + 2]) {
-              partData[draggedBlockIndex].time =
-                actionTable[armorIndex][partIndex][draggedBlockIndex].time +
-                draggedTime;
-
-              const nextBlockTime =
-                tempActionTable[armorIndex][partIndex][draggedBlockIndex + 2]
-                  .time;
-              const currentBlockTime =
-                tempActionTable[armorIndex][partIndex][draggedBlockIndex + 1]
-                  .time;
-
-              if (nextBlockTime - currentBlockTime > blackthreshold) {
-                partData[draggedBlockIndex + 1].time =
-                  actionTable[armorIndex][partIndex][draggedBlockIndex + 1]
-                    .time + draggedTime;
-              } else {
-                partData[draggedBlockIndex + 1].time =
-                  actionTable[armorIndex][partIndex][draggedBlockIndex + 1]
-                    .time + draggedTime;
-                partData[draggedBlockIndex + 2].time =
-                  actionTable[armorIndex][partIndex][draggedBlockIndex + 1]
-                    .time +
-                  draggedTime +
-                  blackthreshold;
-              }
-            } else {
-              // 如果没有后续方块
-              if (
-                actionTable[armorIndex][partIndex][draggedBlockIndex + 1].time +
-                  draggedTime <
-                duration
-              ) {
-                partData[draggedBlockIndex].time =
-                  actionTable[armorIndex][partIndex][draggedBlockIndex].time +
-                  draggedTime;
-                partData[draggedBlockIndex + 1].time =
-                  actionTable[armorIndex][partIndex][draggedBlockIndex + 1]
-                    .time + draggedTime;
-              } else {
-                partData[draggedBlockIndex + 1].time = duration; // 防止超出音频范围
-              }
-            }
-          }
-        } else {
-          // 如果拖动方向是向左
-          if (
-            hoveredBlock?.rightedge && // 当前拖动的方块是右边界
-            hoveredBlock?.rightindex === draggedBlockIndex
-          ) {
-            if (
-              tempActionTable[armorIndex][partIndex][draggedBlockIndex].time <
-              tempActionTable[armorIndex][partIndex][draggedBlockIndex + 1]
-                .time +
-                draggedTime
-            ) {
-              partData[draggedBlockIndex + 1].time =
-                actionTable[armorIndex][partIndex][draggedBlockIndex + 1].time +
-                draggedTime;
-            }
-          } else if (
-            hoveredBlock?.leftedge && // 当前拖动的方块是左边界
-            hoveredBlock?.leftindex === draggedBlockIndex
-          ) {
-            if (
-              actionTable[armorIndex][partIndex][draggedBlockIndex].time +
-                draggedTime >
-              0
-            ) {
-              partData[draggedBlockIndex].time =
-                actionTable[armorIndex][partIndex][draggedBlockIndex].time +
-                draggedTime;
-
-              if (
-                tempActionTable[armorIndex][partIndex][draggedBlockIndex - 2]
-              ) {
-                const previousBlockTime =
-                  tempActionTable[armorIndex][partIndex][draggedBlockIndex]
-                    .time;
-                const secondPreviousBlockTime =
-                  tempActionTable[armorIndex][partIndex][draggedBlockIndex - 1]
-                    .time;
-
-                if (
-                  previousBlockTime - secondPreviousBlockTime <
-                  blackthreshold
-                ) {
-                  partData[draggedBlockIndex - 1].time =
-                    actionTable[armorIndex][partIndex][draggedBlockIndex].time +
-                    draggedTime -
-                    blackthreshold;
-                }
-              }
-            }
-          } else {
-            // 普通情况下向左拖动
-            if (
-              actionTable[armorIndex][partIndex][draggedBlockIndex].time +
-                draggedTime >
-              0
-            ) {
-              partData[draggedBlockIndex + 1].time =
-                actionTable[armorIndex][partIndex][draggedBlockIndex + 1].time +
-                draggedTime;
-              partData[draggedBlockIndex].time =
-                actionTable[armorIndex][partIndex][draggedBlockIndex].time +
-                draggedTime;
-
-              if (
-                tempActionTable[armorIndex][partIndex][draggedBlockIndex - 2]
-              ) {
-                const previousBlockTime =
-                  tempActionTable[armorIndex][partIndex][draggedBlockIndex]
-                    .time;
-                const secondPreviousBlockTime =
-                  tempActionTable[armorIndex][partIndex][draggedBlockIndex - 1]
-                    .time;
-
-                if (
-                  previousBlockTime - secondPreviousBlockTime <
-                  blackthreshold
-                ) {
-                  partData[draggedBlockIndex - 1].time =
-                    actionTable[armorIndex][partIndex][draggedBlockIndex].time +
-                    draggedTime -
-                    blackthreshold;
-                }
-              }
-            }
-          }
+        // 確保不超過下一個色塊的開始時間（保持至少 50ms 的間隔）
+        const nextBlockIdx = draggedBlockIndex + 1;
+        if (nextBlockIdx < partData.length) {
+          const nextBlockStartTime = partData[nextBlockIdx].startTime;
+          newStartTime = Math.min(newStartTime, nextBlockStartTime - blockWidth - 50);
         }
+
+        // 確保不超過音頻總長度
+        newStartTime = Math.min(newStartTime, duration - blockWidth);
+
+        // 確保不超過前一個色塊的結束時間（保持至少 50ms 的間隔）
+        if (draggedBlockIndex > 0) {
+          const prevBlockEndTime = partData[draggedBlockIndex - 1].endTime;
+          newStartTime = Math.max(newStartTime, prevBlockEndTime + 50);
+        }
+
+        // 更新色塊的 startTime 和 endTime（保持寬度）
+        partData[draggedBlockIndex].startTime = newStartTime;
+        partData[draggedBlockIndex].endTime = newStartTime + blockWidth;
       });
 
       // 更新 Redux 中的临时 ActionTable
@@ -479,8 +396,7 @@ const Timeline = forwardRef(
         style={{
           height: `${height}%`, // 動態設置高度
           width: "100%",
-          display: "flex",
-          alignItems: "center",
+          position: "relative", // 設置為相對定位，讓子元素的絕對定位有參考點
           overflow: "hidden",
           border: "1px solid rgb(63, 63, 63)",
           padding: "0px",
@@ -491,11 +407,20 @@ const Timeline = forwardRef(
         onMouseUp={handleMouseUp}
       >
         {timelineBlocks.map((block, index) => {
-          const color = block.color || { R: 0, G: 0, B: 0, A: 1 };
+          let backgroundStyle;
           const isSelected =
             selectedBlock?.armorIndex === armorIndex &&
             selectedBlock?.partIndex === partIndex &&
             selectedBlock?.blockIndex === index;
+          // 預設選取框顏色
+          let selectionBorderColor = "#FFA500"; // 橘色
+          const colorThreshold = 200; // 設定距離閾值
+
+          // 取得對應的原始資料（可能為 undefined）和漸變標記
+          const currentBlockData = actionTable[armorIndex]?.[partIndex]?.[index];
+          const isFade = currentBlockData?.linear === 1;
+
+          const color = block.color || { R: 0, G: 0, B: 0, A: 1 };
 
           // 計算顏色距離的函式
           const colorDistance = (color1, color2) => {
@@ -506,32 +431,20 @@ const Timeline = forwardRef(
             );
           };
 
-          // 預設選取框顏色
-          let selectionBorderColor = "#FFA500"; // 橘色
-          const colorThreshold = 200; // 設定距離閾值
-
           // 如果選取的方塊顏色和預設選取框顏色相似，就改變選取框顏色
           if (colorDistance(color, { R: 255, G: 165, B: 0 }) < colorThreshold) {
             selectionBorderColor = "#00FFFF"; // 改成青色
           }
 
-          const currentBlockData = actionTable[armorIndex]?.[partIndex]?.[index];
-          const isFade = currentBlockData?.linear === 1;
-
-          let backgroundStyle;
-
           if (isFade) {
             const partTimeline = actionTable[armorIndex]?.[partIndex];
             const nextBlock = partTimeline?.[index + 1];
-            const nextNextBlock = partTimeline?.[index + 2];
-            const isBlack = (c) => c && c.R === 0 && c.G === 0 && c.B === 0;
 
+            // 新方案：直接使用下一個塊的顏色，或默認為黑色
             let endColor = { R: 0, G: 0, B: 0, A: 1 }; // Default to black
 
-            if (nextBlock && !isBlack(nextBlock.color)) {
+            if (nextBlock) {
               endColor = nextBlock.color;
-            } else if (nextNextBlock) {
-              endColor = nextNextBlock.color;
             }
 
             const startColorString = `rgba(${color.R}, ${color.G}, ${color.B}, ${color.A})`;
@@ -541,13 +454,13 @@ const Timeline = forwardRef(
             backgroundStyle = `rgba(${color.R}, ${color.G}, ${color.B}, ${color.A})`;
           }
 
-          // 設定 blockStyle
+          // 設定 blockStyle - 使用絕對定位以正確顯示色塊位置
           const blockStyle = {
-            display: "inline-block",
+            position: "absolute",
+            left: `${(block.startTime / duration) * 100}%`,
             background: backgroundStyle,
             width: `${(block.durationTime / duration) * 100}%`,
             height: "90%",
-            position: "relative",
             borderRadius: "7px",
             border: isSelected ? `3px solid ${selectionBorderColor}` : "none",
             boxSizing: "border-box",
@@ -615,7 +528,10 @@ const Timeline = forwardRef(
                   backgroundColor: "rgba(255, 255, 255, 0)", // 透明背景，方便拖動
                   zIndex: 3,
                 }}
-                onMouseDown={(e) => handleResizeMouseDown(e, index)}
+                onMouseDown={(e) => {
+                  e.stopPropagation(); // 阻止事件冒泡到父元素
+                  handleResizeMouseDown(e, index);
+                }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.3)"; // 懸停時顯示邊緣
                 }}

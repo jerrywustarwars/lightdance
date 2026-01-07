@@ -18,6 +18,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faRobot } from "@fortawesome/free-solid-svg-icons";
 import { set } from "lodash";
 import { API_ENDPOINTS } from "../config/api.js";
+import { convertActionTableNewToOld } from "../utils/dataConverter.js";
 
 function Home({ rgba, setRgba, setButtonState }) {
   const navigate = useNavigate();
@@ -26,6 +27,7 @@ function Home({ rgba, setRgba, setButtonState }) {
   const actionTable = useSelector((state) => state.profiles.actionTable);
   const userName = useSelector((state) => state.profiles.userName);
   const autoRefresh = useSelector((state) => state.profiles.autoRefresh);
+  const duration = useSelector((state) => state.profiles.duration);
   const [isDirty, setIsDirty] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -81,7 +83,12 @@ function Home({ rgba, setRgba, setButtonState }) {
     setIsDirty(false);
     setIsLoaded(false);
     console.log("-token- : ", BearerToken);
-    let result = JSON.stringify(actionTable);
+
+    // 轉換為舊格式 (time, color, linear, empty)
+    const oldFormatActionTable = convertActionTableNewToOld(actionTable, duration);
+    console.log("[Save] Converted to old format:", oldFormatActionTable);
+
+    let result = JSON.stringify(oldFormatActionTable);
     // console.log("upload(raw) : ", JSON.stringify(result));
     const response = await fetch(API_ENDPOINTS.UPLOAD_RAW, {
       method: "POST",
@@ -108,13 +115,17 @@ function Home({ rgba, setRgba, setButtonState }) {
     console.log("UPLOAD_RAW:", API_ENDPOINTS.UPLOAD_RAW);
     console.log("UPLOAD_ITEMS:", API_ENDPOINTS.UPLOAD_ITEMS);
     setIsDirty(false);
-  
+
+    // 轉換為舊格式以便進行編碼
+    const oldFormatActionTable = convertActionTableNewToOld(actionTable, duration);
+    console.log("[Save] Using old format for encoding:", oldFormatActionTable);
+
     const players = [];
-    const armorIndices = Object.keys(actionTable);
+    const armorIndices = Object.keys(oldFormatActionTable);
   
     for (let i = 0; i < armorIndices.length; i++) {
       const armorIndex = armorIndices[i];
-      const partGroup = actionTable[armorIndex];
+      const partGroup = oldFormatActionTable[armorIndex];
   
       let times = new Set();
   
