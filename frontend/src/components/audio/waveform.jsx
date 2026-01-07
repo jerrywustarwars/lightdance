@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import music from "./musicsrc/lightdance V3.mp3";
+import music from "./musicsrc/2026_funding.mp3";
 import {
   updateCurrentTime,
   updateDuration,

@@ -1,10 +1,29 @@
-import React, { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import "./Armor.css";
 import {
   updateActionTable,
   updateCurrentTime,
 } from "../redux/actions";
+
+// 部位名稱常數（對應 Home.jsx 的輸出映射）
+const PART_NAMES = [
+  "hat",           // 0:帽子
+  "face",          // 1:臉部
+  "chestL",        // 2:左胸
+  "chestR",        // 3:右胸
+  "armL",          // 4:左手臂
+  "armR",          // 5:右手臂
+  "tie",           // 6:領帶
+  "belt",          // 7:腰帶
+  "gloveL",        // 8:左手套
+  "gloveR",        // 9:右手套
+  "legL",          // 10:左腿
+  "legR",          // 11:右腿
+  "shoeL",         // 12:左鞋
+  "shoeR",         // 13:右鞋
+  "board",         // 14:板子
+];
 
 const Armor = (props) => {
   const dispatch = useDispatch();
@@ -20,41 +39,62 @@ const Armor = (props) => {
     console.log("actionTable: ", actionTable);
   }, [actionTable]);
 
-  // 新的部位名稱
-  const partNames = [
-    "hat",           // 0:帽子
-    "head",          // 1:頭部
-    "armL",          // 2:左手臂
-    "armR",          // 3:右手臂
-    "chestL",        // 4:左胸
-    "chestR",        // 5:右胸
-    "tie",           // 6:領帶
-    "gloveL",        // 7:左手套
-    "gloveR",        // 8:右手套
-    "belt",          // 9:腰帶
-    "legL",          // 10:左腿
-    "legR",          // 11:右腿
-    "shoeL",         // 12:左鞋
-    "shoeR",         // 13:右鞋
-  ];
+  // 使用 useMemo 確保在 time 或 actionTable 變化時重新計算顏色
+  const colors = useMemo(() => {
+    console.log(`[Armor ${myId}] Recalculating colors, time=${time}`);
 
-  // 根據部位名稱和當前時間計算顏色
-  const getColorForPart = (part) => {
-    const partData = actionTable?.[myId]?.[part] || [];
-    const timeIndex = binarySearchFirstGreater(partData, time);
-    const colorData = partData?.[timeIndex - 1]?.color || {
-      R: 0,
-      G: 0,
-      B: 0,
-      A: 1,
+    // 根據部位索引和當前時間計算顏色（支援時間漸變）
+    const getColorForPart = (part) => {
+      const partData = actionTable?.[myId]?.[part] || [];
+      const timeIndex = binarySearchFirstGreater(partData, time);
+      const currentBlock = partData?.[timeIndex - 1];
+
+      if (!currentBlock) {
+        return `rgba(0, 0, 0, 1)`;
+      }
+
+      const color = currentBlock.color || { R: 0, G: 0, B: 0, A: 1 };
+
+      // 如果當前光塊沒有啟用漸變，直接回傳顏色
+      if (currentBlock.linear !== 1) {
+        return `rgba(${color.R}, ${color.G}, ${color.B}, ${color.A})`;
+      }
+
+      // 漸變模式：計算隨時間變化的顏色
+      const nextBlock = partData?.[timeIndex];
+      const isBlack = (c) => c && c.R === 0 && c.G === 0 && c.B === 0;
+
+      // 尋找下一個非黑色光塊作為結束顏色
+      let endColor = { R: 0, G: 0, B: 0, A: 1 };
+      if (nextBlock && !isBlack(nextBlock.color)) {
+        endColor = nextBlock.color;
+      } else if (partData[timeIndex + 1] && !isBlack(partData[timeIndex + 1].color)) {
+        endColor = partData[timeIndex + 1].color;
+      }
+
+      // 計算當前時間在光塊中的進度比例 (0 到 1)
+      const startTime = currentBlock.time;
+      const endTime = nextBlock ? nextBlock.time : (startTime + 1000);
+      const progress = Math.min(Math.max((time - startTime) / (endTime - startTime), 0), 1);
+
+      // 線性插值計算當前時間對應的顏色
+      const interpolatedR = Math.round(color.R + (endColor.R - color.R) * progress);
+      const interpolatedG = Math.round(color.G + (endColor.G - color.G) * progress);
+      const interpolatedB = Math.round(color.B + (endColor.B - color.B) * progress);
+      const interpolatedA = color.A + (endColor.A - color.A) * progress;
+
+      // 除錯：顯示漸變資訊
+      if (part === 6 && currentBlock.linear === 1) { // 領帶
+        console.log(`[Armor ${myId}] 🎨 Part ${part} gradient: progress=${progress.toFixed(2)}, color=(${interpolatedR},${interpolatedG},${interpolatedB})`);
+      }
+
+      return `rgba(${interpolatedR}, ${interpolatedG}, ${interpolatedB}, ${interpolatedA})`;
     };
-    
-    return `rgba(${colorData.R}, ${colorData.G}, ${colorData.B}, ${colorData.A})`;
-  };
 
-  const colors = Object.fromEntries(
-    partNames.map((name, index) => [name, getColorForPart(index)])
-  );
+    return Object.fromEntries(
+      PART_NAMES.map((name, index) => [name, getColorForPart(index)])
+    );
+  }, [time, actionTable, myId]);
 
   function insertArray(part) {
     const partData = actionTable?.[myId]?.[part] || [];
@@ -72,6 +112,7 @@ const Armor = (props) => {
           const newEntry = {
             time: nowTime,
             color: { ...chosenColor },
+            linear: 0
           };
 
           const nextElement = updatedPartData[indexToCopy];
@@ -104,23 +145,27 @@ const Armor = (props) => {
             const blackArray2 = {
               time: duration,
               color: { R: 0, G: 0, B: 0, A: 1 },
+              linear: 0,
             };
             updatedPartData.splice(partData.length, 0, newEntry, blackArray2);
           } else if (!isPreviousBlack && isNextBlack) {
             const blackArray = {
               time: nowTime - blackthreshold,
               color: { R: 0, G: 0, B: 0, A: 1 },
+              linear: 0,
             };
             updatedPartData.splice(indexToCopy + 1, 0, blackArray, newEntry);
           } else if (!isPreviousBlack && !isNextBlack) {
             const blackArray = {
               time: nowTime - blackthreshold,
               color: { R: 0, G: 0, B: 0, A: 1 },
+              linear: 0,
             };
             const blackArray2 = {
               time:
                 nextElement?.time - blackthreshold || nowTime + blackthreshold,
               color: { R: 0, G: 0, B: 0, A: 1 },
+              linear: 0,
             };
             updatedPartData.splice(
               indexToCopy + 1,
@@ -134,6 +179,7 @@ const Armor = (props) => {
               time:
                 nextElement?.time - blackthreshold || nowTime + blackthreshold,
               color: { R: 0, G: 0, B: 0, A: 1 },
+              linear: 0,
             };
             updatedPartData.splice(indexToCopy + 1, 0, newEntry, blackArray2);
           } else {
@@ -247,7 +293,7 @@ const Armor = (props) => {
           onClick={() => handleColorChange(0)}
         />
 
-        {/*1:head*/}
+        {/*1:face - 臉部*/}
         {isSelected(1) && renderHighlight(null, null, null, null, "circle", {
           r: 30,
           cx: 121,
@@ -257,52 +303,52 @@ const Armor = (props) => {
           cx="121"
           cy="68"
           r="30"
-          fill={colors.head}
+          fill={colors.face}
           onClick={() => handleColorChange(1)}
         />
 
-        {/*2:armL*/}
-        {isSelected(2) && renderHighlight(35, 103, 32, 65)}
-        <rect
-          x="35"
-          y="103"
-          width="32"
-          height="65"
-          fill={colors.armR}
-          onClick={() => handleColorChange(3)}
-        />
-
-        {/*3:armR*/}
-        {isSelected(3) && renderHighlight(175, 103, 32, 65)}
-        <rect
-          x="175"
-          y="103"
-          width="32"
-          height="65"
-          fill={colors.armL}
-          onClick={() => handleColorChange(2)}
-        />
-
-        {/*4:chestL - 左胸*/}
-        {isSelected(4) && renderHighlight(72, 103, 28, 65)}
+        {/*2:chestL - 左胸（螢幕左側）*/}
+        {isSelected(2) && renderHighlight(72, 103, 28, 65)}
         <rect
           x="72"
           y="103"
           width="28"
           height="65"
-          fill={colors.chestR}
-          onClick={() => handleColorChange(5)}
+          fill={colors.chestL}
+          onClick={() => handleColorChange(2)}
         />
 
-        {/*5:chestR - 右胸*/}
-        {isSelected(5) && renderHighlight(142, 103, 28, 65)}
+        {/*3:chestR - 右胸（螢幕右側）*/}
+        {isSelected(3) && renderHighlight(142, 103, 28, 65)}
         <rect
           x="142"
           y="103"
           width="28"
           height="65"
-          fill={colors.chestL}
+          fill={colors.chestR}
+          onClick={() => handleColorChange(3)}
+        />
+
+        {/*4:armL - 左手臂（螢幕左側）*/}
+        {isSelected(4) && renderHighlight(35, 103, 32, 65)}
+        <rect
+          x="35"
+          y="103"
+          width="32"
+          height="65"
+          fill={colors.armL}
           onClick={() => handleColorChange(4)}
+        />
+
+        {/*5:armR - 右手臂（螢幕右側）*/}
+        {isSelected(5) && renderHighlight(175, 103, 32, 65)}
+        <rect
+          x="175"
+          y="103"
+          width="32"
+          height="65"
+          fill={colors.armR}
+          onClick={() => handleColorChange(5)}
         />
 
         {/*6:tie - 領帶*/}
@@ -331,54 +377,43 @@ const Armor = (props) => {
         />
 
 
-        {/*7:gloveL - 左手套*/}
-        {isSelected(7) && renderHighlight(35, 173, 32, 35)}
-        <rect
-          x="35"
-          y="173"
-          width="32"
-          height="35"
-          fill={colors.gloveR}
-          onClick={() => handleColorChange(8)}
-        />
-
-        {/*8:gloveR - 右手套*/}
-        {isSelected(8) && renderHighlight(175, 173, 32, 35)}
-        <rect
-          x="175"
-          y="173"
-          width="32"
-          height="35"
-          fill={colors.gloveL}
-          onClick={() => handleColorChange(7)}
-        />
-
-        {/*9:belt - 腰帶*/}
-        {isSelected(9) && renderHighlight(78, 173, 86, 35)}
+        {/*7:belt - 腰帶*/}
+        {isSelected(7) && renderHighlight(78, 173, 86, 35)}
         <rect
           x="78"
           y="173"
           width="86"
           height="35"
           fill={colors.belt}
+          onClick={() => handleColorChange(7)}
+        />
+
+        {/*8:gloveL - 左手套（螢幕左側）*/}
+        {isSelected(8) && renderHighlight(35, 173, 32, 35)}
+        <rect
+          x="35"
+          y="173"
+          width="32"
+          height="35"
+          fill={colors.gloveL}
+          onClick={() => handleColorChange(8)}
+        />
+
+        {/*9:gloveR - 右手套（螢幕右側）*/}
+        {isSelected(9) && renderHighlight(175, 173, 32, 35)}
+        <rect
+          x="175"
+          y="173"
+          width="32"
+          height="35"
+          fill={colors.gloveR}
           onClick={() => handleColorChange(9)}
         />
 
-        {/*10:legL - 左腿*/}
+        {/*10:legL - 左腿（螢幕左側）*/}
         {isSelected(10) && renderHighlight(85, 213, 28, 80)}
         <rect
           x="85"
-          y="213"
-          width="28"
-          height="80"
-          fill={colors.legR}
-          onClick={() => handleColorChange(11)}
-        />
-
-        {/*11:legR - 右腿*/}
-        {isSelected(11) && renderHighlight(129, 213, 28, 80)}
-        <rect
-          x="129"
           y="213"
           width="28"
           height="80"
@@ -386,26 +421,37 @@ const Armor = (props) => {
           onClick={() => handleColorChange(10)}
         />
 
-        {/*12:shoeL - 左鞋*/}
+        {/*11:legR - 右腿（螢幕右側）*/}
+        {isSelected(11) && renderHighlight(129, 213, 28, 80)}
+        <rect
+          x="129"
+          y="213"
+          width="28"
+          height="80"
+          fill={colors.legR}
+          onClick={() => handleColorChange(11)}
+        />
+
+        {/*12:shoeL - 左鞋（螢幕左側）*/}
         {isSelected(12) && renderHighlight(75, 298, 45, 25)}
         <rect
           x="75"
           y="298"
           width="45"
           height="15"
-          fill={colors.shoeR}
-          onClick={() => handleColorChange(13)}
+          fill={colors.shoeL}
+          onClick={() => handleColorChange(12)}
         />
 
-        {/*13:shoeR - 右鞋*/}
+        {/*13:shoeR - 右鞋（螢幕右側）*/}
         {isSelected(13) && renderHighlight(122, 298, 45, 25)}
         <rect
           x="122"
           y="298"
           width="45"
           height="15"
-          fill={colors.shoeL}
-          onClick={() => handleColorChange(12)}
+          fill={colors.shoeR}
+          onClick={() => handleColorChange(13)}
         />
         </g>
       </svg>

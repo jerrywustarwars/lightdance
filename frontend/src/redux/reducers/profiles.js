@@ -23,6 +23,12 @@ const initialState = {
   ],
   favoriteColor: [],
   dancerVisibility: [false, false, false, false, false, false, false], // 初始全部隱藏
+  clipboard: {
+    data: null,              // 複製的 timeline 資料
+    sourceArmorIndex: null,  // 來源舞者索引
+    sourcePartIndex: null,   // 來源部位索引
+    timestamp: null,         // 複製時間戳
+  },
 };
 
 export const profiles = (state = initialState, action) => {
@@ -167,6 +173,8 @@ export const profiles = (state = initialState, action) => {
       return { ...state, favoriteColor: action.payload };
     case "UPDATEDANCERVISIBILITY":
       return { ...state, dancerVisibility: action.payload };
+    case "UPDATECLIPBOARD":
+      return { ...state, clipboard: action.payload };
     case "REFRESH":
       return initialState;
     default:

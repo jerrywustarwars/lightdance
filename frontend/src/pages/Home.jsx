@@ -157,19 +157,20 @@ function Home({ rgba, setRgba, setButtonState }) {
         mergedResults.push({
           time: Math.floor(mergedItem.time / 50),
           hat: mergedItem[0],      // 0: 帽子
-          head: mergedItem[1],     // 1: 頭部
-          armL: mergedItem[2],     // 2: 左手臂
-          armR: mergedItem[3],     // 3: 右手臂
-          chestL: mergedItem[4],   // 4: 左胸
-          chestR: mergedItem[5],   // 5: 右胸
+          face: mergedItem[1],     // 1: 臉部
+          chestL: mergedItem[2],   // 2: 左胸
+          chestR: mergedItem[3],   // 3: 右胸
+          armL: mergedItem[4],     // 4: 左手臂
+          armR: mergedItem[5],     // 5: 右手臂
           tie: mergedItem[6],      // 6: 領帶
-          gloveL: mergedItem[7],   // 7: 左手套
-          gloveR: mergedItem[8],   // 8: 右手套
-          belt: mergedItem[9],     // 9: 腰帶
+          belt: mergedItem[7],     // 7: 腰帶
+          gloveL: mergedItem[8],   // 8: 左手套
+          gloveR: mergedItem[9],   // 9: 右手套
           legL: mergedItem[10],    // 10: 左腿
           legR: mergedItem[11],    // 11: 右腿
           shoeL: mergedItem[12],   // 12: 左鞋
           shoeR: mergedItem[13],   // 13: 右鞋
+          board: 0,
         });
       }
       console.log(mergedResults);
@@ -179,11 +180,20 @@ function Home({ rgba, setRgba, setButtonState }) {
           if (item !== "time") {
             let target = mergedResults[j][item];
             if (target) {
+              // Scale A to fit in 7 bits (0-127)
+              const alphaVal = Math.min(Math.floor(target.A * 128), 127);
+              
+              // Get the linear value, default to 0
+              const linearVal = target.linear || 0;
+
+              // Pack A into bits [7:1] and linear into bit [0]
+              const packedByte = (alphaVal << 1) | linearVal;
+
               const color =
                 ((target.R & 0xff) << 24) |
                 ((target.G & 0xff) << 16) |
                 ((target.B & 0xff) << 8) |
-                ((target.A * 100) & 0xff);
+                (packedByte & 0xff);
               let unsignedColor = color >>> 0;
               mergedResults[j][item] = unsignedColor;
             }
