@@ -28,9 +28,12 @@ const Timeline = forwardRef(
       leftindex: null, // 左邊緣的方塊索引
       rightindex: null, // 右邊緣的方塊索引
     });
-    const [dragging, setDragging] = useState(false); // 是否正在拖動方塊
+    const [dragging, setDragging] = useState(false); // 是否正在拖動方塊位置
+    const [resizing, setResizing] = useState(false); // 是否正在調整方塊寬度
     const [draggedBlockIndex, setDraggedBlockIndex] = useState(null); // 被拖動的方塊索引
     const [dragStartpoint, setDragStartpoint] = useState(null); // 拖動的起始點
+    const [resizeStartpoint, setResizeStartpoint] = useState(null); // 寬度調整的起始點（鼠標位置）
+    const [resizeStartTime, setResizeStartTime] = useState(null); // 寬度調整時的初始時間點
 
     // 畫布相關狀態
     const canvasRef = useRef(null); // timeline 的畫布引用
@@ -179,7 +182,7 @@ const Timeline = forwardRef(
       );
     }, [tempActionTable, duration, armorIndex, partIndex, dispatch]);
 
-    // 處理鼠標按下事件
+    // 處理鼠標按下事件（中心拖動）
     const handleMouseDown = (e, index) => {
       e.stopPropagation();
 
@@ -199,6 +202,23 @@ const Timeline = forwardRef(
       );
     };
 
+    // 處理右邊緣拖動事件（調整寬度）
+    const handleResizeMouseDown = (e, index) => {
+      e.stopPropagation();
+      const nextBlockIdx = index + 1;
+      const nextBlockTime = tempActionTable?.[armorIndex]?.[partIndex]?.[nextBlockIdx]?.time;
+      
+      setResizing(true);
+      setDraggedBlockIndex(index);
+      setResizeStartpoint(e.clientX);
+      setResizeStartTime(nextBlockTime || 0); // 記錄初始右邊界時間
+      
+      // 同時選中該方塊
+      dispatch(
+        updateSelectedBlock({ armorIndex, partIndex, blockIndex: index })
+      );
+    };
+
     // 處理鼠標放開事件
     const handleMouseUp = () => {
       if (dragging) {
@@ -207,10 +227,44 @@ const Timeline = forwardRef(
         dispatch(updateActionTable(tempActionTable)); // 更新 actionTable
         // console.log(tempActionTable);
       }
+      if (resizing) {
+        setResizing(false); // 停止調整寬度
+        setDraggedBlockIndex(null);
+        dispatch(updateActionTable(tempActionTable)); // 更新 actionTable
+      }
     };
 
-    // 處理鼠標移動事件，用於拖動方塊
+    // 處理鼠標移動事件，用於拖動方塊或調整寬度
     const handleMouseMove = (e) => {
+      // 如果正在調整寬度
+      if (resizing && draggedBlockIndex !== null) {
+        if (!timelineRef?.current) return;
+
+        const rect = timelineRef.current.getBoundingClientRect();
+        // 計算鼠標移動距離轉換為時間
+        const resizedDistance = e.clientX - resizeStartpoint;
+        const resizedTime = Math.floor(((resizedDistance / rect.width) * duration) / 50) * 50;
+
+        const updatedTable = produce(tempActionTable, (draft) => {
+          const partData = draft[armorIndex][partIndex];
+          const nextBlockIdx = draggedBlockIndex + 1;
+          const currentBlockTime = partData[draggedBlockIndex].time;
+
+          if (partData[nextBlockIdx]) {
+            // 右邊界的新時間 = 初始時間 + 鼠標移動對應的時間變化
+            // 這樣實現鼠標移動與色塊寬度的 1:1 同步
+            const newRightBoundaryTime = Math.max(
+              currentBlockTime + 50, // 最少寬度 50ms
+              resizeStartTime + resizedTime // 與鼠標位置同步
+            );
+            partData[nextBlockIdx].time = newRightBoundaryTime;
+          }
+        });
+
+        dispatch(updateTempActionTable(updatedTable));
+        return; // 寬度調整時不執行拖動邏輯
+      }
+
       // 如果没有拖动行为或没有正在拖动的方块，直接返回
       if (!dragging || draggedBlockIndex === null) return;
 
@@ -531,10 +585,44 @@ const Timeline = forwardRef(
                 ...(hoveredBlock?.index === index
                   ? { opacity: 0.85 } // 懸停時透明度
                   : { opacity: 1 }), // 預設透明度
+                position: "relative", // 確保子元素可以絕對定位
               }}
               className="timeline-block"
               onMouseDown={(e) => handleMouseDown(e, index)} // 點擊方塊選中
+              onMouseMove={(e) => {
+                // 偵測是否在右邊緣（10px）
+                const blockRect = e.currentTarget.getBoundingClientRect();
+                const distanceFromRight = blockRect.right - e.clientX;
+                if (distanceFromRight <= 10) {
+                  e.currentTarget.style.cursor = "ew-resize"; // 改變游標為可調整大小
+                } else {
+                  e.currentTarget.style.cursor = "grab";
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.cursor = "default";
+              }}
             >
+              {/* 右邊緣調整區域 */}
+              <div
+                style={{
+                  position: "absolute",
+                  right: 0,
+                  top: 0,
+                  width: "10px",
+                  height: "100%",
+                  cursor: "ew-resize",
+                  backgroundColor: "rgba(255, 255, 255, 0)", // 透明背景，方便拖動
+                  zIndex: 3,
+                }}
+                onMouseDown={(e) => handleResizeMouseDown(e, index)}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.3)"; // 懸停時顯示邊緣
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0)";
+                }}
+              />
               {currentBlockData?.linear === 1 && (
                 <FontAwesomeIcon
                   icon={faWandMagicSparkles}
