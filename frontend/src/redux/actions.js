@@ -8,19 +8,14 @@ export const UPDATECHOSENCOLOR = "UPDATECHOSENCOLOR";
 export const UPDATECURRENTTIME = "UPDATECURRENTTIME";
 export const UPDATEACCESSTOKEN = "UPDATEACCESSTOKEN";
 export const UPDATEUSERNAME = "UPDATEUSERNAME";
-export const UPDATETIMELINEBLOCK = "UPDATETIMELINEBLOCK";
 export const UPDATEAUTOREFRESH = "UPDATEAUTOREFRESH";
-export const UPDATETEMPACTIONTABLE = "UPDATETEMPACTIONTABLE";
 export const UPDATEPALETTECOLOR = "UPDATEPALETTECOLOR";
-export const UPDATEHISTORY = "UPDATEHISTORY";
 export const UPDATEISCOLORCHANGEACTIVE = "UPDATEISCOLORCHANGEACTIVE";
 export const UPDATEPLAYBACKRATE = "UPDATEPLAYBACKRATE";
-export const UPDATEMAGNETACTIVE = "UPDATEMAGNETACTIVE";
 export const UPDATESHOWPART = "UPDATESHOWPART";
 export const UPDATEFAVORITECOLOR = "UPDATEFAVORITECOLOR";
 export const UPDATEDANCERVISIBILITY = "UPDATEDANCERVISIBILITY";
 export const UPDATECLIPBOARD = "UPDATECLIPBOARD";
-export const UPDATE_IS_DIRTY = "UPDATE_IS_DIRTY";
 
 export const updateUser = (value) => ({ type: UPDATEUSER, payload: value });
 export const updateFullpeaks = (value) => ({
@@ -67,28 +62,13 @@ export const updateUserName = (value) => ({
   payload: value,
 });
 
-export const updateTimelineBlock = (value) => ({
-  type: UPDATETIMELINEBLOCK,
-  payload: value,
-});
-
 export const updateAutoRefresh = (value) => ({
   type: UPDATEAUTOREFRESH,
   payload: value,
 });
 
-export const updateTempActionTable = (value) => ({
-  type: UPDATETEMPACTIONTABLE,
-  payload: value,
-});
-
 export const updatePaletteColor = (value) => ({
   type: UPDATEPALETTECOLOR,
-  payload: value,
-});
-
-export const updateHistory = (value) => ({
-  type: UPDATEHISTORY,
   payload: value,
 });
 
@@ -102,10 +82,6 @@ export const updatePlaybackRate = (value) => ({
   payload: value,
 });
 
-export const updateMagnetActive = (value) => ({
-  type: UPDATEMAGNETACTIVE,
-  payload: value,
-});
 export const updateUndo = () => ({ type: "UPDATEUNDO" });
 export const updateRedo = () => ({ type: "UPDATEREDO" });
 
@@ -126,11 +102,6 @@ export const updateDancerVisibility = (value) => ({
 
 export const updateClipboard = (value) => ({
   type: UPDATECLIPBOARD,
-  payload: value,
-});
-
-export const updateIsDirty = (value) => ({
-  type: UPDATE_IS_DIRTY,
   payload: value,
 });
 
