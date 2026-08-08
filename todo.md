@@ -64,7 +64,14 @@
 - `keyframesToSegments`：色 keyframe @t1 + 黑 keyframe @b → segment `{start: t1, end: ceil(b/TICK_MS)*TICK_MS}`；**所有黑點正規化上網格後丟棄**——黑色不再是資料。
 - `segmentsToKeyframes`（僅供匯出壓平與過渡期 adapter 使用）：segment 後有空隙時，在**網格點 `end` 整點**輸出熄滅。不保留任何 -10ms 相容規則，**`BLACK_SENTINEL_MS` 不存在**。
 - 已知且被接受的輸出差異：黑點從 `g−10` 移到 `g` 後**時間格完全不變**（`ceil((g−10)/50)*50 = g`）；唯一差異是**線性漸變**的插值分母微調（如 990→1000），只影響漸變**內部**取樣點（端點不受影響，端點在兩種算法下都是黑）。
-- **誤差幅度（2026-08-08 實測，非估計）**：理論上界約 `255 × 10 / (漸變長度ms − 10)`，漸變越短誤差越大。合成 fixture 實測：1000ms 漸變最大通道差 **2**、100ms 漸變最大通道差 **15**。對應上界：L=1000→3、L=500→6、L=200→14、L=100→29。
+- **誤差幅度（2026-08-08 實測，非估計）**：理論上界約 `255 × 10 / (漸變長度ms − 10)`，漸變越短誤差越大。
+  - **真實 production 資料全庫實測**（2026-02-27 mongodump：336 份光表、544,673 個關鍵格）：
+    **結構性差異 0**（時間格、列數、非漸變欄位全部相同）；漸變內部差異僅 **103 個欄位**；
+    **最大通道差 = 2**（分布：22 份文件差 0、7 份差 1、5 份差 2）
+  - 資料背景：離網格黑點 **260,866 個**（佔黑點 92%，偏移以 40ms 即 `g−10` 為主）；
+    漸變關鍵格僅 **1,780 個**，且**全部**終止於離網格黑點；最短漸變 40ms
+  - 合成極端案例實測：100ms 漸變 15、1000ms 漸變 2
+  - 為何遠低於理論上界：短漸變跨不到一個 50ms 取樣格，不會產生內部取樣點——誤差自我限制
   > ⚠️ 修正紀錄：本計畫初稿曾寫「最多 ±1」，那是錯的（未考慮分母比例效應）。Phase 0 建立比對器時實測後更正。
 - **等價測試 = 結構化 diff**（`utils/export/structuredDiff.js`）：斷言 (a) 舞者數/列數/所有 `time` 完全相同；(b) 有差異的欄位必須**兩邊 linear bit 都是 1**（即確實位於漸變內部）；(c) 最大通道差不超過容許值（預設 16，實測最大 15）；(d) 其他任何差異 = 測試失敗。round-trip 冪等（轉過去再轉回來達到不動點）為必要測試。
 - 若真實資料量測出超過 16 的差異，代表現場存在比 100ms 更短的漸變——屆時再決定調高容許值或對短漸變特別處理，**用資料決定，不要臆測**。
@@ -100,8 +107,14 @@
 - [x] 合成邊界 fixtures（13 筆）於 `src/utils/export/__tests__/fixtures/synthetic.js`：空表、離網格黑點漸變、短漸變、鏈式漸變、連續黑點、同時間重複、網格邊界、頻閃配對、alpha 變化、僅飾品、object 容器、多舞者混合
 - [x] Golden 測試 + 韌體 ABI 鎖定（欄位順序、uint32 範圍、時間遞增）：`buildPlayers.golden.test.js`
 - [x] 結構化 diff 比對器 `utils/export/structuredDiff.js` + 測試（含 Phase 2 情境預演）
-- [ ] **待隊員協助**：加入真實 production fixtures（每位使用者至少 1 筆）→ 步驟見 `src/utils/export/__tests__/fixtures/real/README.md`，放進 `real/` 目錄會自動載入，然後跑 `npm run test:update-golden`
-  - 加入後**重新量測**漸變差異的實際最大值，據以確認 `maxChannelDelta` 預設值 16 是否合適
+- [x] **真實 production fixtures 已匯入**（2026-08-08，來源：2026-02-27 mongodump 備份）
+  - 匯入工具 `scripts/import-mongo-fixtures.mjs`（零依賴自製 BSON 解析器；白名單只讀 raw_json/color，**永不碰含明文密碼的 users.bson**）
+  - 3 筆 fixture：`real-rich-show`（1,020 關鍵格、56 漸變）、`real-dirty-times`（非整數時間、缺 linear 欄位）、`real-legacy-9parts`（舊版 9 部位 schema）
+  - 合成案例補上真實資料才暴露的三種形狀：`missing-linear-field`（真實資料 96% 的關鍵格沒有 linear 欄位）、`dirty-fractional-times`、`off-grid-color-keyframe`
+  - `maxChannelDelta` 預設 16 經真實資料驗證**綽綽有餘**（實測最大 2）
+- [x] **端到端 production 驗證**（`buildPlayers.production.test.js`）：斷言 `buildPlayers` 重現當時實際存進 mongo、餵給韌體的 `color` 輸出
+  - ⚠️ fixture 必須挑 **2026-01-07 之後**的資料：全庫掃描顯示 2026-01-06 以前的匯出邏輯與現行版本不同（每份 126~336 欄位有差異），那是專案刻意演進的結果
+  - 01-07 之後 33/37 份完全相同；剩 4 份差 1~4 欄位，推測因該批資料早於 `a99d5fc`（upload_full），當時 color 與 raw_data 是兩個獨立 POST，可能對應不同編輯狀態
 - **Ship**：單一 PR。回滾：revert。
 
 ### Phase 1 清理與常數統一（M / 低風險 / 4 個獨立 PR，可與 Phase 2 平行）

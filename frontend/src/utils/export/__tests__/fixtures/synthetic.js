@@ -188,6 +188,48 @@ export const fixtures = [
     ),
   },
   {
+    name: "missing-linear-field",
+    description:
+      "關鍵格完全沒有 linear 欄位 — 真實資料中佔 96%（54 萬筆中的 52 萬），" +
+      "舊版編輯器寫入時不帶此欄位",
+    actionTable: makeTable({
+      0: {
+        0: [
+          { time: 0, color: { R: 0, G: 0, B: 0, A: 1 } },
+          { time: 1000, color: { R: 255, G: 0, B: 0, A: 1 } },
+          { time: 1990, color: { R: 0, G: 0, B: 0, A: 1 } },
+        ],
+      },
+    }),
+  },
+  {
+    name: "dirty-fractional-times",
+    description:
+      "非整數的關鍵格時間 — 真實資料中確實存在（如黑點落在 x.28798185940832ms），" +
+      "來自未量化的播放位置操作",
+    actionTable: makeTable({
+      0: {
+        0: [
+          black(0),
+          color(1000, 255, 0, 0),
+          black(1023.28798185940832),
+          color(2000, 0, 255, 0, 1, 1),
+          black(2976.7119),
+        ],
+      },
+    }),
+  },
+  {
+    name: "off-grid-color-keyframe",
+    description: "彩色關鍵格本身離網格（非 50ms 倍數）— 真實資料中有 40 筆",
+    actionTable: makeTable({
+      0: {
+        0: [black(0), color(1017, 255, 128, 0), black(1990)],
+        1: [black(0), color(1033, 0, 255, 128, 1, 1), black(2029)],
+      },
+    }),
+  },
+  {
     name: "multi-armor-mixed",
     description: "多位舞者、混合各種特徵（漸變、純色、飾品、不同時間軸）",
     actionTable: makeTable({

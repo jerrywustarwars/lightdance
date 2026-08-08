@@ -19,22 +19,26 @@ const realDir = join(here, "real");
 function loadRealFixtures() {
   if (!existsSync(realDir)) return [];
 
-  return readdirSync(realDir)
-    .filter((file) => file.endsWith(".json"))
-    .sort()
-    .map((file) => {
-      const parsed = JSON.parse(readFileSync(join(realDir, file), "utf-8"));
-      if (!parsed.actionTable) {
-        throw new Error(
-          `real/${file} 缺少 actionTable 欄位，請參考 real/README.md 的格式`,
-        );
-      }
-      return {
-        name: parsed.name ?? `real-${file.replace(/\.json$/, "")}`,
-        description: parsed.description ?? `真實資料：${file}`,
-        actionTable: parsed.actionTable,
-      };
-    });
+  return (
+    readdirSync(realDir)
+      // *.color.json 是「當時韌體實際收到的輸出」，屬於期望值而非輸入，
+      // 由 buildPlayers.production.test.js 另外讀取
+      .filter((file) => file.endsWith(".json") && !file.endsWith(".color.json"))
+      .sort()
+      .map((file) => {
+        const parsed = JSON.parse(readFileSync(join(realDir, file), "utf-8"));
+        if (!parsed.actionTable) {
+          throw new Error(
+            `real/${file} 缺少 actionTable 欄位，請參考 real/README.md 的格式`,
+          );
+        }
+        return {
+          name: parsed.name ?? `real-${file.replace(/\.json$/, "")}`,
+          description: parsed.description ?? `真實資料：${file}`,
+          actionTable: parsed.actionTable,
+        };
+      })
+  );
 }
 
 export const realFixtures = loadRealFixtures();

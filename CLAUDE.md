@@ -248,7 +248,7 @@ actionTable[armor][part] = [
 | 部位 | **22 個**（14 身體 + 8 飾品 acc0-7），`isPartAllowed` 閘門不變 |
 | 後端 | **完全不變** — 前端只走 `upload_full`；mongo schema、韌體 PlayerData 路徑原樣 |
 | raw_data | 可改（前端黑盒子）：直接存 `{schemaVersion: 2, actionTable: segments}` |
-| 輸出等價標準 | **結構化 diff**（非 byte-equal，見 `utils/export/structuredDiff.js`）：所有列 time 完全相同；差異只允許出現在線性漸變**內部**取樣點（黑點 g−10→g 的插值分母微調所致）；幅度上界約 `255×10/(漸變長度−10)`，實測 1000ms→2、100ms→15，預設容許 16；其他任何差異 = bug |
+| 輸出等價標準 | **結構化 diff**（非 byte-equal，見 `utils/export/structuredDiff.js`）：所有列 time 完全相同；差異只允許出現在線性漸變**內部**取樣點（黑點 g−10→g 的插值分母微調所致）。**真實 production 全庫實測（336 份光表、54 萬關鍵格）：結構性差異 0、最大通道差 2**；預設容許 16。其他任何差異 = bug |
 | 不變式 | segment 排序、不重疊、`start/end % TICK_MS === 0`、`end > start` |
 | segment 識別 | 穩定 `id`（`crypto.randomUUID()`），供多選、複製貼上、undo diff |
 | 型別 | 核心做成 generic `Segment<T>`，`utils/segments/core.js` 不 import 色彩（多軌鋪路） |

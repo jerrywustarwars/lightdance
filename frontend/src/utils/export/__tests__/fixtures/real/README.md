@@ -68,6 +68,34 @@ curl -s http://<host>/api/raw/<username>/<update_time> \
   > real-<username>.json
 ```
 
+## 方法三：從 mongodump 備份匯入（已內建工具）
+
+若手上有 `mongo-backup.sh` 產生的備份目錄（含 `raw_json.bson` / `color.bson`）：
+
+```bash
+cd frontend
+
+# 1. 列出備份中所有光表與形狀統計，用來挑選
+node scripts/import-mongo-fixtures.mjs --dump <mongodump目錄> --list
+
+# 2. 匯出（--with-color 會一併存下當時餵給韌體的輸出，供端到端測試比對）
+node scripts/import-mongo-fixtures.mjs --dump <mongodump目錄> \
+  --pick "<帳號>@<時間戳>" --name real-rich-show --with-color
+```
+
+**帳號名稱預設會匿名化**成 `userA` / `userB` / …（本目錄現有的三筆即是）。
+理由：fixture 會進入公開 repo，而帳號名稱是登入識別碼，本專案目前又是密碼明文儲存
+（見 CLAUDE.md 安全章節）。時間戳保留，仍可回備份追溯來源。
+確定不需要時才加 `--keep-usernames`。
+
+挑選建議：
+
+- 優先挑 **`--list` 顯示「配對 ✓」** 的資料，才能做端到端驗證
+- 形狀比體積重要——看漸變數、缺 linear 數、離網格黑點數、非整數時間數
+- ⚠️ **不要挑 2026-01-06 以前的資料**做端到端比對：當時的匯出邏輯與現行版本不同，
+  比對必然失敗（詳見 `buildPlayers.production.test.js` 的說明）
+- 🔒 工具以白名單只讀 `raw_json` / `color`，**永遠不會碰 `users.bson`**（內含明文密碼）
+
 ## 加入之後
 
 ```bash
