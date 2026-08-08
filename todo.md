@@ -16,7 +16,7 @@
 | 點光衣放色預設長度 | **1 秒**（`DEFAULT_SEGMENT_MS = 1000`） |
 | raw_data 格式 | **可以改** — 前端黑盒子，直接存 segment JSON + `schemaVersion: 2` |
 | 黑色哨兵 | **徹底消滅** — 不保留 -10ms 相容規則，`blackthreshold` 從專案完全消失；f9489cf 的「黑點豁免 50ms 對齊」特例隨 v1→v2 遷移作廢 |
-| 輸出等價標準 | 從 byte-equal 放寬為**結構化 diff**：所有列的 time 必須完全相同；僅允許「線性漸變內部取樣點、每通道 ±1」的色差（黑點 g−10→g 使插值分母微調所致，肉眼與硬體不可見）；其他任何差異視為 bug |
+| 輸出等價標準 | 從 byte-equal 放寬為**結構化 diff**：所有列的 time 必須完全相同；差異只允許出現在「線性漸變內部取樣點」；幅度依漸變長度而定（見 D2 實測），預設容許最大通道差 16；其他任何差異視為 bug |
 | 優先順序 | 可維護性 → DAW 風燈光編輯 → 多軌音訊 |
 
 ---
@@ -63,8 +63,11 @@
 
 - `keyframesToSegments`：色 keyframe @t1 + 黑 keyframe @b → segment `{start: t1, end: ceil(b/TICK_MS)*TICK_MS}`；**所有黑點正規化上網格後丟棄**——黑色不再是資料。
 - `segmentsToKeyframes`（僅供匯出壓平與過渡期 adapter 使用）：segment 後有空隙時，在**網格點 `end` 整點**輸出熄滅。不保留任何 -10ms 相容規則，**`BLACK_SENTINEL_MS` 不存在**。
-- 已知且被接受的輸出差異：黑點從 `g−10` 移到 `g` 後時間格完全不變（`ceil((g−10)/50)*50 = g`）；唯一差異是**線性漸變**插值分母微調（如 990→1000），漸變內部取樣點 RGB 每通道最多 ±1/255，肉眼與硬體上不可見。
-- **等價測試 = 結構化 diff**：比對新舊 `buildPlayers` 輸出，斷言 (a) 所有列 `time` 完全相同；(b) 差異僅出現在漸變內部取樣點且每通道 ≤1；(c) 其他任何差異 = 測試失敗。round-trip 冪等（轉過去再轉回來達到不動點）為必要測試。
+- 已知且被接受的輸出差異：黑點從 `g−10` 移到 `g` 後**時間格完全不變**（`ceil((g−10)/50)*50 = g`）；唯一差異是**線性漸變**的插值分母微調（如 990→1000），只影響漸變**內部**取樣點（端點不受影響，端點在兩種算法下都是黑）。
+- **誤差幅度（2026-08-08 實測，非估計）**：理論上界約 `255 × 10 / (漸變長度ms − 10)`，漸變越短誤差越大。合成 fixture 實測：1000ms 漸變最大通道差 **2**、100ms 漸變最大通道差 **15**。對應上界：L=1000→3、L=500→6、L=200→14、L=100→29。
+  > ⚠️ 修正紀錄：本計畫初稿曾寫「最多 ±1」，那是錯的（未考慮分母比例效應）。Phase 0 建立比對器時實測後更正。
+- **等價測試 = 結構化 diff**（`utils/export/structuredDiff.js`）：斷言 (a) 舞者數/列數/所有 `time` 完全相同；(b) 有差異的欄位必須**兩邊 linear bit 都是 1**（即確實位於漸變內部）；(c) 最大通道差不超過容許值（預設 16，實測最大 15）；(d) 其他任何差異 = 測試失敗。round-trip 冪等（轉過去再轉回來達到不動點）為必要測試。
+- 若真實資料量測出超過 16 的差異，代表現場存在比 100ms 更短的漸變——屆時再決定調高容許值或對短漸變特別處理，**用資料決定，不要臆測**。
 
 ### D3. Adapter 橋一次切換（取代 4 月版的長混合期）
 
@@ -89,13 +92,16 @@
 
 ## 🗺️ 分期 Roadmap
 
-### Phase 0 測試安全網（S / 低風險 / **最先做，block 一切**）
+### Phase 0 測試安全網（S / 低風險 / **最先做，block 一切**）✅ 大致完成 2026-08-08
 
-- [ ] `npm i -D vitest` + `vitest.config.js`；`package.json` 加 `"test": "vitest run"`；接進 `.github/workflows/pr-checks.yml`（取代 echo placeholder）
-- [ ] 抽出 `frontend/src/utils/export/buildPlayers.js`（Home.jsx:246-390 原樣搬），Home.jsx 改呼叫；merge 前 console byte-diff 一次真實專案
-- [ ] 依 D1 擷取三來源 golden fixtures 至 `utils/export/__fixtures__/`
-- [ ] Golden 測試：每個 fixture `buildPlayers(input)` deep-equal committed expected
-- [ ] 實作結構化 diff 比對器（供 Phase 2 使用：time 全同 + 僅漸變內部 ±1）
+- [x] `npm i -D vitest`（v4.1.10）+ `vitest.config.js`；`package.json` 加 `test` / `test:watch` / `test:update-golden`；接進 `.github/workflows/pr-checks.yml`（**硬性門檻**，無 continue-on-error）
+- [x] 抽出 `frontend/src/utils/export/buildPlayers.js`（Home.jsx:246-390 原樣搬），Home.jsx 改呼叫
+  - 驗證方式**優於原訂的「console 手動 diff」**：直接從 git HEAD 取出舊的內嵌迴圈包成函式，與新 `buildPlayers` 在全部 fixture 上跑 `JSON.stringify` 比對 → **13/13 byte-equal**，證明抽出零行為變更
+- [x] 合成邊界 fixtures（13 筆）於 `src/utils/export/__tests__/fixtures/synthetic.js`：空表、離網格黑點漸變、短漸變、鏈式漸變、連續黑點、同時間重複、網格邊界、頻閃配對、alpha 變化、僅飾品、object 容器、多舞者混合
+- [x] Golden 測試 + 韌體 ABI 鎖定（欄位順序、uint32 範圍、時間遞增）：`buildPlayers.golden.test.js`
+- [x] 結構化 diff 比對器 `utils/export/structuredDiff.js` + 測試（含 Phase 2 情境預演）
+- [ ] **待隊員協助**：加入真實 production fixtures（每位使用者至少 1 筆）→ 步驟見 `src/utils/export/__tests__/fixtures/real/README.md`，放進 `real/` 目錄會自動載入，然後跑 `npm run test:update-golden`
+  - 加入後**重新量測**漸變差異的實際最大值，據以確認 `maxChannelDelta` 預設值 16 是否合適
 - **Ship**：單一 PR。回滾：revert。
 
 ### Phase 1 清理與常數統一（M / 低風險 / 4 個獨立 PR，可與 Phase 2 平行）
@@ -181,7 +187,7 @@
 | 6 新功能 | M | 低中 | 逐功能 | 高 ∥ |
 
 前三大風險與對策：
-1. **漸變 ±1 輸出差異的範圍失控** → Phase 0 的結構化 diff 比對器把允許差異類別寫成斷言，任何超出即紅燈
+1. **漸變輸出差異的範圍失控**（短漸變誤差可達 ~15/255） → Phase 0 的結構化 diff 比對器把允許差異**類別**寫成硬斷言（非漸變欄位差異一律紅燈），幅度則用可設定閾值 + 實測統計，加入真實 fixture 後重新量測
 2. **Phase 4 遷移吃掉某人未上傳的本地作品** → key bump + lazy migrate + IndexedDB 備份維持 v1 可讀
 3. **Phase 3 純搬移期間行為漂移** → 每拆一個元件跑 golden + 手動 checklist
 
