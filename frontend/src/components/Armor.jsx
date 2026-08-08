@@ -2,7 +2,11 @@ import { useMemo, memo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import "./Armor.css";
 import { PART_KEYS } from "../constants/parts.js";
-import { LEGACY_BLACK_SENTINEL_MS } from "../constants/time.js";
+import { TICK_MS } from "../constants/time.js";
+import {
+  insertColorKeyframes,
+  binarySearchFirstGreater,
+} from "../utils/actionTable/insertColorKeyframes.js";
 import {
   updateActionTable,
   updateCurrentTime,
@@ -20,7 +24,6 @@ const Armor = (props) => {
     (state) => state.profiles.multiSelectedBlocks,
   );
   const myId = props.index;
-  const blackthreshold = LEGACY_BLACK_SENTINEL_MS;
 
   // 新的部位名稱（對應 Home.jsx 的輸出映射）
   const partNames = PART_KEYS;
@@ -73,123 +76,24 @@ const Armor = (props) => {
   );
 
   function insertArray(part) {
-    const partData = actionTable?.[myId]?.[part] || [];
-    const indexToCopy = binarySearchFirstGreater(partData, time);
-    const nowTime = Math.floor(time / 50) * 50;
+    const nowTime = Math.floor(time / TICK_MS) * TICK_MS;
     dispatch(updateCurrentTime(nowTime));
 
     // 容器維持 array（見 utils/actionTable/toNestedArray.js）
     const updatedActionTable = Array.from(actionTable).map(
       (player, playerIndex) => {
-        if (playerIndex === myId) {
-          const updatedPlayer = Array.from(player);
-          let updatedPartData = [...(player[part] || [])];
-
-          const newEntry = {
-            time: nowTime,
-            color: { ...chosenColor },
-            linear: 0,
-          };
-
-          const nextElement = updatedPartData[indexToCopy];
-          const previousElement =
-            updatedPartData[indexToCopy - 1] || updatedPartData[indexToCopy];
-
-          const isNextBlack =
-            !nextElement ||
-            (nextElement?.color?.R === 0 &&
-              nextElement?.color?.G === 0 &&
-              nextElement?.color?.B === 0);
-
-          const isPreviousBlack =
-            !previousElement ||
-            (previousElement?.color?.R === 0 &&
-              previousElement?.color?.G === 0 &&
-              previousElement?.color?.B === 0);
-
-          const existingIndex = updatedPartData.findIndex(
-            (entry) => entry.time === nowTime,
-          );
-
-          if (existingIndex !== -1) {
-            updatedPartData = updatedPartData.map((entry, index) =>
-              index === existingIndex
-                ? { ...entry, color: { ...chosenColor } }
-                : entry,
-            );
-          } else if (indexToCopy === 0) {
-            const blackArray2 = {
-              time: duration,
-              color: { R: 0, G: 0, B: 0, A: 1 },
-              linear: 0,
-            };
-            updatedPartData.splice(partData.length, 0, newEntry, blackArray2);
-          } else if (!isPreviousBlack && isNextBlack) {
-            const blackArray = {
-              time: nowTime - blackthreshold,
-              color: { R: 0, G: 0, B: 0, A: 1 },
-              linear: 0,
-            };
-            updatedPartData.splice(indexToCopy + 1, 0, blackArray, newEntry);
-          } else if (!isPreviousBlack && !isNextBlack) {
-            const blackArray = {
-              time: nowTime - blackthreshold,
-              color: { R: 0, G: 0, B: 0, A: 1 },
-              linear: 0,
-            };
-            const blackArray2 = {
-              time:
-                nextElement?.time - blackthreshold || nowTime + blackthreshold,
-              color: { R: 0, G: 0, B: 0, A: 1 },
-              linear: 0,
-            };
-            updatedPartData.splice(
-              indexToCopy + 1,
-              0,
-              blackArray,
-              newEntry,
-              blackArray2,
-            );
-          } else if (isPreviousBlack && !isNextBlack) {
-            const blackArray2 = {
-              time:
-                nextElement?.time - blackthreshold || nowTime + blackthreshold,
-              color: { R: 0, G: 0, B: 0, A: 1 },
-              linear: 0,
-            };
-            updatedPartData.splice(indexToCopy + 1, 0, newEntry, blackArray2);
-          } else {
-            updatedPartData.splice(partData.length, 0, newEntry);
-          }
-
-          updatedPartData.sort((a, b) => a.time - b.time);
-          updatedPlayer[part] = updatedPartData;
-          return updatedPlayer;
-        }
-        return player;
+        if (playerIndex !== myId) return player;
+        const updatedPlayer = Array.from(player);
+        updatedPlayer[part] = insertColorKeyframes(player[part], {
+          time: nowTime,
+          color: chosenColor,
+          duration,
+        });
+        return updatedPlayer;
       },
     );
 
     dispatch(updateActionTable(updatedActionTable));
-  }
-
-  // 二分搜尋找到對應時間
-  function binarySearchFirstGreater(arr, target) {
-    if (!arr) return;
-    let left = 0;
-    let right = arr?.length - 1;
-    let result = 0;
-
-    while (left <= right) {
-      let mid = Math.floor((left + right) / 2);
-      if (arr[mid].time > target) {
-        result = mid;
-        right = mid - 1;
-      } else {
-        left = mid + 1;
-      }
-    }
-    return result;
   }
 
   const isSelected = (part) => {

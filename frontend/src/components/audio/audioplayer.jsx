@@ -37,9 +37,10 @@ import {
   updateCurrentTime,
   updateMusicFilename,
 } from "../../redux/actions.js";
-import { API_ENDPOINTS } from "../../config/api.js"; 
+import { API_ENDPOINTS } from "../../config/api.js";
 import { set } from "lodash";
-import { LEGACY_BLACK_SENTINEL_MS } from "../../constants/time.js";
+import { TICK_MS, LEGACY_BLACK_SENTINEL_MS } from "../../constants/time.js";
+import { insertColorKeyframes } from "../../utils/actionTable/insertColorKeyframes.js";
 
 const MAXZOOMVALUE = 100;
 
@@ -52,8 +53,10 @@ const ensureBlackBefore = (
   if (blackTime <= 0) return;
 
   // 尋找 blackTime 附近的點
-  const existingIdx = timeline.findIndex(p => Math.abs(p.time - blackTime) < 5);
-  
+  const existingIdx = timeline.findIndex(
+    (p) => Math.abs(p.time - blackTime) < 5,
+  );
+
   if (existingIdx !== -1) {
     // 如果已經有黑點就不用動，但如果是有顏色的點，就把他變黑
     const p = timeline[existingIdx];
@@ -63,15 +66,19 @@ const ensureBlackBefore = (
     }
   } else {
     // 檢查 blackTime 之前的最後一個點
-    const prevPoints = timeline.filter(p => p.time < blackTime);
+    const prevPoints = timeline.filter((p) => p.time < blackTime);
     if (prevPoints.length > 0) {
       const lastPoint = prevPoints[prevPoints.length - 1];
       // 如果前一個點不是黑色的，則必須補一個黑點
-      if (lastPoint.color.R !== 0 || lastPoint.color.G !== 0 || lastPoint.color.B !== 0) {
+      if (
+        lastPoint.color.R !== 0 ||
+        lastPoint.color.G !== 0 ||
+        lastPoint.color.B !== 0
+      ) {
         timeline.push({
           time: blackTime,
           color: { R: 0, G: 0, B: 0, A: 1 },
-          linear: 0
+          linear: 0,
         });
       }
     }
@@ -91,10 +98,12 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   const chosenColor = useSelector((state) => state.profiles.chosenColor);
   const favoriteColor = useSelector((state) => state.profiles.favoriteColor);
   const isColorChangeActive = useSelector(
-    (state) => state.profiles.isColorChangeActive
+    (state) => state.profiles.isColorChangeActive,
   );
   const clipboard = useSelector((state) => state.profiles.clipboard);
-  const multiSelectedBlocks = useSelector((state) => state.profiles.multiSelectedBlocks);
+  const multiSelectedBlocks = useSelector(
+    (state) => state.profiles.multiSelectedBlocks,
+  );
   const playbackRate = useSelector((state) => state.profiles.playbackRate);
 
   const audioRef = useRef(null); // 音檔的引用
@@ -135,9 +144,9 @@ function AudioPlayer({ setButtonState, timelineRef }) {
         setUniformAlphaVisible(false);
       }
     };
-  
+
     document.addEventListener("click", handleClickOutsideUniformAlpha);
-  
+
     return () => {
       document.removeEventListener("click", handleClickOutsideUniformAlpha);
     };
@@ -147,7 +156,9 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     const fetchMusicList = async () => {
       if (!userName) return;
       try {
-        const response = await fetch(`${API_ENDPOINTS.BASE}/get_music_list/${userName}`);
+        const response = await fetch(
+          `${API_ENDPOINTS.BASE}/get_music_list/${userName}`,
+        );
         const data = await response.json();
         if (data && data.music_list) {
           setApiMusicList(data.music_list);
@@ -156,15 +167,15 @@ function AudioPlayer({ setButtonState, timelineRef }) {
         console.error("抓取音樂清單失敗:", error);
       }
     };
-  
+
     fetchMusicList();
   }, [userName]);
-  
+
   // 處理選單切換音樂
   const handleMusicChange = (e) => {
     const newFilename = e.target.value;
     // 更新 Redux 中的 music_filename
-    dispatch(updateMusicFilename(newFilename)); 
+    dispatch(updateMusicFilename(newFilename));
     // 如果正在播放，停止播放以觸發 waveform 重新載入
     if (isPlaying) {
       setIsPlaying(false);
@@ -214,11 +225,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   }, [showPart]);
 
   useEffect(() => {
-    if (
-      isColorChangeActive &&
-      multiSelectedBlocks.length > 0 &&
-      chosenColor
-    ) {
+    if (isColorChangeActive && multiSelectedBlocks.length > 0 && chosenColor) {
       // 使用 Immer 深拷贝并更新
       const updatedActionTable = produce(actionTable, (draft) => {
         multiSelectedBlocks.forEach(({ armorIndex, partIndex, blockIndex }) => {
@@ -236,7 +243,13 @@ function AudioPlayer({ setButtonState, timelineRef }) {
 
       // 重置调色状态
     }
-  }, [isColorChangeActive, chosenColor, multiSelectedBlocks, actionTable, dispatch]);
+  }, [
+    isColorChangeActive,
+    chosenColor,
+    multiSelectedBlocks,
+    actionTable,
+    dispatch,
+  ]);
 
   // P0: 進度條改由 waveform.jsx 的 rAF 透過 onTimeUpdate callback 直接操作 DOM（60fps）
   // 移除了 setProgressWidth 的 useEffect，避免播放期間不必要的 re-render
@@ -245,14 +258,18 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     if (multiSelectedBlocks.length > 0) {
       const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
       const block = actionTable?.[armorIndex]?.[partIndex]?.[blockIndex];
-      console.log("Selected block for brightness:", multiSelectedBlocks[0], block);
+      console.log(
+        "Selected block for brightness:",
+        multiSelectedBlocks[0],
+        block,
+      );
       if (block && block.color && block.color.A !== undefined) {
         setBrightness(block.color.A); // 同步選取的區塊的 alpha 值到亮度控制項
       }
     }
   }, [multiSelectedBlocks, actionTable]);
 
-    // 在 AudioPlayer 內部新增狀態
+  // 在 AudioPlayer 內部新增狀態
   const [isCopying, setIsCopying] = useState(false);
 
   const handleCopy = () => {
@@ -267,22 +284,26 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       sourceBlocksInfo = multiSelectedBlocks; // 儲存多選陣列
 
       const timelineDataForCopy = actionTable[armorIndex][partIndex];
-      const selectedIndices = multiSelectedBlocks.map(b => b.blockIndex);
+      const selectedIndices = multiSelectedBlocks.map((b) => b.blockIndex);
       const minIdx = Math.min(...selectedIndices);
       const maxIdx = Math.max(...selectedIndices);
 
       startTime = timelineDataForCopy[minIdx].time;
       endTime = timelineDataForCopy[maxIdx + 1]?.time ?? duration;
-    } 
+    }
     // 2. 如果沒有多選，檢查是否有單選 (點擊單個 Block)
     // 注意：這裡假設您的 selectedBlock 格式為 { armorIndex, partIndex, blockIndex }
-    else if (multiSelectedBlocks.length === 0 && data?.selectedBlock?.armorIndex !== undefined) {
+    else if (
+      multiSelectedBlocks.length === 0 &&
+      data?.selectedBlock?.armorIndex !== undefined
+    ) {
       const sBlock = data.selectedBlock;
       armorIndex = sBlock.armorIndex;
       partIndex = sBlock.partIndex;
       sourceBlocksInfo = [sBlock]; // ✅ 將單選包裝成陣列，這樣渲染邏輯就統一了
 
-      const block = timelineBlocks?.[armorIndex]?.[partIndex]?.[sBlock.blockIndex];
+      const block =
+        timelineBlocks?.[armorIndex]?.[partIndex]?.[sBlock.blockIndex];
       if (!block) {
         console.warn("找不到選中的方塊資料");
         return;
@@ -290,44 +311,61 @@ function AudioPlayer({ setButtonState, timelineRef }) {
 
       startTime = block.startTime;
       endTime = block.startTime + block.durationTime;
-    } 
-    else {
+    } else {
       console.warn("請先選取方塊再進行複製。");
       return;
     }
 
     // 3. 從 actionTable 提取資料
     const timelineData = actionTable[armorIndex][partIndex];
-    copiedPoints = timelineData.filter(p => p.time >= startTime && p.time <= endTime);
+    copiedPoints = timelineData.filter(
+      (p) => p.time >= startTime && p.time <= endTime,
+    );
 
     if (copiedPoints.length === 0) return;
 
     // 4. 存入剪貼簿
-    dispatch(updateClipboard({
-      type: "range_fixed_time",
-      data: JSON.parse(JSON.stringify(copiedPoints)),
-      startTime: startTime,
-      endTime: endTime,
-      sourceBlocks: sourceBlocksInfo // 現在保證這裡一定有值
-    }));
+    dispatch(
+      updateClipboard({
+        type: "range_fixed_time",
+        data: JSON.parse(JSON.stringify(copiedPoints)),
+        startTime: startTime,
+        endTime: endTime,
+        sourceBlocks: sourceBlocksInfo, // 現在保證這裡一定有值
+      }),
+    );
 
     setIsCopying(true); // 進入模式，讓 Timeline 顯示標記
-    console.log("複製成功:", multiSelectedBlocks.length > 0 ? "區間" : "單一區塊");
+    console.log(
+      "複製成功:",
+      multiSelectedBlocks.length > 0 ? "區間" : "單一區塊",
+    );
   };
-  const executeAdvancedPaste = (targetArmor, targetPart, offset, copiedData) => {
+  const executeAdvancedPaste = (
+    targetArmor,
+    targetPart,
+    offset,
+    copiedData,
+  ) => {
     const updatedActionTable = produce(actionTable, (draft) => {
       let timeline = draft[targetArmor][targetPart];
       if (!Array.isArray(timeline)) return;
-  
+
       // A. 產生平移後的點，有色區塊強制對齊 50ms
-      const movedPoints = copiedData.map(p => {
+      const movedPoints = copiedData.map((p) => {
         const newTime = p.time + offset;
-        const isBlack = (p.color?.R ?? 0) === 0 && (p.color?.G ?? 0) === 0 && (p.color?.B ?? 0) === 0;
-        return { ...p, time: isBlack ? newTime : Math.round(newTime / 50) * 50 };
+        const isBlack =
+          (p.color?.R ?? 0) === 0 &&
+          (p.color?.G ?? 0) === 0 &&
+          (p.color?.B ?? 0) === 0;
+        return {
+          ...p,
+          time: isBlack ? newTime : Math.round(newTime / 50) * 50,
+        };
       });
       const newStart = movedPoints[0].time;
       const newEnd = movedPoints[movedPoints.length - 1].time;
-  
+
       // B. 清理衝突區間：移除目標部位在 [newStart, newEnd] 內的所有點
       const indicesToRemove = new Set();
       let lastConflictIdx = -1;
@@ -337,7 +375,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
           lastConflictIdx = idx;
         }
       });
-  
+
       // 衝突後方黑塊清理：如果衝突結束後緊跟黑塊，也刪除
       if (lastConflictIdx !== -1 && lastConflictIdx + 1 < timeline.length) {
         const nextP = timeline[lastConflictIdx + 1];
@@ -345,21 +383,27 @@ function AudioPlayer({ setButtonState, timelineRef }) {
           indicesToRemove.add(lastConflictIdx + 1);
         }
       }
-  
+
       let nextTimeline = timeline.filter((_, idx) => !indicesToRemove.has(idx));
-  
+
       // C. 插入點位並排序
-      nextTimeline = [...nextTimeline, ...movedPoints].sort((a, b) => a.time - b.time);
-  
+      nextTimeline = [...nextTimeline, ...movedPoints].sort(
+        (a, b) => a.time - b.time,
+      );
+
       // D. 智慧黑點緩衝 (檢查起點前方是否需要黑點)
-      const firstColorPoint = movedPoints.find(p => p.color.R !== 0 || p.color.G !== 0 || p.color.B !== 0);
+      const firstColorPoint = movedPoints.find(
+        (p) => p.color.R !== 0 || p.color.G !== 0 || p.color.B !== 0,
+      );
       if (firstColorPoint) {
         ensureBlackBefore(nextTimeline, firstColorPoint.time, blackthreshold);
       }
-  
-      draft[targetArmor][targetPart] = nextTimeline.sort((a, b) => a.time - b.time);
+
+      draft[targetArmor][targetPart] = nextTimeline.sort(
+        (a, b) => a.time - b.time,
+      );
     });
-  
+
     // E. 全域重複清理並更新 Redux
     const cleaned = removeDuplicateBlackBlocks(updatedActionTable);
     dispatch(updateActionTable(cleaned));
@@ -370,12 +414,21 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   const handlePasteAlignedToTarget = () => {
     if (!clipboard || multiSelectedBlocks.length === 0) return;
 
-    const { armorIndex: targetArmor, partIndex: targetPart, blockIndex: targetBlockIdx } = multiSelectedBlocks[0];
-    const targetTime = actionTable[targetArmor][targetPart][targetBlockIdx]?.time ?? 0;
-    
+    const {
+      armorIndex: targetArmor,
+      partIndex: targetPart,
+      blockIndex: targetBlockIdx,
+    } = multiSelectedBlocks[0];
+    const targetTime =
+      actionTable[targetArmor][targetPart][targetBlockIdx]?.time ?? 0;
+
     // 計算偏移量：使用第一個有色區塊時間，避免黑點非對齊時間污染 offset
-    const firstColorPoint = clipboard.data.find(p => p.color?.R !== 0 || p.color?.G !== 0 || p.color?.B !== 0);
-    const firstTime = firstColorPoint ? firstColorPoint.time : clipboard.data[0].time;
+    const firstColorPoint = clipboard.data.find(
+      (p) => p.color?.R !== 0 || p.color?.G !== 0 || p.color?.B !== 0,
+    );
+    const firstTime = firstColorPoint
+      ? firstColorPoint.time
+      : clipboard.data[0].time;
     const offset = targetTime - firstTime;
 
     executeAdvancedPaste(targetArmor, targetPart, offset, clipboard.data);
@@ -383,7 +436,12 @@ function AudioPlayer({ setButtonState, timelineRef }) {
 
   const handlePasteFixedTime = () => {
     if (!clipboard || multiSelectedBlocks.length === 0) return;
-    executeAdvancedPaste(multiSelectedBlocks[0].armorIndex, multiSelectedBlocks[0].partIndex, 0, clipboard.data);
+    executeAdvancedPaste(
+      multiSelectedBlocks[0].armorIndex,
+      multiSelectedBlocks[0].partIndex,
+      0,
+      clipboard.data,
+    );
   };
   const keyPress = useRef(false);
 
@@ -399,7 +457,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       "Code:",
       event.code,
       "Shift:",
-      event.shiftKey
+      event.shiftKey,
     );
 
     if (event.key === "Escape") {
@@ -415,8 +473,12 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     if (event.key === "b" || event.key === "B") {
       event.preventDefault();
       if (multiSelectedBlocks.length === 1) {
-        const userInput = window.prompt("請輸入頻閃間隔 (ms)，必須為 50 的倍數：", "100");
-        if (userInput !== null) { // 如果使用者沒點取消
+        const userInput = window.prompt(
+          "請輸入頻閃間隔 (ms)，必須為 50 的倍數：",
+          "100",
+        );
+        if (userInput !== null) {
+          // 如果使用者沒點取消
           applyBlinkEffect(userInput);
         }
       } else {
@@ -431,13 +493,13 @@ function AudioPlayer({ setButtonState, timelineRef }) {
           updateCurrentTime(
             currentTime + 50 > duration
               ? Math.floor(duration / 50) * 50
-              : currentTime + 50
-          )
+              : currentTime + 50,
+          ),
         );
       } else if (event.key === "ArrowLeft") {
         console.log("ArrowLeft pressed. Going back 50ms");
         dispatch(
-          updateCurrentTime(currentTime - 50 < 0 ? 0 : currentTime - 50)
+          updateCurrentTime(currentTime - 50 < 0 ? 0 : currentTime - 50),
         );
       }
     }
@@ -451,7 +513,8 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       }
       // Shift + V: 貼上整個部位 (整條覆蓋)
       else if (event.key === "v" || event.key === "V") {
-        if (!event.ctrlKey) { // 排除 Ctrl+Shift+V
+        if (!event.ctrlKey) {
+          // 排除 Ctrl+Shift+V
           event.preventDefault();
           console.log("Shift + V: Paste whole timeline");
           handleWholePaste();
@@ -489,7 +552,8 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       event.preventDefault();
       handleCut();
     }
-    if (event.key === "L" || event.key === "l") { // Add shortcut for 'L' key
+    if (event.key === "L" || event.key === "l") {
+      // Add shortcut for 'L' key
       event.preventDefault();
       console.log("L key pressed. Toggling linear property.");
       handleSetLinear();
@@ -514,19 +578,21 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       if (event.key === "c" || event.key === "C") {
         event.preventDefault();
         console.log("觸發 Ctrl+C");
-        handleCopy(); 
+        handleCopy();
       }
       // 處理 Ctrl + V 家族 (保持原樣)
       else if (event.key === "v" || event.key === "V") {
         event.preventDefault();
         if (event.shiftKey) {
-          handlePasteFixedTime(); 
+          handlePasteFixedTime();
         } else {
-          handlePasteAlignedToTarget(); 
+          handlePasteAlignedToTarget();
         }
       }
       // Ctrl+數字: 設定透明度
-      else if (["1", "2", "3", "4", "5", "6", "7", "8", "9"].includes(event.key)) {
+      else if (
+        ["1", "2", "3", "4", "5", "6", "7", "8", "9"].includes(event.key)
+      ) {
         event.preventDefault();
         const alphaValue = parseFloat(event.key) / 10;
         handleBrightnessChange(alphaValue);
@@ -535,7 +601,8 @@ function AudioPlayer({ setButtonState, timelineRef }) {
         handleBrightnessChange(0);
       }
     }
-    if (event.shiftKey &&
+    if (
+      event.shiftKey &&
       ["1", "2", "3", "4", "5", "6", "7", "8"].includes(event.key)
     ) {
       event.preventDefault();
@@ -581,152 +648,36 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   };
 
   const insertFavoriteColorArray = (color) => {
-    console.log("insertFavoriteColor: ", color);
     if (multiSelectedBlocks.length === 0) {
       console.warn("No block selected.");
       return;
     }
 
     const { armorIndex, partIndex } = multiSelectedBlocks[0];
-    const partData = actionTable[armorIndex]?.[partIndex] || [];
-    const indexToCopy = binarySearchFirstGreater(partData, currentTime);
 
-    if (indexToCopy === 0) {
-      console.log("partData: ", partData.length);
-    }
-    console.log("indexToCopy: ", indexToCopy);
+    // 將時間 floor 到最近的一個 tick
+    const nowTime = Math.floor(currentTime / TICK_MS) * TICK_MS;
+    dispatch(updateCurrentTime(nowTime));
 
-    // 將時間 floor 到最近的 50 毫秒
-    const nowTime = Math.floor(currentTime / 50) * 50;
-    dispatch(updateCurrentTime(nowTime)); // 更新 Redux
+    // 保留原本的守衛：時間太靠近 0 時不插入（黑色斷點會落到負時間）
+    if (nowTime - LEGACY_BLACK_SENTINEL_MS <= 0) return;
 
-    const updatedActionTable = actionTable.map((player, playerIndex) => {
-      if (playerIndex === armorIndex) {
-        const updatedPlayer = { ...player };
-        let updatedPartData = [...player[partIndex]];
-
-        const newEntry = {
+    // 容器維持 array（見 utils/actionTable/toNestedArray.js）
+    const updatedActionTable = Array.from(actionTable).map(
+      (player, playerIdx) => {
+        if (playerIdx !== armorIndex) return player;
+        const updatedPlayer = Array.from(player);
+        updatedPlayer[partIndex] = insertColorKeyframes(player[partIndex], {
           time: nowTime,
-          color: { ...color },
-          linear: 0,
-        };
-
-        const nextElement = updatedPartData[indexToCopy];
-        const isNextBlack =
-          indexToCopy === 0
-            ? true
-            : nextElement?.color?.R === 0 &&
-              nextElement?.color?.G === 0 &&
-              nextElement?.color?.B === 0;
-
-        const previousElement =
-          updatedPartData[indexToCopy - 1] || updatedPartData[indexToCopy];
-
-        const isPreviousBlack =
-          indexToCopy === 0
-            ? true
-            : previousElement?.color?.R === 0 &&
-              previousElement?.color?.G === 0 &&
-              previousElement?.color?.B === 0;
-
-        console.log("isPreviousBlack: ", isPreviousBlack);
-        console.log("isNextBlack: ", isNextBlack);
-
-        // 插入新資料及過渡黑色區塊
-        if (nowTime - blackthreshold > 0) {
-          const existingIndex = updatedPartData.findIndex(
-            (entry) => entry.time === nowTime
-          );
-          if (existingIndex !== -1) {
-            updatedPartData = updatedPartData.map((entry, index) =>
-              index === existingIndex
-                ? { ...entry, color: { ...color } }
-                : entry
-            );
-          } else if (indexToCopy === 0) {
-            const blackArray2 = {
-              time: duration,
-              color: { R: 0, G: 0, B: 0, A: 1 },
-              linear: 0,
-            };
-            updatedPartData.splice(partData.length, 0, newEntry, blackArray2);
-          } else if (!isPreviousBlack && isNextBlack) {
-            const blackArray = {
-              time: nowTime - blackthreshold,
-              color: { R: 0, G: 0, B: 0, A: 1 },
-              linear: 0,
-            };
-            updatedPartData.splice(indexToCopy + 1, 0, blackArray, newEntry);
-          } else if (!isPreviousBlack && !isNextBlack) {
-            const blackArray = {
-              time: nowTime - blackthreshold,
-              color: { R: 0, G: 0, B: 0, A: 1 },
-              linear: 0,
-            };
-            const blackArray2 = {
-              time:
-                nextElement?.time - blackthreshold || nowTime + blackthreshold,
-              color: { R: 0, G: 0, B: 0, A: 1 },
-              linear: 0,
-            };
-            updatedPartData.splice(
-              indexToCopy + 1,
-              0,
-              blackArray,
-              newEntry,
-              blackArray2
-            );
-          } else if (isPreviousBlack && !isNextBlack) {
-            const blackArray2 = {
-              time:
-                nextElement?.time - blackthreshold || nowTime + blackthreshold,
-              color: { R: 0, G: 0, B: 0, A: 1 },
-              linear: 0,
-            };
-            updatedPartData.splice(indexToCopy + 1, 0, newEntry, blackArray2);
-          } else if (isPreviousBlack && isNextBlack) {
-            updatedPartData.splice(partData.length, 0, newEntry);
-          } else {
-            const blackArray2 = {
-              time: duration,
-              color: { R: 0, G: 0, B: 0, A: 1 },
-              linear: 0,
-            };
-            updatedPartData.splice(indexToCopy + 1, 0, newEntry, blackArray2);
-          }
-        } else {
-          updatedPartData.splice(indexToCopy + 1, 0, newEntry);
-        }
-
-        // **排序 partData 依據 time**
-        updatedPartData.sort((a, b) => a.time - b.time);
-
-        updatedPlayer[partIndex] = updatedPartData;
+          color,
+          duration,
+        });
         return updatedPlayer;
-      }
-      return player;
-    });
+      },
+    );
 
     dispatch(updateActionTable(updatedActionTable)); // 更新 Redux
   };
-
-  function binarySearchFirstGreater(arr, target) {
-    if (!arr) return;
-    let left = 0;
-    let right = arr?.length - 1;
-    let result = 0; // 默認值為 -1，如果找不到更大的數字
-
-    while (left <= right) {
-      let mid = Math.floor((left + right) / 2);
-      if (arr[mid].time > target) {
-        result = mid; // 找到候選
-        right = mid - 1; // 繼續向左搜尋
-      } else {
-        left = mid + 1; // 向右移動
-      }
-    }
-    return result;
-  }
 
   const handlePlayPause = () => {
     if (!isPlaying) {
@@ -786,7 +737,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
 
   const handleminuszoom = () => {
     setZoomLevel((prevZoom) =>
-      Math.max((Math.round((prevZoom - 0.05) / 0.05) * 0.05).toFixed(2), 1)
+      Math.max((Math.round((prevZoom - 0.05) / 0.05) * 0.05).toFixed(2), 1),
     );
   };
 
@@ -794,8 +745,8 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     setZoomLevel((prevZoom) =>
       Math.min(
         (Math.round((prevZoom + 0.05) / 0.05) * 0.05).toFixed(2),
-        MAXZOOMVALUE
-      )
+        MAXZOOMVALUE,
+      ),
     );
   };
 
@@ -809,7 +760,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
 
   const handleMultiDelete = () => {
     console.log("Blacking out multiple blocks:", multiSelectedBlocks);
-  
+
     const groupedByPart = multiSelectedBlocks.reduce((acc, block) => {
       const key = `${block.armorIndex}-${block.partIndex}`;
       if (!acc[key]) {
@@ -818,47 +769,58 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       acc[key].push(block.blockIndex);
       return acc;
     }, {});
-  
+
     const updatedActionTable = produce(actionTable, (draft) => {
-      Object.keys(groupedByPart).forEach(key => {
-        const [armorIndexStr, partIndexStr] = key.split('-');
+      Object.keys(groupedByPart).forEach((key) => {
+        const [armorIndexStr, partIndexStr] = key.split("-");
         const armorIndex = parseInt(armorIndexStr, 10);
         const partIndex = parseInt(partIndexStr, 10);
         const blockIndexes = groupedByPart[key];
-  
+
         const minBlockIndex = Math.min(...blockIndexes);
         const maxBlockIndex = Math.max(...blockIndexes);
-  
+
         const partTimelineFromActionTable = draft[armorIndex]?.[partIndex];
-        
+
         if (!partTimelineFromActionTable) return;
-  
-        const selectionStartTime = partTimelineFromActionTable[minBlockIndex]?.time;
-        const selectionEndTime = partTimelineFromActionTable[maxBlockIndex + 1]?.time ?? duration;
-  
-  
-        const startIndexToActionTable = partTimelineFromActionTable.findIndex(entry => entry.time === selectionStartTime);
-        
+
+        const selectionStartTime =
+          partTimelineFromActionTable[minBlockIndex]?.time;
+        const selectionEndTime =
+          partTimelineFromActionTable[maxBlockIndex + 1]?.time ?? duration;
+
+        const startIndexToActionTable = partTimelineFromActionTable.findIndex(
+          (entry) => entry.time === selectionStartTime,
+        );
+
         if (startIndexToActionTable === -1) return;
-  
-        partTimelineFromActionTable[startIndexToActionTable].color = { R: 0, G: 0, B: 0, A: 1 };
+
+        partTimelineFromActionTable[startIndexToActionTable].color = {
+          R: 0,
+          G: 0,
+          B: 0,
+          A: 1,
+        };
         partTimelineFromActionTable[startIndexToActionTable].linear = 0;
-  
+
         let deleteStartIndex = startIndexToActionTable + 1;
         let deleteCount = 0;
-        while (deleteStartIndex + deleteCount < partTimelineFromActionTable.length &&
-               partTimelineFromActionTable[deleteStartIndex + deleteCount].time < selectionEndTime) {
+        while (
+          deleteStartIndex + deleteCount < partTimelineFromActionTable.length &&
+          partTimelineFromActionTable[deleteStartIndex + deleteCount].time <
+            selectionEndTime
+        ) {
           deleteCount++;
         }
-  
+
         if (deleteCount > 0) {
           partTimelineFromActionTable.splice(deleteStartIndex, deleteCount);
         }
       });
     });
-  
+
     const cleanedActionTable = removeDuplicateBlackBlocks(updatedActionTable);
-  
+
     dispatch(updateActionTable(cleanedActionTable));
     dispatch(updateMultiSelectedBlocks([]));
   };
@@ -889,21 +851,21 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       alert("請輸入 50 的倍數！");
       return;
     }
-  
+
     const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
-  
+
     const updatedActionTable = produce(actionTable, (draft) => {
       const timeline = draft[armorIndex][partIndex];
       const viewEntry = timeline[blockIndex];
       if (!viewEntry) return;
-  
+
       // 1. 強制校正起始點到 50ms 網格
       const startTime = Math.round(viewEntry.time / 50) * 50;
       const viewNextEntry = timeline[blockIndex + 1];
       const totalDuration = (viewNextEntry?.time ?? duration) - viewEntry.time;
       const activeBlock = timeline[blockIndex];
       const isLinear = activeBlock.linear === 1;
-  
+
       let targetEndBlock = null;
       if (isLinear) {
         for (let i = blockIndex + 1; i < timeline.length; i++) {
@@ -914,59 +876,70 @@ function AudioPlayer({ setButtonState, timelineRef }) {
           }
         }
       }
-  
+
       const blinkCount = Math.floor(totalDuration / period);
       const newPoints = [];
-  
+
       for (let i = 0; i < blinkCount; i++) {
         const baseTime = startTime + i * period; // 這裡絕對是 50 的倍數
         let currentColor = { ...activeBlock.color };
-  
+
         if (isLinear && targetEndBlock) {
-          const f = (baseTime - activeBlock.time) / (targetEndBlock.time - activeBlock.time);
+          const f =
+            (baseTime - activeBlock.time) /
+            (targetEndBlock.time - activeBlock.time);
           currentColor = {
-            R: Math.round(activeBlock.color.R * (1 - f) + targetEndBlock.color.R * f),
-            G: Math.round(activeBlock.color.G * (1 - f) + targetEndBlock.color.G * f),
-            B: Math.round(activeBlock.color.B * (1 - f) + targetEndBlock.color.B * f),
+            R: Math.round(
+              activeBlock.color.R * (1 - f) + targetEndBlock.color.R * f,
+            ),
+            G: Math.round(
+              activeBlock.color.G * (1 - f) + targetEndBlock.color.G * f,
+            ),
+            B: Math.round(
+              activeBlock.color.B * (1 - f) + targetEndBlock.color.B * f,
+            ),
             A: activeBlock.color.A * (1 - f) + targetEndBlock.color.A * f,
           };
         }
-  
+
         // ✅ 彩色點：絕對對齊 50ms
         newPoints.push({ time: baseTime, color: currentColor, linear: 0 });
-  
+
         // ✅ 黑色緩衝點：保留 10ms 縫隙（這點不會是 50 倍數，但能維持閃爍感）
         newPoints.push({
-          time: baseTime + period - blackthreshold, 
+          time: baseTime + period - blackthreshold,
           color: { R: 0, G: 0, B: 0, A: 1 },
           linear: 0,
         });
       }
-  
+
       timeline.splice(blockIndex, 1, ...newPoints);
       timeline.sort((a, b) => a.time - b.time);
     });
-  
+
     dispatch(updateActionTable(removeDuplicateBlackBlocks(updatedActionTable)));
     setEffectMenuVisible(false);
   };
 
   const removeDuplicateBlackBlocks = (actionTable) => {
     return produce(actionTable, (draft) => {
-      Object.values(draft).forEach(armor => {
-        Object.keys(armor).forEach(partKey => {
+      Object.values(draft).forEach((armor) => {
+        Object.keys(armor).forEach((partKey) => {
           let timeline = armor[partKey];
           if (!Array.isArray(timeline)) return;
 
           armor[partKey] = timeline.filter((block, index) => {
-            const isBlack = block.color.R === 0 && block.color.G === 0 && block.color.B === 0;
+            const isBlack =
+              block.color.R === 0 && block.color.G === 0 && block.color.B === 0;
             if (!isBlack) return true;
 
             const prev = timeline[index - 1];
             if (prev) {
-              const prevIsBlack = prev.color.R === 0 && prev.color.G === 0 && prev.color.B === 0;
+              const prevIsBlack =
+                prev.color.R === 0 && prev.color.G === 0 && prev.color.B === 0;
               // 如果連續兩個黑點，或者是時間點重疊/太接近的黑點，刪除後者
-              if (prevIsBlack || Math.abs(block.time - prev.time) < 5) return false;
+              if (prevIsBlack || Math.abs(block.time - prev.time) < 5)
+                return false;
             }
             return true;
           });
@@ -982,8 +955,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
 
     const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
 
-    const block =
-      actionTable?.[armorIndex]?.[partIndex]?.[blockIndex];
+    const block = actionTable?.[armorIndex]?.[partIndex]?.[blockIndex];
 
     if (!block || !block.color) {
       console.warn("Selected block has no color information.");
@@ -1109,7 +1081,9 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   const handleCut = () => {
     console.log("cut clicked");
     if (multiSelectedBlocks.length !== 1) {
-      console.warn("Cut operation is only valid when exactly one block is selected.");
+      console.warn(
+        "Cut operation is only valid when exactly one block is selected.",
+      );
       return;
     }
 
@@ -1126,7 +1100,11 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       // 若為最後一個區塊，以 duration 作為隱含結束邊界
       const blockEndTime = nextBlock?.time ?? duration;
 
-      if (!originalBlock || curTime <= originalBlock.time || curTime >= blockEndTime) {
+      if (
+        !originalBlock ||
+        curTime <= originalBlock.time ||
+        curTime >= blockEndTime
+      ) {
         console.warn("Cut operation is not valid at the current time.");
         return;
       }
@@ -1137,7 +1115,12 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       if (isOriginalLinear) {
         const gradientTargetBlock = timeline[blockIndex + 2];
         const startColor = originalBlock.color;
-        const endColor = gradientTargetBlock?.color || { R: 0, G: 0, B: 0, A: 1 };
+        const endColor = gradientTargetBlock?.color || {
+          R: 0,
+          G: 0,
+          B: 0,
+          A: 1,
+        };
         const startTime = originalBlock.time;
         const endTime = nextBlock?.time ?? duration;
 
@@ -1147,7 +1130,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
             R: Math.round(startColor.R * (1 - ratio) + endColor.R * ratio),
             G: Math.round(startColor.G * (1 - ratio) + endColor.G * ratio),
             B: Math.round(startColor.B * (1 - ratio) + endColor.B * ratio),
-            A: ((startColor.A ?? 1) * (1 - ratio) + (endColor.A ?? 1) * ratio),
+            A: (startColor.A ?? 1) * (1 - ratio) + (endColor.A ?? 1) * ratio,
           };
         }
         originalBlock.linear = 1;
@@ -1168,15 +1151,17 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       timeline.splice(blockIndex + 1, 0, newBlackBlock, newBlock);
       timeline.sort((a, b) => a.time - b.time);
     });
-    
+
     dispatch(updateActionTable(updatedActionTable));
-    
+
     dispatch(
-      updateMultiSelectedBlocks([{
-        armorIndex,
-        partIndex,
-        blockIndex: blockIndex + 2,
-      }])
+      updateMultiSelectedBlocks([
+        {
+          armorIndex,
+          partIndex,
+          blockIndex: blockIndex + 2,
+        },
+      ]),
     );
   };
 
@@ -1207,12 +1192,12 @@ function AudioPlayer({ setButtonState, timelineRef }) {
         sourceArmorIndex: armorIndex,
         sourcePartIndex: partIndex,
         timestamp: Date.now(),
-      })
+      }),
     );
 
     console.log(
       `Copied timeline for Armor ${armorIndex}, Part ${partIndex}:`,
-      copiedData
+      copiedData,
     );
     console.log(`Total blocks copied: ${copiedData.length}`);
   };
@@ -1235,9 +1220,11 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     const { armorIndex: targetArmorIndex, partIndex: targetPartIndex } =
       multiSelectedBlocks[0];
 
-    console.log(`Pasting to Armor ${targetArmorIndex}, Part ${targetPartIndex}`);
     console.log(
-      `Source: Armor ${clipboard.sourceArmorIndex}, Part ${clipboard.sourcePartIndex}`
+      `Pasting to Armor ${targetArmorIndex}, Part ${targetPartIndex}`,
+    );
+    console.log(
+      `Source: Armor ${clipboard.sourceArmorIndex}, Part ${clipboard.sourcePartIndex}`,
     );
 
     // 深拷貝剪貼簿資料
@@ -1253,7 +1240,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     dispatch(updateActionTable(updatedActionTable));
 
     console.log(
-      `Pasted ${pastedData.length} blocks to Armor ${targetArmorIndex}, Part ${targetPartIndex}`
+      `Pasted ${pastedData.length} blocks to Armor ${targetArmorIndex}, Part ${targetPartIndex}`,
     );
 
     // 貼上後，選中目標部位的第一個有效方塊（非黑色）
@@ -1261,11 +1248,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     for (let i = 0; i < pastedData.length; i++) {
       const block = pastedData[i];
       if (
-        !(
-          block.color.R === 0 &&
-          block.color.G === 0 &&
-          block.color.B === 0
-        )
+        !(block.color.R === 0 && block.color.G === 0 && block.color.B === 0)
       ) {
         newBlockIndex = i;
         break;
@@ -1273,11 +1256,13 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     }
 
     dispatch(
-      updateMultiSelectedBlocks([{
-        armorIndex: targetArmorIndex,
-        partIndex: targetPartIndex,
-        blockIndex: newBlockIndex,
-      }])
+      updateMultiSelectedBlocks([
+        {
+          armorIndex: targetArmorIndex,
+          partIndex: targetPartIndex,
+          blockIndex: newBlockIndex,
+        },
+      ]),
     );
   };
 
@@ -1286,35 +1271,36 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       console.warn("No blocks selected to change brightness.");
       return;
     }
-  
+
     const rawValue = Number(newBrightness);
-  
+
     if (Number.isNaN(rawValue)) {
       console.warn("Invalid brightness value:", newBrightness);
       return;
     }
-  
+
     const alphaValue = Math.max(0, Math.min(1, rawValue));
-  
+
     const updatedActionTable = produce(actionTable, (draft) => {
       multiSelectedBlocks.forEach(({ armorIndex, partIndex, blockIndex }) => {
         const timeline = draft[armorIndex]?.[partIndex];
-  
+
         if (timeline?.[blockIndex]?.color) {
           timeline[blockIndex].color.A = alphaValue;
         }
       });
     });
-  
+
     dispatch(updateActionTable(updatedActionTable));
-  
+
     const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
-    const firstBlockColor = actionTable?.[armorIndex]?.[partIndex]?.[blockIndex]?.color;
-  
+    const firstBlockColor =
+      actionTable?.[armorIndex]?.[partIndex]?.[blockIndex]?.color;
+
     if (firstBlockColor) {
       dispatch(updateChosenColor({ ...firstBlockColor, A: alphaValue }));
     }
-  
+
     setBrightness(alphaValue);
   };
 
@@ -1330,7 +1316,9 @@ function AudioPlayer({ setButtonState, timelineRef }) {
 
   const applyGradientEffect = (startBrightness, interval, endBrightness) => {
     if (multiSelectedBlocks.length !== 1) {
-      console.warn("Gradient effect is only valid when exactly one block is selected.");
+      console.warn(
+        "Gradient effect is only valid when exactly one block is selected.",
+      );
       return;
     }
 
@@ -1368,14 +1356,14 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     if (shiftStep === 0) {
       setShiftStep(1);
     } else if (shiftStep === 1) {
-      setShiftTimes(prev => ({ ...prev, start: currentT }));
+      setShiftTimes((prev) => ({ ...prev, start: currentT }));
       setShiftStep(2);
     } else if (shiftStep === 2) {
       if (currentT <= shiftTimes.start) {
         alert("結束時間必須大於起始時間！");
         return;
       }
-      setShiftTimes(prev => ({ ...prev, end: currentT }));
+      setShiftTimes((prev) => ({ ...prev, end: currentT }));
       setShiftStep(3);
     } else if (shiftStep === 3) {
       executeTimeShift(shiftTimes.start, shiftTimes.end, currentT);
@@ -1393,18 +1381,18 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     const safeStart = Math.floor(start / 50) * 50;
     const safeEnd = Math.floor(end / 50) * 50;
     const safeTarget = Math.floor(target / 50) * 50;
-  
+
     if (safeEnd <= safeStart) {
       alert("結束時間必須大於起始時間！");
       return;
     }
-  
+
     const selectedTimes = [];
-  
+
     Object.values(actionTable || {}).forEach((armor) => {
       Object.values(armor || {}).forEach((timeline) => {
         if (!Array.isArray(timeline)) return;
-  
+
         timeline.forEach((p) => {
           if (
             p &&
@@ -1417,134 +1405,141 @@ function AudioPlayer({ setButtonState, timelineRef }) {
         });
       });
     });
-  
+
     if (selectedTimes.length === 0) {
       alert("選取區間內沒有任何光點可以平移！");
       return;
     }
-  
+
     const globalFirstTime = Math.min(...selectedTimes);
     const offset = safeTarget - globalFirstTime;
-  
+
     const updatedActionTable = produce(actionTable, (draft) => {
       Object.keys(draft).forEach((armorIdx) => {
         Object.keys(draft[armorIdx]).forEach((partIdx) => {
           const timeline = draft[armorIdx][partIdx];
-  
+
           if (!Array.isArray(timeline)) return;
-  
+
           const moveIndices = [];
-  
+
           timeline.forEach((p, idx) => {
             if (p.time >= safeStart && p.time <= safeEnd) {
               moveIndices.push(idx);
             }
           });
-  
+
           if (moveIndices.length === 0) return;
-  
+
           const movedPoints = moveIndices.map((idx) => ({
             ...timeline[idx],
             color: { ...timeline[idx].color },
             time: timeline[idx].time + offset,
           }));
-  
+
           const newStart = Math.min(...movedPoints.map((p) => p.time));
           const newEnd = Math.max(...movedPoints.map((p) => p.time));
-  
+
           const toRemove = new Set(moveIndices);
-  
+
           timeline.forEach((p, idx) => {
             if (p.time >= newStart && p.time <= newEnd) {
               toRemove.add(idx);
             }
           });
-  
+
           let nextTimeline = timeline.filter((_, idx) => !toRemove.has(idx));
-  
+
           nextTimeline = [...nextTimeline, ...movedPoints].sort(
-            (a, b) => a.time - b.time
+            (a, b) => a.time - b.time,
           );
-  
+
           const firstColorPoint = movedPoints.find(
-            (p) => p.color.R !== 0 || p.color.G !== 0 || p.color.B !== 0
+            (p) => p.color.R !== 0 || p.color.G !== 0 || p.color.B !== 0,
           );
-  
+
           if (firstColorPoint) {
-            ensureBlackBefore(nextTimeline, firstColorPoint.time, blackthreshold);
+            ensureBlackBefore(
+              nextTimeline,
+              firstColorPoint.time,
+              blackthreshold,
+            );
           }
-  
-          draft[armorIdx][partIdx] = nextTimeline.sort((a, b) => a.time - b.time);
+
+          draft[armorIdx][partIdx] = nextTimeline.sort(
+            (a, b) => a.time - b.time,
+          );
         });
       });
     });
-  
+
     const cleanedActionTable = removeDuplicateBlackBlocks(updatedActionTable);
-  
+
     dispatch(updateActionTable(cleanedActionTable));
     dispatch(updateCurrentTime(safeTarget));
   };
 
   const handleUniformAlphaButtonClick = (e) => {
     e?.stopPropagation();
-  
+
     if (!multiSelectedBlocks || multiSelectedBlocks.length !== 1) {
       alert("請先只選取一個色塊");
       return;
     }
-  
+
     const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
     const selectedBlock = actionTable?.[armorIndex]?.[partIndex]?.[blockIndex];
-  
+
     if (!selectedBlock?.color) {
       alert("找不到 selectedBlock 的顏色資料");
       return;
     }
-  
+
     setUniformAlphaVisible((prev) => !prev);
   };
-  
+
   const handleUniformSameColorAlphaChange = (newAlpha) => {
     if (!multiSelectedBlocks || multiSelectedBlocks.length !== 1) {
       alert("請先只選取一個色塊");
       return;
     }
-  
+
     const rawValue = Number(newAlpha);
-  
+
     if (Number.isNaN(rawValue)) {
       console.warn("Invalid alpha value:", newAlpha);
       return;
     }
-  
+
     const alphaValue = Math.max(0, Math.min(1, rawValue));
-  
+
     const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
-    const selectedColor = actionTable?.[armorIndex]?.[partIndex]?.[blockIndex]?.color;
-  
+    const selectedColor =
+      actionTable?.[armorIndex]?.[partIndex]?.[blockIndex]?.color;
+
     if (!selectedColor) {
       alert("找不到 selectedBlock 的顏色資料");
       return;
     }
-  
+
     const targetR = Number(selectedColor.R);
     const targetG = Number(selectedColor.G);
     const targetB = Number(selectedColor.B);
-  
+
     const updatedActionTable = produce(actionTable, (draft) => {
       Object.values(draft || {}).forEach((armor) => {
         Object.values(armor || {}).forEach((timeline) => {
           if (!Array.isArray(timeline)) return;
-  
+
           timeline.forEach((block) => {
             const color = block?.color;
             if (!color) return;
-  
+
             const sameColor =
               Number(color.R) === targetR &&
               Number(color.G) === targetG &&
               Number(color.B) === targetB;
-  
+
             if (sameColor) {
               color.A = alphaValue;
             }
@@ -1552,7 +1547,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
         });
       });
     });
-  
+
     dispatch(updateActionTable(updatedActionTable));
     dispatch(updateChosenColor({ ...selectedColor, A: alphaValue }));
     setBrightness(alphaValue);
@@ -1576,8 +1571,13 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     <div className="audio-player-container">
       {isCopying && (
         <div className="copy-mode-banner">
-          <span>📋 Copy Mode Active (Interval: {clipboard?.startTime}ms ~ {clipboard?.endTime}ms)</span>
-          <span className="hint-text">Press [ESC] to Cancel or click Target then [Ctrl+V]</span>
+          <span>
+            📋 Copy Mode Active (Interval: {clipboard?.startTime}ms ~{" "}
+            {clipboard?.endTime}ms)
+          </span>
+          <span className="hint-text">
+            Press [ESC] to Cancel or click Target then [Ctrl+V]
+          </span>
         </div>
       )}
       <div className="controls">
@@ -1587,26 +1587,29 @@ function AudioPlayer({ setButtonState, timelineRef }) {
             🎵 {musicFilename}
           </span>
         </div> */}
-        <div className="current-track-display" style={{ marginRight: "10px", display: "flex", alignItems: "center" }}>
+        <div
+          className="current-track-display"
+          style={{ marginRight: "10px", display: "flex", alignItems: "center" }}
+        >
           <div className="dropdown">
             <select
               className="dropdown-select"
               value={musicFilename}
               onChange={handleMusicChange}
-              style={{ 
-                minWidth: "150px", 
-                backgroundColor: "#2c3e50", 
-                color: "white", 
+              style={{
+                minWidth: "150px",
+                backgroundColor: "#2c3e50",
+                color: "white",
                 border: "1px solid #34495e",
                 borderRadius: "4px",
-                padding: "5px"
+                padding: "5px",
               }}
             >
               {/* 如果目前的音樂不在清單中，顯示一個預設選項 */}
               {!apiMusicList.includes(musicFilename) && (
                 <option value={musicFilename}>{musicFilename} (目前)</option>
               )}
-              
+
               {apiMusicList.map((filename, index) => (
                 <option key={index} value={filename}>
                   🎵 {filename}
@@ -1627,7 +1630,9 @@ function AudioPlayer({ setButtonState, timelineRef }) {
             onClick={handleUniformAlphaButtonClick}
           >
             <FontAwesomeIcon icon={faCircleHalfStroke} size="lg" />
-            <span className="tooltip">Set opacity for all blocks with selected color</span>
+            <span className="tooltip">
+              Set opacity for all blocks with selected color
+            </span>
           </button>
 
           {uniformAlphaVisible && (
@@ -1661,16 +1666,24 @@ function AudioPlayer({ setButtonState, timelineRef }) {
         </div>
         <div className="shift-tool-wrapper">
           {shiftStep === 0 ? (
-            <button className="shift-main-button" onClick={() => setShiftStep(1)}>
+            <button
+              className="shift-main-button"
+              onClick={() => setShiftStep(1)}
+            >
               <FontAwesomeIcon icon={faArrowsLeftRight} size="lg" />
-              <span className="tooltip">Shift all light dance data within the interval</span>
+              <span className="tooltip">
+                Shift all light dance data within the interval
+              </span>
             </button>
           ) : (
             <div className="shift-guide-panel">
               <span className="shift-message">
-                {shiftStep === 1 && `[1/3] 設定「起始點」: ${Math.floor(currentTime/50)*50}ms`}
-                {shiftStep === 2 && `[2/3] 起始: ${shiftTimes.start}ms -> 設定「結束點」`}
-                {shiftStep === 3 && `[3/3] 區塊: ${shiftTimes.start}~${shiftTimes.end}ms -> 設定「目標位置」`}
+                {shiftStep === 1 &&
+                  `[1/3] 設定「起始點」: ${Math.floor(currentTime / 50) * 50}ms`}
+                {shiftStep === 2 &&
+                  `[2/3] 起始: ${shiftTimes.start}ms -> 設定「結束點」`}
+                {shiftStep === 3 &&
+                  `[3/3] 區塊: ${shiftTimes.start}~${shiftTimes.end}ms -> 設定「目標位置」`}
               </span>
               <button className="shift-confirm-btn" onClick={handleShiftStep}>
                 <FontAwesomeIcon icon={faCheck} /> 確定
@@ -1689,31 +1702,34 @@ function AudioPlayer({ setButtonState, timelineRef }) {
 
           {/* 一級選單 */}
           {effectMenuVisible && (
-          <div className="effect-menu">
-            <div
-              className="effect-menu-item"
-              onClick={() => {
-                handleSetLinear();
-                setEffectMenuVisible(false);
-              }}
-            >
-              漸變 (L)
-            </div>
+            <div className="effect-menu">
+              <div
+                className="effect-menu-item"
+                onClick={() => {
+                  handleSetLinear();
+                  setEffectMenuVisible(false);
+                }}
+              >
+                漸變 (L)
+              </div>
 
-            <div
-              className="effect-menu-item"
-              onClick={() => {
-                const userInput = window.prompt("請輸入頻閃間隔 (ms)，必須為 50 的倍數：", "100");
-                if (userInput !== null) {
-                  applyBlinkEffect(userInput);
-                }
-              }}
-            >
-              頻閃 (B)
+              <div
+                className="effect-menu-item"
+                onClick={() => {
+                  const userInput = window.prompt(
+                    "請輸入頻閃間隔 (ms)，必須為 50 的倍數：",
+                    "100",
+                  );
+                  if (userInput !== null) {
+                    applyBlinkEffect(userInput);
+                  }
+                }}
+              >
+                頻閃 (B)
+              </div>
             </div>
-          </div>
-        )}
-        
+          )}
+
           {/* 二級設定 panel：只在選了 gradient 時顯示 */}
           {gradientSettingsVisible && effectType === "gradient" && (
             <div className="gradient-settings-popup">
@@ -1723,7 +1739,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
                 className="dropdown-select"
                 value={startBrightness}
                 onChange={(e) => setStartBrightness(Number(e.target.value))}
-              > 
+              >
                 {[...Array(10)].map((_, i) => {
                   const v = (i + 1) * 10;
                   return (
@@ -1770,7 +1786,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
                     applyGradientEffect(
                       startBrightness,
                       interval,
-                      endBrightness
+                      endBrightness,
                     );
                     setGradientSettingsVisible(false);
                     setEffectMenuVisible(false);
@@ -1917,20 +1933,20 @@ function AudioPlayer({ setButtonState, timelineRef }) {
           }}
         >
           {shiftStep >= 2 && (
-          <div
-            className="shift-marker start-marker"
-            style={{ left: `${(shiftTimes.start / duration) * 100}%` }}
-          >
-            <span className="marker-label">Start</span>
-          </div>
+            <div
+              className="shift-marker start-marker"
+              style={{ left: `${(shiftTimes.start / duration) * 100}%` }}
+            >
+              <span className="marker-label">Start</span>
+            </div>
           )}
           {shiftStep >= 3 && (
-          <div
-            className="shift-marker end-marker"
-            style={{ left: `${(shiftTimes.end / duration) * 100}%` }}
-          >
-            <span className="marker-label">End</span>
-          </div>
+            <div
+              className="shift-marker end-marker"
+              style={{ left: `${(shiftTimes.end / duration) * 100}%` }}
+            >
+              <span className="marker-label">End</span>
+            </div>
           )}
           <div
             className="timeline-container"

@@ -4,24 +4,13 @@ import { updateActionTable, updateCurrentTime } from "../redux/actions";
 import { ACCESSORY_CONFIGS } from "../config/accessoryConfig.js";
 import "./AccessoryPanel.css";
 import { PART_KEYS } from "../constants/parts.js";
-import { LEGACY_BLACK_SENTINEL_MS } from "../constants/time.js";
+import { TICK_MS } from "../constants/time.js";
+import {
+  insertColorKeyframes,
+  binarySearchFirstGreater,
+} from "../utils/actionTable/insertColorKeyframes.js";
 
 const PART_NAMES = PART_KEYS;
-
-function binarySearchFirstGreater(arr, target) {
-  if (!arr || arr.length === 0) return 0;
-  let left = 0,
-    right = arr.length - 1,
-    result = 0;
-  while (left <= right) {
-    const mid = Math.floor((left + right) / 2);
-    if (arr[mid].time > target) {
-      result = mid;
-      right = mid - 1;
-    } else left = mid + 1;
-  }
-  return result;
-}
 
 function AccessoryPanel() {
   const dispatch = useDispatch();
@@ -68,80 +57,19 @@ function AccessoryPanel() {
     );
 
   const handleClick = (partIdx) => {
-    const blackthreshold = LEGACY_BLACK_SENTINEL_MS;
-    const partData = actionTable?.[selectedDancerId]?.[partIdx] || [];
-    const indexToCopy = binarySearchFirstGreater(partData, time);
-    const nowTime = Math.floor(time / 50) * 50;
+    const nowTime = Math.floor(time / TICK_MS) * TICK_MS;
     dispatch(updateCurrentTime(nowTime));
-
-    const newEntry = { time: nowTime, color: { ...chosenColor }, linear: 0 };
-    const nextEl = partData[indexToCopy];
-    const prevEl = partData[indexToCopy - 1] || partData[indexToCopy];
-
-    const isNextBlack =
-      !nextEl ||
-      (nextEl.color.R === 0 && nextEl.color.G === 0 && nextEl.color.B === 0);
-    const isPrevBlack =
-      !prevEl ||
-      (prevEl.color.R === 0 && prevEl.color.G === 0 && prevEl.color.B === 0);
 
     // 容器維持 array（見 utils/actionTable/toNestedArray.js）
     const updatedActionTable = Array.from(actionTable).map(
       (player, playerIdx) => {
         if (playerIdx !== selectedDancerId) return player;
-        let updatedPart = [...(player[partIdx] || [])];
-        const existingIdx = updatedPart.findIndex((e) => e.time === nowTime);
-
-        if (existingIdx !== -1) {
-          updatedPart = updatedPart.map((e, i) =>
-            i === existingIdx ? { ...e, color: { ...chosenColor } } : e,
-          );
-        } else if (indexToCopy === 0) {
-          updatedPart.splice(updatedPart.length, 0, newEntry, {
-            time: duration,
-            color: { R: 0, G: 0, B: 0, A: 1 },
-            linear: 0,
-          });
-        } else if (!isPrevBlack && isNextBlack) {
-          updatedPart.splice(
-            indexToCopy + 1,
-            0,
-            {
-              time: nowTime - blackthreshold,
-              color: { R: 0, G: 0, B: 0, A: 1 },
-              linear: 0,
-            },
-            newEntry,
-          );
-        } else if (!isPrevBlack && !isNextBlack) {
-          updatedPart.splice(
-            indexToCopy + 1,
-            0,
-            {
-              time: nowTime - blackthreshold,
-              color: { R: 0, G: 0, B: 0, A: 1 },
-              linear: 0,
-            },
-            newEntry,
-            {
-              time: nextEl?.time - blackthreshold || nowTime + blackthreshold,
-              color: { R: 0, G: 0, B: 0, A: 1 },
-              linear: 0,
-            },
-          );
-        } else if (isPrevBlack && !isNextBlack) {
-          updatedPart.splice(indexToCopy + 1, 0, newEntry, {
-            time: nextEl?.time - blackthreshold || nowTime + blackthreshold,
-            color: { R: 0, G: 0, B: 0, A: 1 },
-            linear: 0,
-          });
-        } else {
-          updatedPart.splice(updatedPart.length, 0, newEntry);
-        }
-
-        updatedPart.sort((a, b) => a.time - b.time);
         const updatedPlayer = Array.from(player);
-        updatedPlayer[partIdx] = updatedPart;
+        updatedPlayer[partIdx] = insertColorKeyframes(player[partIdx], {
+          time: nowTime,
+          color: chosenColor,
+          duration,
+        });
         return updatedPlayer;
       },
     );
