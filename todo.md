@@ -127,13 +127,48 @@
 - [x] **insertArray 三合一**：`utils/actionTable/insertColorKeyframes.js`（@deprecated）。**合併前以 20,000 組隨機輸入 fuzz 證明三份原始實作在可觸及路徑上等價**，非假設等價；唯一真實差異（audioplayer 的 t=0 守衛）保留在呼叫端
 - **成果**：淨減約 1,400 行；測試由 39 增至 53
 
-### Phase 2 Segment 規格 + 轉換器（M / 概念中風險 / 可與 Phase 1、3 平行）
+### Phase 2 Segment 規格 + 轉換器 ✅ 完成 2026-08-08
 
-- [ ] Schema 文件（CLAUDE.md + docs/）：`segment = {id, start, end, colorStart, colorEnd, linear, effect?}`；`effect` 欄位**現在預留**（blink metadata 於 Phase 6 落地）；核心型別 generic `Segment<T> = {id, start, end, ...T}`（多軌鋪路）。不變式：排序、不重疊、`start/end % TICK_MS === 0`、`end > start`、空隙 = 熄滅。`id = crypto.randomUUID()`
-- [ ] `utils/segments/convert.js`：`keyframesToSegments` / `segmentsToKeyframes`，實作 D2（黑點上網格後丟棄；壓平在網格點熄滅）
-- [ ] `utils/segments/core.js`（payload-agnostic，不 import 色彩）：不變式檢查、trim 碰撞、quantize、binary search、範圍查詢
-- [ ] 測試：round-trip 冪等；全 fixture 跑 `buildPlayers(toKeyframes(toSegments(k)))` vs `buildPlayers(k)` **結構化 diff 全綠**（time 全同、僅漸變內部 ±1）
-- **閘門**：全綠才准進 Phase 4。Ship：可（未接線的程式碼）。
+- [x] `utils/segments/core.js`：**payload-agnostic**（永不 import 色彩，多軌音訊可直接複用）——quantize、binary search、範圍查詢、不變式檢查、trim 碰撞（clearRange / insertSegment）
+- [x] `utils/segments/convert.js`：`keyframesToSegments` / `segmentsToKeyframes`，邊界一律 `ceil` 對齊（與 buildPlayers 相同的取整方式，時間格由建構方式保證一致）
+- [x] 順手把 Home.jsx 內嵌的 `normalizeActionTable` 抽成 `utils/actionTable/normalizeActionTable.js`，讓 app 與測試共用同一份正規化邏輯
+- [x] 測試 28 筆：core 不變式/trim、轉換器各分支、round-trip 冪等、全 fixture 語意等價
+
+#### 實作過程發現、且**只有真實資料才抓得到**的三個問題
+
+1. **漸變終點色被壓平成錯誤顏色**（最嚴重，色差達 145）：舊資料的黑色哨兵 2990ms 向上對齊後
+   變成 3000ms，正好與下一個色塊的起點重合，於是「白→黑」的漸變被壓平成「白→紅」。
+   修正：緊鄰下一段時，若 `colorEnd` 與下一段的 `colorStart` 不同，額外發一個帶 `colorEnd`
+   的關鍵格當漸變終點。
+2. **尾端截斷**：舊模型每個部位尾端的黑關鍵格同時承載「時間軸有多長」的資訊，
+   丟棄它會讓輸出時間範圍變短。修正：`segmentsToKeyframes` 依 `duration` 還原尾端。
+3. **openEnded**：舊資料中最後一個關鍵格是彩色時代表「一路亮到最後」，沒有熄滅點。
+   用旗標明確記錄，而非靠 `end === duration` 推斷——後者會讓輸出正確與否取決於呼叫端
+   有沒有傳對 duration，傳錯就靜默改變韌體資料。
+
+#### 一併修正的既有不一致
+
+`normalizeActionTable` 對「完全缺少的部位」只補 time 0 黑點、對「有內容的部位」卻補到
+duration，同樣是全程熄滅卻產生不同長度的時間軸。已統一為都涵蓋 `[0, duration]`，
+「每個部位的時間軸都涵蓋整場」才成為真正成立的不變式。**這是一個小的行為變更**：
+完全空白的舞者（例如舊版 9 部位資料補齊到 22 部位後）輸出會多一列全黑資料，畫面無變化。
+
+#### 等價測試的標準修正
+
+原訂「所有列的 time 完全相同」太嚴格：segment 模型會**正確地丟棄多餘的黑關鍵格**
+（黑色不再是資料），列數本來就會變少。改用 `compareRenderedOutput`——把兩邊展開成
+「每個 tick 的實際畫面」（模擬韌體的 hold/插值行為）再比對，這才是真正在意的等價。
+
+#### 實測結果（Phase 4 閘門，全 19 個 fixture 通過）
+
+| fixture | 差異取樣點 | 最大通道差 |
+|---|---|---|
+| real-rich-show（1,020 關鍵格、56 漸變） | 644 | **1** |
+| real-dirty-times（非整數時間） | 18 | **2** |
+| off-grid-color-keyframe（合成） | 20 | 6 |
+| short-fade-to-black（合成極端：100ms 漸變） | 1 | 15 |
+
+非漸變差異 **0**；容許值 16 足夠。
 
 ### Phase 3 audioplayer 拆件 + 鍵盤統一（L / 中風險 / 可與 Phase 2 平行，內部逐元件 PR）
 

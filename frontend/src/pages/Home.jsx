@@ -21,82 +21,25 @@ import { LuPlus, LuMusic, LuChevronRight } from "react-icons/lu";
 import ShortcutModal from "../components/ShortcutModal.jsx";
 import { API_ENDPOINTS } from "../config/api.js";
 import { localMusicFiles } from "../components/audio/musicData.js";
-import { saveLocalBackup, cleanExpiredBackups, deleteLocalBackup } from "../utils/indexedDB.js";
+import {
+  saveLocalBackup,
+  cleanExpiredBackups,
+  deleteLocalBackup,
+} from "../utils/indexedDB.js";
 import { sanitizeActionTableTimes } from "../utils/sanitizeActionTable.js";
 import { buildPlayers } from "../utils/export/buildPlayers.js";
 import { PLAYER_COUNT, PART_COUNT } from "../constants/parts.js";
+import {
+  normalizeActionTable,
+  createBlackPoint,
+} from "../utils/actionTable/normalizeActionTable.js";
 
-const generateInitialTable = () => Array.from({ length: PLAYER_COUNT }, () =>
-  Array.from({ length: PART_COUNT }, () => [
-    { time: 0, color: { R: 0, G: 0, B: 0, A: 1 }, linear: 0 },
-  ])
-);
-
-
-const createBlackPoint = (time = 0) => ({
-  time,
-  color: { R: 0, G: 0, B: 0, A: 1 },
-  linear: 0,
-});
-
-const normalizeActionTable = (currentTable, maxDuration) => {
-  const normalizedTable = Array.from({ length: PLAYER_COUNT }, () =>
-    Array.from({ length: PART_COUNT }, () => [createBlackPoint(0)])
+const generateInitialTable = () =>
+  Array.from({ length: PLAYER_COUNT }, () =>
+    Array.from({ length: PART_COUNT }, () => [
+      { time: 0, color: { R: 0, G: 0, B: 0, A: 1 }, linear: 0 },
+    ]),
   );
-
-  for (let armorIdx = 0; armorIdx < PLAYER_COUNT; armorIdx++) {
-    const parts = currentTable?.[armorIdx];
-
-    for (let partIdx = 0; partIdx < PART_COUNT; partIdx++) {
-      const timeline = parts?.[partIdx];
-
-      if (!Array.isArray(timeline) || timeline.length === 0) {
-        normalizedTable[armorIdx][partIdx] = [createBlackPoint(0)];
-        continue;
-      }
-
-      let newTimeline = timeline
-        .filter((point) => point && typeof point.time === "number")
-        .map((point) => ({
-          time: point.time,
-          color: {
-            R: point.color?.R ?? 0,
-            G: point.color?.G ?? 0,
-            B: point.color?.B ?? 0,
-            A: point.color?.A ?? 1,
-          },
-          linear: point.linear ?? 0,
-        }))
-        .sort((a, b) => a.time - b.time);
-
-      if (maxDuration > 0) {
-        newTimeline = newTimeline.filter((point) => point.time < maxDuration);
-      }
-
-      if (newTimeline.length === 0 || newTimeline[0].time !== 0) {
-        newTimeline.unshift(createBlackPoint(0));
-      }
-
-      if (maxDuration > 0) {
-        const lastPoint = newTimeline[newTimeline.length - 1];
-        const isLastBlackEnd =
-          lastPoint &&
-          lastPoint.time === maxDuration &&
-          lastPoint.color.R === 0 &&
-          lastPoint.color.G === 0 &&
-          lastPoint.color.B === 0;
-
-        if (!isLastBlackEnd) {
-          newTimeline.push(createBlackPoint(maxDuration));
-        }
-      }
-
-      normalizedTable[armorIdx][partIdx] = newTimeline;
-    }
-  }
-
-  return normalizedTable;
-};
 
 // const cleanActionTableByDuration = (currentTable, maxDuration) => {
 //   if (!currentTable || typeof currentTable !== "object" || maxDuration <= 0) return currentTable;
@@ -106,19 +49,19 @@ const normalizeActionTable = (currentTable, maxDuration) => {
 
 //   Object.entries(currentTable).forEach(([armorIdx, parts]) => {
 //     cleanedTable[armorIdx] = {};
-    
+
 //     Object.entries(parts).forEach(([partIdx, timeline]) => {
 //       if (Array.isArray(timeline)) {
 //         // 1. 先過濾掉超過 duration 的點
 //         let newTimeline = timeline.filter((point) => point.time < maxDuration);
-        
+
 //         // 2. 判斷是否需要補上終點黑色塊
 //         // 檢查現存最後一個點是否已經是 duration 處的黑色塊
 //         const lastPoint = newTimeline[newTimeline.length - 1];
-//         const isLastBlackEnd = lastPoint && 
-//                                lastPoint.time === maxDuration && 
-//                                lastPoint.color.R === 0 && 
-//                                lastPoint.color.G === 0 && 
+//         const isLastBlackEnd = lastPoint &&
+//                                lastPoint.time === maxDuration &&
+//                                lastPoint.color.R === 0 &&
+//                                lastPoint.color.G === 0 &&
 //                                lastPoint.color.B === 0;
 
 //         if (!isLastBlackEnd) {
@@ -146,11 +89,14 @@ function Home({ rgba, setRgba, setButtonState }) {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const token = useSelector((state) => state.profiles.accessToken);
-  const data = useSelector((state) => state.profiles.data) || { actionTable: [], music_filename: "" };
+  const data = useSelector((state) => state.profiles.data) || {
+    actionTable: [],
+    music_filename: "",
+  };
   const actionTable = data.actionTable || [];
   const musicFilename = data.music_filename ?? "";
   const userName = useSelector((state) => state.profiles.user);
-  const duration = useSelector((state) => state.profiles.duration); 
+  const duration = useSelector((state) => state.profiles.duration);
   const [isDirty, setIsDirty] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
@@ -165,7 +111,7 @@ function Home({ rgba, setRgba, setButtonState }) {
     navigate("/edit");
   };
 
-    // 自動清理 30 天前的舊備份
+  // 自動清理 30 天前的舊備份
   useEffect(() => {
     const cleanOldBackups = async () => {
       try {
@@ -174,7 +120,7 @@ function Home({ rgba, setRgba, setButtonState }) {
         console.error("清理 IndexedDB 失敗:", e);
       }
     };
-  
+
     cleanOldBackups();
   }, []);
 
@@ -225,11 +171,11 @@ function Home({ rgba, setRgba, setButtonState }) {
     console.log(`Output raw data size: ${sizeInMB} MB`);
 
     const backupKey = `local_backup_${musicFilename}`;
-  
+
     // 1. 本地備份 (IndexedDB + Try-Catch 隔離)
     try {
       const backupData = {
-        data: data, 
+        data: data,
         timestamp: new Date().getTime(),
         displayTime: new Date().toLocaleString(),
         uploaded: false, // 初始設為 false
@@ -245,23 +191,23 @@ function Home({ rgba, setRgba, setButtonState }) {
 
     // 壓平成韌體 PlayerData（純函式，由 golden 測試鎖定輸出）
     const players = buildPlayers(actionTable);
-    
+
     console.log("players : ", players);
     console.log(">>> [1] 上傳的原始資料 (Raw Data):", data);
-    const result = {  
+    const result = {
       players,
-      music_filename: musicFilename
+      music_filename: musicFilename,
     };
-    
+
     console.log(">>> [2] 上傳的播放資料 (Translated Items):", result);
     let BearerToken = "";
     token === "" ? (BearerToken = " ") : (BearerToken = token);
-  
+
     // 使用新的合併端點上傳，確保時間戳記一致
     const fullUploadData = {
       raw_data: rawDataString,
       players: players,
-      music_filename: String(musicFilename)
+      music_filename: String(musicFilename),
     };
 
     try {
@@ -275,7 +221,6 @@ function Home({ rgba, setRgba, setButtonState }) {
         mode: "cors",
       });
 
-    
       if (response.ok) {
         setIsDirty(false);
         // 更新本地備份狀態為已同步
@@ -290,10 +235,9 @@ function Home({ rgba, setRgba, setButtonState }) {
         } catch (e) {
           console.error("更新本地同步狀態失敗:", e);
         }
-        alert("原始檔與播放檔皆上傳成功！"); 
+        alert("原始檔與播放檔皆上傳成功！");
         console.log("upload(full) : ", JSON.stringify(fullUploadData));
-      }
- else {
+      } else {
         alert("上傳失敗，資料已自動備份至本地。");
         console.error("Upload Error:", response.status);
       }
@@ -301,7 +245,6 @@ function Home({ rgba, setRgba, setButtonState }) {
       alert("網路斷線，資料已自動備份至本地。");
       console.error("Upload Exception:", error);
     }
-
   }
 
   const [musicList, setMusicList] = useState([]);
@@ -312,7 +255,9 @@ function Home({ rgba, setRgba, setButtonState }) {
     if (!showNewProjectMenu) {
       let apiList = [];
       try {
-        const response = await fetch(`${API_ENDPOINTS.BASE}/get_music_list/${userName}`);
+        const response = await fetch(
+          `${API_ENDPOINTS.BASE}/get_music_list/${userName}`,
+        );
         const json = await response.json();
         apiList = json.music_list || [];
       } catch (error) {
@@ -328,7 +273,6 @@ function Home({ rgba, setRgba, setButtonState }) {
 
   // 2. 核心邏輯：選定音樂後的檢查機制
   const handleSelectNewMusic = async (filename) => {
-
     if (isDirty) {
       setPendingMusic(filename);
       setShowSaveModal(true); // 有變動，跳出自訂彈窗
@@ -351,17 +295,19 @@ function Home({ rgba, setRgba, setButtonState }) {
       JSON.stringify(normalized) !== JSON.stringify(actionTable);
 
     if (isDifferent) {
-      console.log(">>> actionTable 結構不完整，正在補齊 7 players x 22 parts...");
+      console.log(
+        ">>> actionTable 結構不完整，正在補齊 7 players x 22 parts...",
+      );
       dispatch(updateActionTable(normalized, { skipHistory: true }));
     }
   }, [duration]); // 僅依賴 duration，不在每次編輯時觸發
   // useEffect(() => {
   //   if (duration > 0 && actionTable) {
   //     const cleaned = cleanActionTableByDuration(actionTable, duration);
-      
+
   //     // 檢查是否有資料真的被刪除了，避免無限迴圈更新
   //     const isDifferent = JSON.stringify(cleaned) !== JSON.stringify(actionTable);
-      
+
   //     if (isDifferent) {
   //       console.log(">>> 檢測到超出音樂長度的資料點，正在執行自動清洗...");
   //       dispatch(updateActionTable(cleaned));
@@ -384,13 +330,12 @@ function Home({ rgba, setRgba, setButtonState }) {
       dispatch(updateMusicFilename(pendingMusic));
       dispatch(updateActionTable(initialTable));
     }
-    
+
     // 如果是 "cancel"，就直接關閉 Modal，不做任何 dispatch
     setShowSaveModal(false);
     setIsDirty(false); // 只有在 save 或 discard 時重置 dirty
     setShowNewProjectMenu(false);
   };
-    
 
   const listitem = [<Palette key="palette-1" rgba={rgba} setRgba={setRgba} />]; // 添加 key
 
@@ -398,7 +343,6 @@ function Home({ rgba, setRgba, setButtonState }) {
     <div>
       <div className="homepage">
         <div className="panel">
-
           <button className="output-button" onClick={handleOutput}>
             Output <MdOutput className="output-icon" />
           </button>
@@ -440,19 +384,28 @@ function Home({ rgba, setRgba, setButtonState }) {
               ⚠️ 有尚未儲存的變更
             </div>
           )}
-          <div className={`home-creation-bar ${showNewProjectMenu ? "expanded" : ""}`}>
+          <div
+            className={`home-creation-bar ${showNewProjectMenu ? "expanded" : ""}`}
+          >
             {/* 音樂清單放在前面，實現向左延伸 */}
             {showNewProjectMenu && (
               <div className="home-music-extension">
                 <div className="home-music-list-scroll">
                   {musicList.map((file, i) => (
-                    <div key={i} className="home-music-item" onClick={() => handleSelectNewMusic(file)}>
+                    <div
+                      key={i}
+                      className="home-music-item"
+                      onClick={() => handleSelectNewMusic(file)}
+                    >
                       <LuMusic className="item-icon" />
                       <span>{file}</span>
                     </div>
                   ))}
                 </div>
-                <LuChevronRight className="divider-icon" style={{ transform: 'rotate(180deg)' }} />
+                <LuChevronRight
+                  className="divider-icon"
+                  style={{ transform: "rotate(180deg)" }}
+                />
               </div>
             )}
 
@@ -464,7 +417,14 @@ function Home({ rgba, setRgba, setButtonState }) {
           <button className="device-info-button">
             <FontAwesomeIcon icon={faRobot} size="lg" />
           </button>
-          <button type="button" className="title" onClick={handleLogout} style={{ backgroundColor: 'black', color: 'white' }}>NYCUEE Light Dance</button>
+          <button
+            type="button"
+            className="title"
+            onClick={handleLogout}
+            style={{ backgroundColor: "black", color: "white" }}
+          >
+            NYCUEE Light Dance
+          </button>
           {listitem}
           <div className="people-container">
             <People />
@@ -477,25 +437,34 @@ function Home({ rgba, setRgba, setButtonState }) {
           setButtonState={setButtonState}
         />
       </div>
-          {showSaveModal && (
-      <div className="custom-modal-overlay">
-        <div className="custom-modal-content">
-          <h4 className="modal-title">確認新建專案</h4>
-          <p className="modal-body">目前有尚未儲存的變更，請問要如何處理？</p>
-          <div className="modal-footer-buttons">
-            <button className="btn-save" onClick={() => handleModalAction("save")}>
-              儲存並新建
-            </button>
-            <button className="btn-discard" onClick={() => handleModalAction("discard")}>
-              放棄變更並新建
-            </button>
-            <button className="btn-cancel" onClick={() => setShowSaveModal(false)}>
-              取消返回
-            </button>
+      {showSaveModal && (
+        <div className="custom-modal-overlay">
+          <div className="custom-modal-content">
+            <h4 className="modal-title">確認新建專案</h4>
+            <p className="modal-body">目前有尚未儲存的變更，請問要如何處理？</p>
+            <div className="modal-footer-buttons">
+              <button
+                className="btn-save"
+                onClick={() => handleModalAction("save")}
+              >
+                儲存並新建
+              </button>
+              <button
+                className="btn-discard"
+                onClick={() => handleModalAction("discard")}
+              >
+                放棄變更並新建
+              </button>
+              <button
+                className="btn-cancel"
+                onClick={() => setShowSaveModal(false)}
+              >
+                取消返回
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    )}
+      )}
       <ShortcutModal
         isOpen={showShortcuts}
         onClose={() => setShowShortcuts(false)}
