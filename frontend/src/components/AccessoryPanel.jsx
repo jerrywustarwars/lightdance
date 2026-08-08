@@ -10,11 +10,15 @@ const PART_NAMES = PART_KEYS;
 
 function binarySearchFirstGreater(arr, target) {
   if (!arr || arr.length === 0) return 0;
-  let left = 0, right = arr.length - 1, result = 0;
+  let left = 0,
+    right = arr.length - 1,
+    result = 0;
   while (left <= right) {
     const mid = Math.floor((left + right) / 2);
-    if (arr[mid].time > target) { result = mid; right = mid - 1; }
-    else left = mid + 1;
+    if (arr[mid].time > target) {
+      result = mid;
+      right = mid - 1;
+    } else left = mid + 1;
   }
   return result;
 }
@@ -26,9 +30,14 @@ function AccessoryPanel() {
   const time = useSelector((s) => s.profiles.currentTime);
   const duration = useSelector((s) => s.profiles.duration);
   const chosenColor = useSelector((s) => s.profiles.chosenColor);
-  const multiSelectedBlocks = useSelector((s) => s.profiles.multiSelectedBlocks);
+  const multiSelectedBlocks = useSelector(
+    (s) => s.profiles.multiSelectedBlocks,
+  );
 
-  const config = selectedDancerId !== null ? (ACCESSORY_CONFIGS[selectedDancerId] ?? null) : null;
+  const config =
+    selectedDancerId !== null
+      ? (ACCESSORY_CONFIGS[selectedDancerId] ?? null)
+      : null;
 
   const getColor = (partIdx) => {
     const partData = actionTable?.[selectedDancerId]?.[partIdx] || [];
@@ -55,7 +64,7 @@ function AccessoryPanel() {
 
   const isSelected = (partIdx) =>
     multiSelectedBlocks.some(
-      (b) => b.armorIndex === selectedDancerId && b.partIndex === partIdx
+      (b) => b.armorIndex === selectedDancerId && b.partIndex === partIdx,
     );
 
   const handleClick = (partIdx) => {
@@ -69,47 +78,75 @@ function AccessoryPanel() {
     const nextEl = partData[indexToCopy];
     const prevEl = partData[indexToCopy - 1] || partData[indexToCopy];
 
-    const isNextBlack = !nextEl || (nextEl.color.R === 0 && nextEl.color.G === 0 && nextEl.color.B === 0);
-    const isPrevBlack = !prevEl || (prevEl.color.R === 0 && prevEl.color.G === 0 && prevEl.color.B === 0);
+    const isNextBlack =
+      !nextEl ||
+      (nextEl.color.R === 0 && nextEl.color.G === 0 && nextEl.color.B === 0);
+    const isPrevBlack =
+      !prevEl ||
+      (prevEl.color.R === 0 && prevEl.color.G === 0 && prevEl.color.B === 0);
 
-    const updatedEntries = Object.entries(actionTable).map(([playerIdx, player]) => {
-      if (Number(playerIdx) !== selectedDancerId) return [playerIdx, player];
-      let updatedPart = [...(player[partIdx] || [])];
-      const existingIdx = updatedPart.findIndex((e) => e.time === nowTime);
+    // 容器維持 array（見 utils/actionTable/toNestedArray.js）
+    const updatedActionTable = Array.from(actionTable).map(
+      (player, playerIdx) => {
+        if (playerIdx !== selectedDancerId) return player;
+        let updatedPart = [...(player[partIdx] || [])];
+        const existingIdx = updatedPart.findIndex((e) => e.time === nowTime);
 
-      if (existingIdx !== -1) {
-        updatedPart = updatedPart.map((e, i) =>
-          i === existingIdx ? { ...e, color: { ...chosenColor } } : e
-        );
-      } else if (indexToCopy === 0) {
-        updatedPart.splice(updatedPart.length, 0, newEntry, {
-          time: duration, color: { R: 0, G: 0, B: 0, A: 1 }, linear: 0,
-        });
-      } else if (!isPrevBlack && isNextBlack) {
-        updatedPart.splice(indexToCopy + 1, 0,
-          { time: nowTime - blackthreshold, color: { R: 0, G: 0, B: 0, A: 1 }, linear: 0 },
-          newEntry
-        );
-      } else if (!isPrevBlack && !isNextBlack) {
-        updatedPart.splice(indexToCopy + 1, 0,
-          { time: nowTime - blackthreshold, color: { R: 0, G: 0, B: 0, A: 1 }, linear: 0 },
-          newEntry,
-          { time: (nextEl?.time - blackthreshold) || nowTime + blackthreshold, color: { R: 0, G: 0, B: 0, A: 1 }, linear: 0 }
-        );
-      } else if (isPrevBlack && !isNextBlack) {
-        updatedPart.splice(indexToCopy + 1, 0, newEntry, {
-          time: (nextEl?.time - blackthreshold) || nowTime + blackthreshold,
-          color: { R: 0, G: 0, B: 0, A: 1 }, linear: 0,
-        });
-      } else {
-        updatedPart.splice(updatedPart.length, 0, newEntry);
-      }
+        if (existingIdx !== -1) {
+          updatedPart = updatedPart.map((e, i) =>
+            i === existingIdx ? { ...e, color: { ...chosenColor } } : e,
+          );
+        } else if (indexToCopy === 0) {
+          updatedPart.splice(updatedPart.length, 0, newEntry, {
+            time: duration,
+            color: { R: 0, G: 0, B: 0, A: 1 },
+            linear: 0,
+          });
+        } else if (!isPrevBlack && isNextBlack) {
+          updatedPart.splice(
+            indexToCopy + 1,
+            0,
+            {
+              time: nowTime - blackthreshold,
+              color: { R: 0, G: 0, B: 0, A: 1 },
+              linear: 0,
+            },
+            newEntry,
+          );
+        } else if (!isPrevBlack && !isNextBlack) {
+          updatedPart.splice(
+            indexToCopy + 1,
+            0,
+            {
+              time: nowTime - blackthreshold,
+              color: { R: 0, G: 0, B: 0, A: 1 },
+              linear: 0,
+            },
+            newEntry,
+            {
+              time: nextEl?.time - blackthreshold || nowTime + blackthreshold,
+              color: { R: 0, G: 0, B: 0, A: 1 },
+              linear: 0,
+            },
+          );
+        } else if (isPrevBlack && !isNextBlack) {
+          updatedPart.splice(indexToCopy + 1, 0, newEntry, {
+            time: nextEl?.time - blackthreshold || nowTime + blackthreshold,
+            color: { R: 0, G: 0, B: 0, A: 1 },
+            linear: 0,
+          });
+        } else {
+          updatedPart.splice(updatedPart.length, 0, newEntry);
+        }
 
-      updatedPart.sort((a, b) => a.time - b.time);
-      return [playerIdx, { ...player, [partIdx]: updatedPart }];
-    });
+        updatedPart.sort((a, b) => a.time - b.time);
+        const updatedPlayer = Array.from(player);
+        updatedPlayer[partIdx] = updatedPart;
+        return updatedPlayer;
+      },
+    );
 
-    dispatch(updateActionTable(Object.fromEntries(updatedEntries)));
+    dispatch(updateActionTable(updatedActionTable));
   };
 
   const [open, setOpen] = useState(true);

@@ -16,13 +16,14 @@ const Armor = (props) => {
   const time = useSelector((state) => state.profiles.currentTime);
   const duration = useSelector((state) => state.profiles.duration);
   const chosenColor = useSelector((state) => state.profiles.chosenColor);
-  const multiSelectedBlocks = useSelector((state) => state.profiles.multiSelectedBlocks);
+  const multiSelectedBlocks = useSelector(
+    (state) => state.profiles.multiSelectedBlocks,
+  );
   const myId = props.index;
   const blackthreshold = LEGACY_BLACK_SENTINEL_MS;
 
   // 新的部位名稱（對應 Home.jsx 的輸出映射）
   const partNames = PART_KEYS;
-
 
   // 根據部位名稱和當前時間計算顏色
   const getColorForPart = (part) => {
@@ -43,15 +44,9 @@ const Armor = (props) => {
 
       if (endTime > startTime) {
         const ratio = (currentTime - startTime) / (endTime - startTime);
-        const r = Math.round(
-          startColor.R * (1 - ratio) + endColor.R * ratio
-        );
-        const g = Math.round(
-          startColor.G * (1 - ratio) + endColor.G * ratio
-        );
-        const b = Math.round(
-          startColor.B * (1 - ratio) + endColor.B * ratio
-        );
+        const r = Math.round(startColor.R * (1 - ratio) + endColor.R * ratio);
+        const g = Math.round(startColor.G * (1 - ratio) + endColor.G * ratio);
+        const b = Math.round(startColor.B * (1 - ratio) + endColor.B * ratio);
         const startA = startColor.A ?? 1;
         const endA = endColor.A ?? 1;
         const a = startA * (1 - ratio) + endA * ratio;
@@ -65,15 +60,16 @@ const Armor = (props) => {
       B: 0,
       A: 1,
     };
-    
+
     return `rgba(${colorData.R}, ${colorData.G}, ${colorData.B}, ${colorData.A})`;
   };
 
   const colors = useMemo(
-    () => Object.fromEntries(
-      partNames.map((name, index) => [name, getColorForPart(index)])
-    ),
-    [time, actionTable, myId]
+    () =>
+      Object.fromEntries(
+        partNames.map((name, index) => [name, getColorForPart(index)]),
+      ),
+    [time, actionTable, myId],
   );
 
   function insertArray(part) {
@@ -82,17 +78,17 @@ const Armor = (props) => {
     const nowTime = Math.floor(time / 50) * 50;
     dispatch(updateCurrentTime(nowTime));
 
-    const updatedActionTableEntries = Object.entries(actionTable).map(
-      ([playerIndex, player]) => {
-        playerIndex = Number(playerIndex);
+    // 容器維持 array（見 utils/actionTable/toNestedArray.js）
+    const updatedActionTable = Array.from(actionTable).map(
+      (player, playerIndex) => {
         if (playerIndex === myId) {
-          const updatedPlayer = { ...player };
+          const updatedPlayer = Array.from(player);
           let updatedPartData = [...(player[part] || [])];
 
           const newEntry = {
             time: nowTime,
             color: { ...chosenColor },
-            linear: 0
+            linear: 0,
           };
 
           const nextElement = updatedPartData[indexToCopy];
@@ -112,14 +108,14 @@ const Armor = (props) => {
               previousElement?.color?.B === 0);
 
           const existingIndex = updatedPartData.findIndex(
-            (entry) => entry.time === nowTime
+            (entry) => entry.time === nowTime,
           );
 
           if (existingIndex !== -1) {
             updatedPartData = updatedPartData.map((entry, index) =>
               index === existingIndex
                 ? { ...entry, color: { ...chosenColor } }
-                : entry
+                : entry,
             );
           } else if (indexToCopy === 0) {
             const blackArray2 = {
@@ -152,7 +148,7 @@ const Armor = (props) => {
               0,
               blackArray,
               newEntry,
-              blackArray2
+              blackArray2,
             );
           } else if (isPreviousBlack && !isNextBlack) {
             const blackArray2 = {
@@ -168,13 +164,12 @@ const Armor = (props) => {
 
           updatedPartData.sort((a, b) => a.time - b.time);
           updatedPlayer[part] = updatedPartData;
-          return [playerIndex, updatedPlayer];
+          return updatedPlayer;
         }
-        return [playerIndex, player];
-      }
+        return player;
+      },
     );
 
-    const updatedActionTable = Object.fromEntries(updatedActionTableEntries);
     dispatch(updateActionTable(updatedActionTable));
   }
 
@@ -198,9 +193,8 @@ const Armor = (props) => {
   }
 
   const isSelected = (part) => {
-    return multiSelectedBlocks.some(b => 
-      b.armorIndex === myId && 
-      b.partIndex === part
+    return multiSelectedBlocks.some(
+      (b) => b.armorIndex === myId && b.partIndex === part,
     );
   };
 
@@ -216,7 +210,7 @@ const Armor = (props) => {
     width,
     height,
     shape = "rect",
-    options = {}
+    options = {},
   ) => {
     const { r = null, cx = null, cy = null } = options;
 
@@ -251,187 +245,190 @@ const Armor = (props) => {
   };
 
   return (
-    <div className="armor-container" onClick={() => dispatch(updateSelectedDancer(myId))}>
+    <div
+      className="armor-container"
+      onClick={() => dispatch(updateSelectedDancer(myId))}
+    >
       {/* 舞者編號標籤 */}
       <div className="dancer-label">舞者 {myId + 1}</div>
       <svg width="242" height="480" viewBox="10 0 222 480">
         {/* 將所有 SVG 內容向下移動 35px，為標籤留出空間 */}
         <g transform="translate(0, 35)">
-        {/*0:hat*/}
-        {isSelected(0) && (
+          {/*0:hat*/}
+          {isSelected(0) && (
+            <path
+              d="M 96.8 5 L 145.2 5 L 145.2 23 L 169.4 23 L 169.4 38 L 72.6 38 L 72.6 23 L 96.8 23 Z"
+              fill="none"
+              stroke="white"
+              strokeWidth="2"
+            />
+          )}
           <path
             d="M 96.8 5 L 145.2 5 L 145.2 23 L 169.4 23 L 169.4 38 L 72.6 38 L 72.6 23 L 96.8 23 Z"
-            fill="none"
-            stroke="white"
-            strokeWidth="2"
+            fill={colors.hat}
+            onClick={() => handleColorChange(0)}
           />
-        )}
-        <path
-          d="M 96.8 5 L 145.2 5 L 145.2 23 L 169.4 23 L 169.4 38 L 72.6 38 L 72.6 23 L 96.8 23 Z"
-          fill={colors.hat}
-          onClick={() => handleColorChange(0)}
-        />
 
-        {/*1:face - 臉部*/}
-        {isSelected(1) && renderHighlight(null, null, null, null, "circle", {
-          r: 30,
-          cx: 121,
-          cy: 68
-        })}
-        <circle
-          cx="121"
-          cy="68"
-          r="30"
-          fill={colors.face}
-          onClick={() => handleColorChange(1)}
-        />
+          {/*1:face - 臉部*/}
+          {isSelected(1) &&
+            renderHighlight(null, null, null, null, "circle", {
+              r: 30,
+              cx: 121,
+              cy: 68,
+            })}
+          <circle
+            cx="121"
+            cy="68"
+            r="30"
+            fill={colors.face}
+            onClick={() => handleColorChange(1)}
+          />
 
-        {/*2:chestL - 左胸（螢幕左側）*/}
-        {isSelected(2) && renderHighlight(72, 103, 28, 65)}
-        <rect
-          x="72"
-          y="103"
-          width="28"
-          height="65"
-          fill={colors.chestL}
-          onClick={() => handleColorChange(2)}
-        />
+          {/*2:chestL - 左胸（螢幕左側）*/}
+          {isSelected(2) && renderHighlight(72, 103, 28, 65)}
+          <rect
+            x="72"
+            y="103"
+            width="28"
+            height="65"
+            fill={colors.chestL}
+            onClick={() => handleColorChange(2)}
+          />
 
-        {/*3:chestR - 右胸（螢幕右側）*/}
-        {isSelected(3) && renderHighlight(142, 103, 28, 65)}
-        <rect
-          x="142"
-          y="103"
-          width="28"
-          height="65"
-          fill={colors.chestR}
-          onClick={() => handleColorChange(3)}
-        />
+          {/*3:chestR - 右胸（螢幕右側）*/}
+          {isSelected(3) && renderHighlight(142, 103, 28, 65)}
+          <rect
+            x="142"
+            y="103"
+            width="28"
+            height="65"
+            fill={colors.chestR}
+            onClick={() => handleColorChange(3)}
+          />
 
-        {/*4:armL - 左手臂（螢幕左側）*/}
-        {isSelected(4) && renderHighlight(35, 103, 32, 65)}
-        <rect
-          x="35"
-          y="103"
-          width="32"
-          height="65"
-          fill={colors.armL}
-          onClick={() => handleColorChange(4)}
-        />
+          {/*4:armL - 左手臂（螢幕左側）*/}
+          {isSelected(4) && renderHighlight(35, 103, 32, 65)}
+          <rect
+            x="35"
+            y="103"
+            width="32"
+            height="65"
+            fill={colors.armL}
+            onClick={() => handleColorChange(4)}
+          />
 
-        {/*5:armR - 右手臂（螢幕右側）*/}
-        {isSelected(5) && renderHighlight(175, 103, 32, 65)}
-        <rect
-          x="175"
-          y="103"
-          width="32"
-          height="65"
-          fill={colors.armR}
-          onClick={() => handleColorChange(5)}
-        />
+          {/*5:armR - 右手臂（螢幕右側）*/}
+          {isSelected(5) && renderHighlight(175, 103, 32, 65)}
+          <rect
+            x="175"
+            y="103"
+            width="32"
+            height="65"
+            fill={colors.armR}
+            onClick={() => handleColorChange(5)}
+          />
 
-        {/*6:tie - 領帶*/}
-        {isSelected(6) && renderHighlight(105, 103, 32, 50)}
-        <rect
-          x="105"
-          y="103"
-          width="32"
-          height="50"
-          fill={colors.tie}
-          onClick={() => handleColorChange(6)}
-        />
-        {/* 領帶三角形 - 與矩形完美對齊 */}
-        {isSelected(6) && (
-        <polygon
-         points="105,153 137,153 121,173"
-         fill="none"
-         stroke="white"
-         strokeWidth="2"
-        />
-        )}
-        <polygon
-          points="105,153 137,153 121,173"
-          fill={colors.tie}
-          onClick={() => handleColorChange(6)}
-        />
+          {/*6:tie - 領帶*/}
+          {isSelected(6) && renderHighlight(105, 103, 32, 50)}
+          <rect
+            x="105"
+            y="103"
+            width="32"
+            height="50"
+            fill={colors.tie}
+            onClick={() => handleColorChange(6)}
+          />
+          {/* 領帶三角形 - 與矩形完美對齊 */}
+          {isSelected(6) && (
+            <polygon
+              points="105,153 137,153 121,173"
+              fill="none"
+              stroke="white"
+              strokeWidth="2"
+            />
+          )}
+          <polygon
+            points="105,153 137,153 121,173"
+            fill={colors.tie}
+            onClick={() => handleColorChange(6)}
+          />
 
+          {/*7:belt - 腰帶*/}
+          {isSelected(7) && renderHighlight(78, 173, 86, 35)}
+          <rect
+            x="78"
+            y="173"
+            width="86"
+            height="35"
+            fill={colors.belt}
+            onClick={() => handleColorChange(7)}
+          />
 
-        {/*7:belt - 腰帶*/}
-        {isSelected(7) && renderHighlight(78, 173, 86, 35)}
-        <rect
-          x="78"
-          y="173"
-          width="86"
-          height="35"
-          fill={colors.belt}
-          onClick={() => handleColorChange(7)}
-        />
+          {/*8:gloveL - 左手套（螢幕左側）*/}
+          {isSelected(8) && renderHighlight(35, 173, 32, 35)}
+          <rect
+            x="35"
+            y="173"
+            width="32"
+            height="35"
+            fill={colors.gloveL}
+            onClick={() => handleColorChange(8)}
+          />
 
-        {/*8:gloveL - 左手套（螢幕左側）*/}
-        {isSelected(8) && renderHighlight(35, 173, 32, 35)}
-        <rect
-          x="35"
-          y="173"
-          width="32"
-          height="35"
-          fill={colors.gloveL}
-          onClick={() => handleColorChange(8)}
-        />
+          {/*9:gloveR - 右手套（螢幕右側）*/}
+          {isSelected(9) && renderHighlight(175, 173, 32, 35)}
+          <rect
+            x="175"
+            y="173"
+            width="32"
+            height="35"
+            fill={colors.gloveR}
+            onClick={() => handleColorChange(9)}
+          />
 
-        {/*9:gloveR - 右手套（螢幕右側）*/}
-        {isSelected(9) && renderHighlight(175, 173, 32, 35)}
-        <rect
-          x="175"
-          y="173"
-          width="32"
-          height="35"
-          fill={colors.gloveR}
-          onClick={() => handleColorChange(9)}
-        />
+          {/*10:legL - 左腿（螢幕左側）*/}
+          {isSelected(10) && renderHighlight(85, 213, 28, 80)}
+          <rect
+            x="85"
+            y="213"
+            width="28"
+            height="80"
+            fill={colors.legL}
+            onClick={() => handleColorChange(10)}
+          />
 
-        {/*10:legL - 左腿（螢幕左側）*/}
-        {isSelected(10) && renderHighlight(85, 213, 28, 80)}
-        <rect
-          x="85"
-          y="213"
-          width="28"
-          height="80"
-          fill={colors.legL}
-          onClick={() => handleColorChange(10)}
-        />
+          {/*11:legR - 右腿（螢幕右側）*/}
+          {isSelected(11) && renderHighlight(129, 213, 28, 80)}
+          <rect
+            x="129"
+            y="213"
+            width="28"
+            height="80"
+            fill={colors.legR}
+            onClick={() => handleColorChange(11)}
+          />
 
-        {/*11:legR - 右腿（螢幕右側）*/}
-        {isSelected(11) && renderHighlight(129, 213, 28, 80)}
-        <rect
-          x="129"
-          y="213"
-          width="28"
-          height="80"
-          fill={colors.legR}
-          onClick={() => handleColorChange(11)}
-        />
+          {/*12:shoeL - 左鞋（螢幕左側）*/}
+          {isSelected(12) && renderHighlight(75, 298, 45, 25)}
+          <rect
+            x="75"
+            y="298"
+            width="45"
+            height="15"
+            fill={colors.shoeL}
+            onClick={() => handleColorChange(12)}
+          />
 
-        {/*12:shoeL - 左鞋（螢幕左側）*/}
-        {isSelected(12) && renderHighlight(75, 298, 45, 25)}
-        <rect
-          x="75"
-          y="298"
-          width="45"
-          height="15"
-          fill={colors.shoeL}
-          onClick={() => handleColorChange(12)}
-        />
-
-        {/*13:shoeR - 右鞋（螢幕右側）*/}
-        {isSelected(13) && renderHighlight(122, 298, 45, 25)}
-        <rect
-          x="122"
-          y="298"
-          width="45"
-          height="15"
-          fill={colors.shoeR}
-          onClick={() => handleColorChange(13)}
-        />
+          {/*13:shoeR - 右鞋（螢幕右側）*/}
+          {isSelected(13) && renderHighlight(122, 298, 45, 25)}
+          <rect
+            x="122"
+            y="298"
+            width="45"
+            height="15"
+            fill={colors.shoeR}
+            onClick={() => handleColorChange(13)}
+          />
         </g>
       </svg>
     </div>

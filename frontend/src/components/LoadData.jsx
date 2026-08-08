@@ -8,20 +8,15 @@ import { API_ENDPOINTS } from "../config/api.js";
 import { getAllLocalBackups } from "../utils/indexedDB.js";
 import { sanitizeActionTableTimes } from "../utils/sanitizeActionTable.js";
 import { PART_COUNT } from "../constants/parts.js";
+import { toNestedArray } from "../utils/actionTable/toNestedArray.js";
 
-const defaultPartEntry = () => [{ time: 0, color: { R: 0, G: 0, B: 0, A: 1 }, linear: 0 }];
+const defaultPartEntry = () => [
+  { time: 0, color: { R: 0, G: 0, B: 0, A: 1 }, linear: 0 },
+];
 
-// 補齊acc0–acc7，並移除board
+// 補齊acc0–acc7，並移除board；容器統一為巢狀 array
 function normalizeActionTable(actionTable) {
-  const dancers = Array.isArray(actionTable) ? actionTable : Object.values(actionTable);
-  return dancers.map((armor) => {
-    const normalized = {};
-    for (let i = 0; i < PART_COUNT; i++) {
-      const key = String(i);
-      normalized[key] = armor[key] ?? defaultPartEntry();
-    }
-    return normalized;
-  });
+  return toNestedArray(actionTable, defaultPartEntry);
 }
 
 function Dropdown({ userName, setIsDirty, isDirty, setIsLoaded, isLoaded }) {
@@ -29,7 +24,9 @@ function Dropdown({ userName, setIsDirty, isDirty, setIsLoaded, isLoaded }) {
   const [userList, setUserList] = useState([]);
   const [anchorIndex, setAnchorIndex] = useState(0);
   const dispatch = useDispatch();
-  const actionTable = useSelector((state) => state.profiles.data?.actionTable || []);
+  const actionTable = useSelector(
+    (state) => state.profiles.data?.actionTable || [],
+  );
   const [localBackups, setLocalBackups] = useState([]);
 
   async function fetchAvailableDataList() {
@@ -39,7 +36,7 @@ function Dropdown({ userName, setIsDirty, isDirty, setIsLoaded, isLoaded }) {
     // 抓取 IndexedDB
     try {
       const idbBackups = await getAllLocalBackups();
-      idbBackups.forEach(item => {
+      idbBackups.forEach((item) => {
         backups.push({
           key: item.key,
           music_filename: item.data?.music_filename || "Unknown",
@@ -47,7 +44,7 @@ function Dropdown({ userName, setIsDirty, isDirty, setIsLoaded, isLoaded }) {
           timestamp: item.timestamp || 0,
           rawData: item.data,
           source: "IndexedDB",
-          uploaded: item.uploaded
+          uploaded: item.uploaded,
         });
       });
     } catch (e) {
@@ -87,7 +84,7 @@ function Dropdown({ userName, setIsDirty, isDirty, setIsLoaded, isLoaded }) {
         console.error("Error fetching data:", error); // Handle any errors
       });
 
-      // console.log("TimeList API Response:", data);
+    // console.log("TimeList API Response:", data);
   }
 
   async function handleChoose(user, time) {
@@ -105,10 +102,12 @@ function Dropdown({ userName, setIsDirty, isDirty, setIsLoaded, isLoaded }) {
       .then((data) => {
         console.log("Fetched Data:", data); // Log the returned data
         // console.log(data.players); // Log the returned data
-        const restoredActionTable = normalizeActionTable(reverseConversion(
-          // JSON.parse(JSON.stringify(data.players))
-          data
-        ));
+        const restoredActionTable = normalizeActionTable(
+          reverseConversion(
+            // JSON.parse(JSON.stringify(data.players))
+            data,
+          ),
+        );
         // console.log("Table : ", actionTable);
 
         dispatch(updateActionTable(restoredActionTable));
@@ -135,7 +134,7 @@ function Dropdown({ userName, setIsDirty, isDirty, setIsLoaded, isLoaded }) {
     if (backup.rawData) {
       // 根據你的資料結構解構
       const actionData = sanitizeActionTableTimes(
-        normalizeActionTable(backup.rawData.actionTable || backup.rawData)
+        normalizeActionTable(backup.rawData.actionTable || backup.rawData),
       );
       const musicFile = backup.rawData.music_filename;
 
@@ -173,15 +172,14 @@ function Dropdown({ userName, setIsDirty, isDirty, setIsLoaded, isLoaded }) {
           // 1. 先把整串 JSON 字串轉成物件
           const parsedRaw = JSON.parse(data.raw_data);
           console.log("rawData:", parsedRaw);
-                    
+
           // 2. 判斷資料結構（如果是舊格式可能直接是 actionTable，新格式可能包含 music_filename）
           actionData = parsedRaw.actionTable || parsedRaw;
           musicFilename = parsedRaw.music_filename;
-
         } else {
           // Otherwise, assume the data object itself is what we need
           console.warn(
-            "Response did not contain 'raw_data' field. Assuming the whole data object is the actionTable."
+            "Response did not contain 'raw_data' field. Assuming the whole data object is the actionTable.",
           );
           actionData = data;
           musicFilename = data.music_filename;
@@ -194,7 +192,7 @@ function Dropdown({ userName, setIsDirty, isDirty, setIsLoaded, isLoaded }) {
         console.log("Final MusicFilename:", musicFilename);
 
         dispatch(updateActionTable(actionData));
-        dispatch(updateMusicFilename(musicFilename))
+        dispatch(updateMusicFilename(musicFilename));
       })
       .catch((error) => {
         // This will now catch both HTTP errors and backend errors from the response body
@@ -326,14 +324,21 @@ function Dropdown({ userName, setIsDirty, isDirty, setIsLoaded, isLoaded }) {
           {/* --- 區段 1: 本地暫存檔 --- */}
           {localBackups.length > 0 && (
             <>
-              <li><span className="dropdown-header text-primary" style={{ fontSize: "20px" }}>📦 本地備份檔</span></li>
+              <li>
+                <span
+                  className="dropdown-header text-primary"
+                  style={{ fontSize: "20px" }}
+                >
+                  📦 本地備份檔
+                </span>
+              </li>
               {localBackups.map((backup) => (
                 <li key={backup.key}>
                   <a
                     className="dropdown-item d-flex justify-content-between align-items-center"
-                    style={{ 
-                      fontSize: "16px", 
-                      backgroundColor: backup.uploaded ? "#f8f9fa" : "#fff3cd" // 已同步用淡灰色，未同步用淡橘色
+                    style={{
+                      fontSize: "16px",
+                      backgroundColor: backup.uploaded ? "#f8f9fa" : "#fff3cd", // 已同步用淡灰色，未同步用淡橘色
                     }}
                     onClick={() => handleLoadLocal(backup)}
                   >
@@ -343,21 +348,29 @@ function Dropdown({ userName, setIsDirty, isDirty, setIsLoaded, isLoaded }) {
                       <small className="text-muted">{backup.displayTime}</small>
                     </div>
                     <div className="d-flex flex-column align-items-end">
-                      <span className={`badge ${backup.uploaded ? "bg-success" : "bg-warning"} text-dark mb-1`}>
+                      <span
+                        className={`badge ${backup.uploaded ? "bg-success" : "bg-warning"} text-dark mb-1`}
+                      >
                         {backup.uploaded ? "已同步伺服器" : "待同步/上傳失敗"}
                       </span>
-                      <small style={{ fontSize: "10px", color: "#888" }}>IDB</small>
+                      <small style={{ fontSize: "10px", color: "#888" }}>
+                        IDB
+                      </small>
                     </div>
                   </a>
                 </li>
               ))}
-              <li><hr className="dropdown-divider" /></li>
+              <li>
+                <hr className="dropdown-divider" />
+              </li>
             </>
           )}
 
           {/* --- 區段 2: 遠端資料庫檔 (你原本的渲染邏輯) --- */}
           {timeList.length === 0 && localBackups.length === 0 && (
-            <li><span className="dropdown-item">無可用資料</span></li>
+            <li>
+              <span className="dropdown-item">無可用資料</span>
+            </li>
           )}
 
           {timeList.map((option, index) => {
@@ -385,9 +398,9 @@ function Dropdown({ userName, setIsDirty, isDirty, setIsLoaded, isLoaded }) {
                       fetchRawPlayerData(option.user, option.update_time)
                     }
                   >
-                      {/* 顯示更新時間 */}
+                    {/* 顯示更新時間 */}
                     <span>{option.update_time}</span>
-                    
+
                     {/* 新增：顯示 Music Filename 的標籤 */}
                     <span className="badge bg-info text-dark ms-2">
                       🎵 Music: {option.music_filename ?? "N/A"}

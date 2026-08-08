@@ -8,14 +8,16 @@ export function sanitizeActionTableTimes(actionTable) {
   if (!Array.isArray(actionTable)) return actionTable;
 
   return actionTable.map((armor) => {
-    const sanitized = {};
+    // 容器維持 array（見 utils/actionTable/toNestedArray.js 的說明）
+    const sanitized = [];
     for (const key of Object.keys(armor)) {
+      const partIndex = Number(key);
       const timeline = armor[key];
       if (!Array.isArray(timeline)) {
-        sanitized[key] = timeline;
+        sanitized[partIndex] = timeline;
         continue;
       }
-      sanitized[key] = timeline.map((entry) => {
+      sanitized[partIndex] = timeline.map((entry) => {
         if (!entry || typeof entry.time !== "number") return entry;
         const isBlack =
           (entry.color?.R ?? 0) === 0 &&
