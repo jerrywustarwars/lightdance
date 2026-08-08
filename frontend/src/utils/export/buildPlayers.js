@@ -1,3 +1,6 @@
+import { TICK_MS } from "../../constants/time.js";
+import { PART_KEYS } from "../../constants/parts.js";
+
 /**
  * buildPlayers — 把編輯器的 actionTable 壓平成韌體吃的 PlayerData 陣列。
  *
@@ -28,7 +31,7 @@ export function buildPlayers(actionTable) {
       if (!Array.isArray(partArray)) continue;
 
       partArray.forEach((item) => {
-        const roundedTime = Math.ceil(item.time / 50) * 50;
+        const roundedTime = Math.ceil(item.time / TICK_MS) * TICK_MS;
         times.add(roundedTime);
       });
     }
@@ -43,7 +46,7 @@ export function buildPlayers(actionTable) {
       const time = uniqueTimes[j];
 
       const mergedItem = {
-        time: Math.floor(time / 50),
+        time: Math.floor(time / TICK_MS),
       };
 
       for (let key in partGroup) {
@@ -118,32 +121,12 @@ export function buildPlayers(actionTable) {
         mergedItem[key] = color32 >>> 0;
       }
 
-      // 欄位順序即韌體 ABI，不可調換
-      mergedResults.push({
-        time: mergedItem.time,
-        hat: mergedItem[0] ?? 0,
-        face: mergedItem[1] ?? 0,
-        chestL: mergedItem[2] ?? 0,
-        chestR: mergedItem[3] ?? 0,
-        armL: mergedItem[4] ?? 0,
-        armR: mergedItem[5] ?? 0,
-        tie: mergedItem[6] ?? 0,
-        belt: mergedItem[7] ?? 0,
-        gloveL: mergedItem[8] ?? 0,
-        gloveR: mergedItem[9] ?? 0,
-        legL: mergedItem[10] ?? 0,
-        legR: mergedItem[11] ?? 0,
-        shoeL: mergedItem[12] ?? 0,
-        shoeR: mergedItem[13] ?? 0,
-        acc0: mergedItem[14] ?? 0,
-        acc1: mergedItem[15] ?? 0,
-        acc2: mergedItem[16] ?? 0,
-        acc3: mergedItem[17] ?? 0,
-        acc4: mergedItem[18] ?? 0,
-        acc5: mergedItem[19] ?? 0,
-        acc6: mergedItem[20] ?? 0,
-        acc7: mergedItem[21] ?? 0,
+      // 欄位順序即韌體 ABI，由 constants/parts.js 的 PART_KEYS 決定，不可調換
+      const row = { time: mergedItem.time };
+      PART_KEYS.forEach((partKey, partIndex) => {
+        row[partKey] = mergedItem[partIndex] ?? 0;
       });
+      mergedResults.push(row);
     }
 
     // 缺漏欄位由前一列補上（forward fill）

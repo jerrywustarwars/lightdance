@@ -7,8 +7,8 @@ import { updateActionTable, updateMusicFilename } from "../redux/actions.js";
 import { API_ENDPOINTS } from "../config/api.js";
 import { getAllLocalBackups } from "../utils/indexedDB.js";
 import { sanitizeActionTableTimes } from "../utils/sanitizeActionTable.js";
+import { PART_COUNT } from "../constants/parts.js";
 
-const TOTAL_PARTS = 22;
 const defaultPartEntry = () => [{ time: 0, color: { R: 0, G: 0, B: 0, A: 1 }, linear: 0 }];
 
 // 補齊acc0–acc7，並移除board
@@ -16,7 +16,7 @@ function normalizeActionTable(actionTable) {
   const dancers = Array.isArray(actionTable) ? actionTable : Object.values(actionTable);
   return dancers.map((armor) => {
     const normalized = {};
-    for (let i = 0; i < TOTAL_PARTS; i++) {
+    for (let i = 0; i < PART_COUNT; i++) {
       const key = String(i);
       normalized[key] = armor[key] ?? defaultPartEntry();
     }

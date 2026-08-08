@@ -25,6 +25,7 @@ import {
   toggleMoveMode,
 } from "../redux/actions.js";
 import { isPartAllowed } from "../config/accessoryConfig.js";
+import { PART_LABELS } from "../constants/parts.js";
 
 function ControlPanel({ setButtonState }) {
   const [timelineHeight, setTimelineHeight] = useState(0); // 儲存計算後的高度
@@ -39,30 +40,7 @@ function ControlPanel({ setButtonState }) {
   const currentTime = useSelector((state) => state.profiles.currentTime);
   const showPart = useSelector((state) => state.profiles.showPart);
   const dispatch = useDispatch();
-  const partName = [
-    "帽子",      // 0
-    "臉",        // 1
-    "左胸",      // 2
-    "右胸",      // 3
-    "左手臂",    // 4
-    "右手臂",    // 5
-    "領帶",      // 6
-    "腰帶",      // 7
-    "左手套",    // 8
-    "右手套",    // 9
-    "左腿",      // 10
-    "右腿",      // 11
-    "左鞋",      // 12
-    "右鞋",      // 13
-    "配件1",     // 14
-    "配件2",     // 15
-    "配件3",     // 16
-    "配件4",     // 17
-    "配件5",     // 18
-    "配件6",     // 19
-    "配件7",     // 20
-    "配件8",     // 21
-  ];
+  const partName = PART_LABELS;
 
   useEffect(() => {
     if (showPart.length > 0) {

@@ -12,6 +12,7 @@ import {
 import { produce } from "immer";
 // cloneDeep 已移除：tempActionTable cascade 已合併，drag 復原時再加回
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { LEGACY_BLACK_SENTINEL_MS } from "../../constants/time.js";
 import {
   faWandMagicSparkles,
 } from "@fortawesome/free-solid-svg-icons";
@@ -55,7 +56,7 @@ const Timeline = forwardRef(
     const duration = useSelector((state) => state.profiles.duration); // 總時長
     const multiSelectedBlocks = useSelector((state) => state.profiles.multiSelectedBlocks); // 全局多選中方塊
     const clipboard = useSelector((state) => state.profiles.clipboard);
-    const blackthreshold = 10;
+    const blackthreshold = LEGACY_BLACK_SENTINEL_MS;
     const STRETCH_MIN_MS  = 50; // Stretch Mode：block 可縮到的最小持續時間（ms）
     const MIN_BLOCK_GAP_MS = 50; // 相鄰兩個有色 block 之間必須保留的最小間距（ms）
 

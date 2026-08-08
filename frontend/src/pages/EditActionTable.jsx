@@ -4,36 +4,14 @@ import { updateActionTable } from "../redux/actions";
 import { useNavigate } from "react-router-dom";
 import WaveSurferPlayer from "../components/audio/WaveSurferplayer";
 import { isPartAllowed } from "../config/accessoryConfig";
+import { PART_LABELS } from "../constants/parts.js";
 
 function EditActionTable() {
   const dispatch = useDispatch();
   const navigate = useNavigate(); // 🔹 用來做頁面跳轉
   const actionTable = useSelector((state) => state.profiles.data?.actionTable || []);
 
-  const partName = [
-    "帽子",   // 0
-    "臉",     // 1
-    "左胸",   // 2
-    "右胸",   // 3
-    "左手臂", // 4
-    "右手臂", // 5
-    "領帶",   // 6
-    "腰帶",   // 7
-    "左手套", // 8
-    "右手套", // 9
-    "左腿",   // 10
-    "右腿",   // 11
-    "左鞋",   // 12
-    "右鞋",   // 13
-    "配件1",  // 14
-    "配件2",  // 15
-    "配件3",  // 16
-    "配件4",  // 17
-    "配件5",  // 18
-    "配件6",  // 19
-    "配件7",  // 20
-    "配件8",  // 21
-  ];
+  const partName = PART_LABELS;
 
   // 選擇 Armor & Part
   const [selectedArmor, setSelectedArmor] = useState(
@@ -211,30 +189,7 @@ function PartEditor({
   onUpdate,
   onDeleteBlock,
 }) {
-  const partName = [
-    "帽子",      // 0
-    "臉",        // 1
-    "左胸",      // 2
-    "右胸",      // 3
-    "左手臂",    // 4
-    "右手臂",    // 5
-    "領帶",      // 6
-    "腰帶",      // 7
-    "左手套",    // 8
-    "右手套",    // 9
-    "左腿",      // 10
-    "右腿",      // 11
-    "左鞋",      // 12
-    "右鞋",      // 13
-    "配件1",     // 14
-    "配件2",     // 15
-    "配件3",     // 16
-    "配件4",     // 17
-    "配件5",     // 18
-    "配件6",     // 19
-    "配件7",     // 20
-    "配件8",     // 21
-  ];
+  const partName = PART_LABELS;
   return (
     <div
       className="table-container"

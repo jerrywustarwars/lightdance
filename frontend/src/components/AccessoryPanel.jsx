@@ -3,12 +3,10 @@ import { useDispatch, useSelector } from "react-redux";
 import { updateActionTable, updateCurrentTime } from "../redux/actions";
 import { ACCESSORY_CONFIGS } from "../config/accessoryConfig.js";
 import "./AccessoryPanel.css";
+import { PART_KEYS } from "../constants/parts.js";
+import { LEGACY_BLACK_SENTINEL_MS } from "../constants/time.js";
 
-const PART_NAMES = [
-  "hat","face","chestL","chestR","armL","armR","tie","belt",
-  "gloveL","gloveR","legL","legR","shoeL","shoeR",
-  "acc0","acc1","acc2","acc3","acc4","acc5","acc6","acc7",
-];
+const PART_NAMES = PART_KEYS;
 
 function binarySearchFirstGreater(arr, target) {
   if (!arr || arr.length === 0) return 0;
@@ -61,7 +59,7 @@ function AccessoryPanel() {
     );
 
   const handleClick = (partIdx) => {
-    const blackthreshold = 10;
+    const blackthreshold = LEGACY_BLACK_SENTINEL_MS;
     const partData = actionTable?.[selectedDancerId]?.[partIdx] || [];
     const indexToCopy = binarySearchFirstGreater(partData, time);
     const nowTime = Math.floor(time / 50) * 50;

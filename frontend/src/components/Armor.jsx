@@ -1,6 +1,8 @@
 import { useMemo, memo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import "./Armor.css";
+import { PART_KEYS } from "../constants/parts.js";
+import { LEGACY_BLACK_SENTINEL_MS } from "../constants/time.js";
 import {
   updateActionTable,
   updateCurrentTime,
@@ -16,33 +18,10 @@ const Armor = (props) => {
   const chosenColor = useSelector((state) => state.profiles.chosenColor);
   const multiSelectedBlocks = useSelector((state) => state.profiles.multiSelectedBlocks);
   const myId = props.index;
-  const blackthreshold = 10;
+  const blackthreshold = LEGACY_BLACK_SENTINEL_MS;
 
   // 新的部位名稱（對應 Home.jsx 的輸出映射）
-  const partNames = [
-    "hat",           // 0:帽子
-    "face",          // 1:臉部
-    "chestL",        // 2:左胸
-    "chestR",        // 3:右胸
-    "armL",          // 4:左手臂
-    "armR",          // 5:右手臂
-    "tie",           // 6:領帶
-    "belt",          // 7:腰帶
-    "gloveL",        // 8:左手套
-    "gloveR",        // 9:右手套
-    "legL",          // 10:左腿
-    "legR",          // 11:右腿
-    "shoeL",         // 12:左鞋
-    "shoeR",         // 13:右鞋
-    "acc0",          // 14:配件燈0
-    "acc1",          // 15:配件燈1
-    "acc2",          // 16:配件燈2
-    "acc3",          // 17:配件燈3
-    "acc4",          // 18:配件燈4
-    "acc5",          // 19:配件燈5
-    "acc6",          // 20:配件燈6
-    "acc7",          // 21:配件燈7
-  ];
+  const partNames = PART_KEYS;
 
 
   // 根據部位名稱和當前時間計算顏色

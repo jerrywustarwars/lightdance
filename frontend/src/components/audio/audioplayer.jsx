@@ -39,10 +39,15 @@ import {
 } from "../../redux/actions.js";
 import { API_ENDPOINTS } from "../../config/api.js"; 
 import { set } from "lodash";
+import { LEGACY_BLACK_SENTINEL_MS } from "../../constants/time.js";
 
 const MAXZOOMVALUE = 100;
 
-const ensureBlackBefore = (timeline, targetTime, threshold = 10) => {
+const ensureBlackBefore = (
+  timeline,
+  targetTime,
+  threshold = LEGACY_BLACK_SENTINEL_MS,
+) => {
   const blackTime = targetTime - threshold;
   if (blackTime <= 0) return;
 
@@ -101,7 +106,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   const progressFlagRef = useRef(null); // P0: 進度條 DOM ref，60fps 直接操作
   const [brightness, setBrightness] = useState(1); // 預設亮度為 1 (100%)
   const [sourceNode, setSourceNode] = useState(null);
-  const blackthreshold = 10;
+  const blackthreshold = LEGACY_BLACK_SENTINEL_MS;
   const elRefs = useRef([]);
   const isExternalSeekRef = useRef(false); // 🔥 用 ref 避免重渲染
 
