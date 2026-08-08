@@ -117,15 +117,15 @@
   - 01-07 之後 33/37 份完全相同；剩 4 份差 1~4 欄位，推測因該批資料早於 `a99d5fc`（upload_full），當時 color 與 raw_data 是兩個獨立 POST，可能對應不同編輯狀態
 - **Ship**：單一 PR。回滾：revert。
 
-### Phase 1 清理與常數統一（M / 低風險 / 4 個獨立 PR，可與 Phase 2 平行）
+### Phase 1 清理與常數統一（M / 低風險）✅ 完成 2026-08-08
 
-- [ ] **死 redux**：刪 `UPDATETIMELINEBLOCK`（單數）、`UPDATEHISTORY`、`UPDATE_IS_DIRTY`、`UPDATEMAGNETACTIVE`/`magnetActive`、**`tempActionTable`**（更正 #1）。保留：`timelineBlocks`、`isColorChangeActive`、`playbackRate`、`fullPeaks`、`moveMode`、`selectedDancerId`
-- [ ] **死檔**：`src/Block.js`、`src/pages/ex.js`、`components/audio/audioUploadBtm.jsx`、**`components/Item.jsx`**；一併刪 Timeline.jsx 已註解的 L775-984 拖曳塊。**不刪** WaveSurferplayer.jsx 與 musicsrc/（更正 #7）
-- [ ] **`constants/time.js`**：`TICK_MS = 50`（可調）、`DEFAULT_SEGMENT_MS = 1000`。現有字面 `50` 與 5 處 `blackthreshold` 宣告改 import（宣告本體在 Phase 5 隨黑點邏輯死亡，先單一來源防 drift）
-- [ ] **`constants/parts.js`**：22 條 `{key, label, type: 'body'|'accessory'}` + `PART_COUNT = 22`；取代 6 處重複宣告（Armor、AccessoryPanel、ControlPanel、EditActionTable ×2、Home/LoadData 的計數常數）；buildPlayers 的輸出欄位順序（hat..acc7）是**韌體 ABI，加測試鎖定**；accessoryConfig.js / isPartAllowed 保留但改 import
-- [ ] **容器統一**：canonical = 7 armor × 22 part 的**巢狀 array**；三條載入邊界 + sanitize 後套 normalize；修正 object 寫入者（LoadData.jsx、sanitizeActionTable.js、Armor.jsx、AccessoryPanel.jsx）。golden 測試保護（buildPlayers 用 for-in 兩者皆可，輸出不變）
-- [ ] **insertArray 四合一**：Armor:100 + audioplayer:578 + AccessoryPanel:64 → 暫時性 `utils/keyframe/insertColorKeyframes.js`（Phase 5 死亡），附 2-3 個黑點分支單元測試
-- **Ship**：各子 PR 獨立。驗收：golden 全綠 + 手動 checklist。
+- [x] **死 redux**：刪 `UPDATETIMELINEBLOCK`（單數）、`UPDATEHISTORY`、`UPDATE_IS_DIRTY`、`UPDATEMAGNETACTIVE`/`magnetActive`、`tempActionTable`（刪除前逐一 grep 驗證零消費者）。保留：`timelineBlocks`、`isColorChangeActive`、`playbackRate`、`fullPeaks`、`moveMode`、`selectedDancerId`
+- [x] **死檔**：`src/Block.js`、`src/pages/ex.js`、`components/audio/audioUploadBtm.jsx`、`components/Item.jsx`，以及 Timeline.jsx 內 210 行 `[Drag 已停用]` 註解區塊。**未刪** WaveSurferplayer.jsx 與 musicsrc/（仍在使用）
+- [x] **`constants/time.js`**：`TICK_MS = 50`、`DEFAULT_SEGMENT_MS = 1000`、`LEGACY_BLACK_SENTINEL_MS = 10`（標記 @deprecated，Phase 5 刪除；此 export 消失即代表 Phase 5 完成）
+- [x] **`constants/parts.js`**：`PARTS` / `PART_KEYS` / `PART_LABELS` / `PART_COUNT` / `BODY_PART_COUNT` / `PLAYER_COUNT`，取代 5 個檔案中的 6 份重複宣告；buildPlayers 的 22 行欄位展開改由 `PART_KEYS` 產生，欄位順序（韌體 ABI）由 golden + ABI 測試雙重鎖定
+- [x] **容器統一**：新增 `utils/actionTable/toNestedArray.js`；LoadData / sanitizeActionTable / Armor / AccessoryPanel 的 object 寫法全部改為 array，並加 5 個測試釘住不變式
+- [x] **insertArray 三合一**：`utils/actionTable/insertColorKeyframes.js`（@deprecated）。**合併前以 20,000 組隨機輸入 fuzz 證明三份原始實作在可觸及路徑上等價**，非假設等價；唯一真實差異（audioplayer 的 t=0 守衛）保留在呼叫端
+- **成果**：淨減約 1,400 行；測試由 39 增至 53
 
 ### Phase 2 Segment 規格 + 轉換器（M / 概念中風險 / 可與 Phase 1、3 平行）
 
