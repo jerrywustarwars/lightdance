@@ -1,482 +1,206 @@
-> **⚠️ 2026-08-08 重啟說明**：本規劃原於 2026-04 在 `jerry` 分支上制定並執行到 Phase 0.5 中段。
-> 現決定捨棄該分支上進行到一半的修正，改從 upstream (NYCUECE-Lightdance) 最新 main 重新開始（`refract` 分支）。
-> 注意：文中的行號與行數（如 audioplayer.jsx 1761 行，現為 1971 行）反映的是 4 月時的程式碼狀態，
-> 執行前需重新對照現況；Phase 0 / 0.5 的 grep 驗證結論也需重新確認（upstream 已新增 39 個 commit）。
+# 重構 Roadmap：keyframe → segment（2026-08-08 修訂版）
 
-## 🐛 Phase 0.5 驗收回報的待辦事項
-
-- [ ] **Blink 不要拆成 N 對 keyframe**：使用者回報目前 `applyBlink` 把單一 block 展開成多個彩/黑 keyframe 後，難以選取與修改。
-  - **新規格**：閃爍應該是 segment 的 metadata（例如 `seg.effect = { type: 'blink', period: 100 }`），硬體輸出 (`upload_items`) 時才展開成實際的 50ms 取樣序列；UI 上仍然是「一個 block」可整段選取/拖曳/刪除。
-  - **依賴**：需要 Phase 4 segment 模型先到位，才能在 segment 上掛 effect 欄位。在那之前 `applyBlink` 維持現狀。
-  - **回報日期**：2026-04-08
-
-## 🚨 重構前置：需要使用者回答的問題 (Phase 1 Audit)
-
-> 在開始 segment 重構前，必須先對齊以下資訊。每答完一題就在這裡記錄答案。
-
-- [ ] **Q1. audioplayer.jsx (1761 行) 的互動清單**
-  - 它對 actionTable 有 27 處讀寫，內含自己的一份 `insertArray` 與 `blackthreshold = 10`
-  - 與 [Armor.jsx](frontend/src/components/Armor.jsx) 的 `insertArray` 是兩份重複實作
-  - 需釐清：時間軸上有哪些互動（拖曳？剪刀？快捷鍵？右鍵選單？）
-  - 與 ControlPanel 的職責邊界？
-  - 答案（Claude 分析 2026-04-07，使用者請審閱補充）：
-
-    **檔案分工釐清**
-    - `audioplayer.jsx` (1761 行)：時間軸**外殼** + 全域工具列 + 全域快捷鍵 dispatcher + 跨 part 操作（複製/貼上/平移/批次效果）
-    - `Timeline.jsx` (658 行)：**單一 part 軌**內的色塊渲染與互動（click/shift-click/拖移/resize）。這才是真正「色塊本體」的家
-    - 兩者重構時必須一起改，誰都不是 dead
-
-    **A. audioplayer.jsx 工具列按鈕（render 部分 L1410–1702）**
-    | 按鈕 | 函式 | 行為 |
-    |---|---|---|
-    | 🎵 音樂下拉 | `handleMusicChange` | 切換 musicFilename |
-    | ↔ Shift | `handleShiftStep` / `executeTimeShift` (L1321/1348) | 三步驟引導：選 start → end → target，把區間內所有 armor/part 的點整體平移 |
-    | ✨ Effect | `handleEffect` | 開選單：漸變 (L) / 頻閃 (B) |
-    | ← / → | `handleGoLeft` / `handleGoRight` (L987/1029) | 跳到當前 part 的上/下個 keyframe，會 skip 距離 10ms 的黑色斷點 |
-    | ✂ Cut | `handleCut` (L1074) | 在 currentTime 把選中色塊**切成兩段**：linear 段會算插值色，並插一個 `currentTime - 10ms` 的黑點 |
-    | 🗑 Delete | `ClickedDelete` → `handleMultiDelete` (L771) | 把選中區間整段塗黑、刪掉中間多餘 keyframe |
-    | 亮度下拉 | `handleBrightnessChange` (L1243) | 改選中 block 的 alpha |
-    | 🎨 Color | `ClickedColorChange` (L943) | 開 colorpicker，套到 `multiSelectedBlocks` 全部 |
-    | 速度 / Play / Zoom / Volume | 純播放器控制 | 不動 actionTable |
-
-    **B. audioplayer.jsx 全域快捷鍵 (`handleKeyDown` L361–529)**
-    | 鍵 | 動作 |
-    |---|---|
-    | Space | play/pause |
-    | ← / → | currentTime ±50ms |
-    | Shift+← / Shift+→ | `handleGoLeft/Right`（跳 keyframe） |
-    | C | `handleCut` |
-    | M | `ClickedColorChange` |
-    | L | `handleSetLinear`（切換選中 block 的 linear flag） |
-    | B | `applyBlinkEffect`（prompt 輸入週期，產生頻閃序列） |
-    | Del / Backspace | `handleMultiDelete` |
-    | 1–8 | `handleFavoriteColorChoose`（套最愛色到選中 block） |
-    | Shift+1–8 | `handleFavoriteColorInsert` → `insertFavoriteColorArray` (L544) — **這就是 audioplayer 內第二份 `insertArray`，5 分支 + blackthreshold=10**，與 [Armor.jsx](frontend/src/components/Armor.jsx) 重複 |
-    | Ctrl+1–9 / Ctrl+0 | `handleAlphaChoose`（設選中 block alpha = N/10） |
-    | Ctrl+C | `handleCopy` (L235) — 區間複製，記下 `[startTime, endTime]` 與 `sourceBlocks`，進入 copy mode banner |
-    | Ctrl+V | `handlePasteAlignedToTarget` → `executeAdvancedPaste` (L294)：以目標 block 對齊複製內容首點，套 trim + `ensureBlackBefore` 補黑 |
-    | Ctrl+Shift+V | `handlePasteFixedTime`：保留原始時間貼上 |
-    | Shift+C / Shift+V | `handleWholeCopy` / `handleWholePaste` (L1142/1179)：整條 part timeline 覆蓋複製貼上 |
-    | Esc | 取消 copy mode |
-
-    **C. audioplayer.jsx 內 actionTable 寫入點清單（27 處的源頭）**
-    1. `useEffect` colorChange (L189) — 多選變色
-    2. `executeAdvancedPaste` (L294) — 區間貼上 + trim + ensureBlackBefore
-    3. `insertFavoriteColorArray` (L544) — **重複的 insertArray，5 分支黑點邏輯**
-    4. `handleFavoriteColorChoose` (L700) — 多選改色
-    5. `handleAlphaChoose` (L719) — 多選改 alpha
-    6. `handleMultiDelete` (L771) — 區間塗黑 + removeDuplicateBlackBlocks
-    7. `handleSetLinear` (L837) — 切 linear flag
-    8. `applyBlinkEffect` (L852) — 產生 `(色, 黑-10ms)` 配對的頻閃序列
-    9. `removeDuplicateBlackBlocks` (L919) — 連續黑點清理（重構後可整個刪）
-    10. `handleCut` (L1074) — 切段 + 補黑點
-    11. `handleWholePaste` (L1179) — 整條覆蓋
-    12. `handleBrightnessChange` (L1243) — 多選改 alpha
-    13. `applyGradientEffect` (L1287) — 漸變參數套到「每隔 2 格」的 block alpha（耦合「色, 黑」配對假設）
-    14. `executeTimeShift` (L1348) — 區間平移 + ensureBlackBefore + cleanup
-
-    **D. Timeline.jsx 內的互動（單一軌）**
-    - L84：mouseDown → `dispatch(updateTempActionTable)` 把 actionTable 複製到 tempActionTable 開始拖曳
-    - L181：mouseUp → 把 tempActionTable commit 回 actionTable
-    - L196–234：click / shift-click 選單一/多個 block（純黑 block 點到會清空選擇）
-    - L240–340：mouseMove 拖曳 — 根據 `hoveredBlock.leftindex / rightindex` 改 block 邊界，會同時動相鄰黑色斷點（**這就是「色塊不是一級物件」最痛的證據：拖曳要同步改 3 個 keyframe**）
-    - 用了已標記 dead 的 `tempActionTable`，**所以 Phase 0 把 tempActionTable 列為 dead 是錯的**，應留待 Phase 4 重構拖曳一起處理
-
-    **E. ControlPanel 的職責邊界**
-    - ControlPanel：左側 timeline 列表管理（選 part / 顯隱 / 增刪 / 排序）+ 右側塞 audioplayer
-    - audioplayer：時間軸本體 + 工具列 + 全域快捷鍵
-    - 兩者**沒有功能重疊**，但 ControlPanel 也有 `handleKeyDown` 處理 W/S/A/D + Ctrl+Z/Y，**與 audioplayer 的 handleKeyDown 是兩套同時掛在 document 上的監聽器**——重構時要小心衝突
-
-    **🚨 立刻可記下的待修正項目（Phase 0/1）**
-    - [ ] todo.md 的 Phase 0「刪 tempActionTable」要改成「待 Phase 4 重構 Timeline.jsx 拖曳邏輯時一併清理」
-    - [ ] Phase 0「刪 playbackRate」要改成「保留」——audioplayer L91 / L982 `handleSpeedChange` 有用
-    - [ ] audioplayer.jsx + ControlPanel.jsx 兩個 document keydown listener 並存，重構時需統一到單一 KeyboardManager
-    - [ ] `applyGradientEffect` 寫死「每隔 2 格 = 色+黑配對」，是 segment 重構時的 hard case：要先轉換成 `segmentsToKeyframes` 再重建
-    - [ ] `handleCut` / `applyBlinkEffect` / `executeTimeShift` / `executeAdvancedPaste` 都用 `blackthreshold = 10`，全部要在 Phase 4 移除
-    - [ ] Timeline.jsx 拖曳邏輯（L240–340）就是 segment 模型的最大殺手 app，重構後預期可從 ~100 行縮成 ~20 行
-
-- [ ] **Q2. linear flag 的真實使用率**
-  - 從 mongo `raw_json` 撈幾筆 production 資料統計：
-    - `linear === 1` 的關鍵格數量
-    - linear 段的下一格通常是純黑（漸到熄滅）還是另一顏色（漸到新色）
-    - 是否有「連續多個 linear === 1」的鏈式漸變
-  - 影響：新模型 (A 段內漸變) 對鏈式漸變會拆段，需驗證 byte-equal
-  - 答案：_(待填)_
-
-- [ ] **Q3. 50ms 是真的硬體單位嗎？**
-  - 韌體實際 tick 是 50ms / 25ms / 其他？
-  - `blackthreshold = 10ms` 不對齊 50ms 網格，是 bug 還是刻意？
-  - 新模型 `start/end` 該存「ms」還是「50ms tick」？建議存 ms 但 invariant `% 50 === 0`
-  - 答案：_(待填)_
-
-- [ ] **Q4. 點光衣放色時，segment 的預設長度？**
-  - (a) 50ms — 跟現況最像
-  - (b) 1 秒
-  - (c) 按住拖曳決定長度
-  - 答案：_(待填)_
-
-- [ ] **Q5. 後端「不變」承諾的範圍**
-  - ✅ Mongo schema (color/raw_json) 不變
-  - ✅ `upload_items` payload shape 不變
-  - ✅ `upload_raw` 收 `{raw_data: JSON-string}` 外殼不變
-  - ❓ **`upload_raw` 內 raw_data 字串的內容形狀可變嗎？**（建議：可變，前端自己讀寫的黑盒子，存 segment JSON 後端不關心）
-  - ❓ 韌體拉的 `/api/items/...` PlayerData 必須 byte-equal — 這是 hard constraint，確認無誤
-  - 答案：_(待填)_
+> **本文件取代 4 月版 todo.md。** 4 月版在 `jerry` 分支上制定並執行到 Phase 0.5 中段後捨棄；
+> 本版基於 upstream (NYCUECE-Lightdance) 最新 main（`refract` 分支）重新稽核全部假設後修訂。
+> 設計動機與已拍板決策見 CLAUDE.md「色塊資料模型重構計畫」章節。
+>
+> 基準狀態：audioplayer.jsx 1971 行、Timeline.jsx 1217 行、22 個部位、零測試設施。
 
 ---
 
-## 🧹 Phase 0：Cleanup PR（純減法，無功能變動，先做）
+## 🎯 使用者已拍板的決策（2026-08-08）
 
-> 這些清理可獨立 ship，把 segment 重構的雜訊砍掉 30%。
-
-### Redux 死代碼（[profiles.js](frontend/src/redux/reducers/profiles.js) / [actions.js](frontend/src/redux/actions.js)）
-**✅ 確認可刪（2026-04-07 已 grep 驗證）**
-- [ ] `UPDATETIMELINEBLOCK`（單數）+ `updateTimelineBlock`：export 但 reducer 無 case，全專案無 dispatcher
-- [ ] `UPDATEHISTORY` + `updateHistory`：reducer L156 有 case 但全專案無 dispatcher
-- [ ] `UPDATE_IS_DIRTY` + `updateIsDirty`：export 但 reducer 無 case，無 dispatcher
-- [ ] `UPDATEMAGNETACTIVE` + `updateMagnetActive` + `magnetActive`：全專案 0 讀寫
-
-**❌ 不能刪（原 todo 寫錯）**
-- ~~`tempActionTable`~~：Timeline.jsx 拖曳 staging buffer，多處讀寫
-- ~~`timelineBlocks`~~：Timeline.jsx L182 dispatch、audioplayer/Timeline 共 11 處讀
-- ~~`isColorChangeActive`~~：audioplayer L191/962、Timeline L112，套色流程必需
-- ~~`playbackRate`~~：waveform.jsx 5 處 + audioplayer 速度下拉
-- ~~`fullPeaks`~~：waveform.jsx 6 處，波形渲染必需
-
-**保守保留**
-- `clipboard.sourceArmorIndex / sourcePartIndex / sourceBlocks`：似乎只給 copy mode banner UI 用，重構時再清
-
-### 死檔案（2026-04-07 已 grep 驗證）
-
-**✅ 確認可刪**
-- [ ] [frontend/src/Block.js](frontend/src/Block.js) — 全 src 無 import
-- [ ] [frontend/src/pages/ex.js](frontend/src/pages/ex.js) — 全 src 無 import
-- [ ] [frontend/src/components/audio/audioUploadBtm.jsx](frontend/src/components/audio/audioUploadBtm.jsx) — 全 src 無 import
-- [ ] [frontend/src/components/audio/WaveSurferplayer.jsx](frontend/src/components/audio/WaveSurferplayer.jsx) — 唯一 import 在 EditActionTable.jsx:5 且 L191 已註解使用；**步驟：先把 EditActionTable.jsx L5 import 與 L191 註解拿掉，再刪此檔**
-
-**❌ 不能刪**
-- ~~musicsrc 是空目錄~~：錯，裡面有 13 個 mp3 且 waveform.jsx L4-23 hardcode import
-- ~~Timeline.jsx~~：audioplayer L12/1397 使用，色塊互動本體
-
-**順手清（同 PR 內）**
-- [ ] [audioplayer.jsx:11](frontend/src/components/audio/audioplayer.jsx#L11) `import { musicNames }` 全檔未使用
-- [ ] [waveform.jsx:4-30](frontend/src/components/audio/waveform.jsx#L4) hardcode 13 個 mp3 import + `musicList`/`musicNames` export 全檔未實際使用（L503 是註解，唯一外部 consumer audioplayer 的 import 也未使用） → 砍掉 30 行 + 連帶刪整個 musicsrc 目錄（13 個 mp3）
-
-### 統一常數
-- [ ] 建立 `frontend/src/constants/parts.js` 集中部位定義
-  ```js
-  export const PARTS = [
-    { key: 'hat',   label: '帽子' },
-    { key: 'face',  label: '臉' },
-    // ...
-    { key: 'board', label: '板子', virtual: true },
-  ];
-  export const PART_COUNT = 14;
-  ```
-- [ ] 把 [Armor.jsx](frontend/src/components/Armor.jsx) / [ControlPanel.jsx](frontend/src/components/ControlPanel.jsx) / [EditActionTable.jsx](frontend/src/pages/EditActionTable.jsx) / [Item.jsx](frontend/src/components/Item.jsx) 4 份重複的 partName 改成 import
-- [ ] 修正現有 `board` 索引在不同檔案算法不一致的潛在 off-by-one
-
-### 統一 undo/redo
-- [ ] [EditActionTable.jsx](frontend/src/pages/EditActionTable.jsx) 自己的 `history` / `historyIndex` local state 改用 redux 的 `UPDATEUNDO` / `UPDATEREDO`
-- [ ] 確認 audioplayer 是否還有第三套 undo/redo
-
-### 後端
-- [ ] 決定 `保留最近 5 筆` 淘汰邏輯（[main.py:294](backend/main.py#L294), [main.py:329](backend/main.py#L329)）的去留：刪除註解 / 啟用 / 改其他清理機制
+| 項目 | 決策 |
+|---|---|
+| 硬體 tick | 可調常數 `TICK_MS = 50`，集中於 `constants/time.js`，不寫死 |
+| 點光衣放色預設長度 | **1 秒**（`DEFAULT_SEGMENT_MS = 1000`） |
+| raw_data 格式 | **可以改** — 前端黑盒子，直接存 segment JSON + `schemaVersion: 2` |
+| 黑色哨兵 | **徹底消滅** — 不保留 -10ms 相容規則，`blackthreshold` 從專案完全消失；f9489cf 的「黑點豁免 50ms 對齊」特例隨 v1→v2 遷移作廢 |
+| 輸出等價標準 | 從 byte-equal 放寬為**結構化 diff**：所有列的 time 必須完全相同；僅允許「線性漸變內部取樣點、每通道 ±1」的色差（黑點 g−10→g 使插值分母微調所致，肉眼與硬體不可見）；其他任何差異視為 bug |
+| 優先順序 | 可維護性 → DAW 風燈光編輯 → 多軌音訊 |
 
 ---
 
-## ⚠️ 重構過程預期會踩的雷（Phase 2+ 進行時對照）
+## 📌 對 4 月版規劃的 16 項更正
 
-- [ ] **redux-persist 舊資料**：localStorage 內可能殘留 keyframe 格式，store rehydrate 與 `loadProject` 都要 lazy migrate
-  - 對策：在 data 內加 `schemaVersion: 2` 區分新舊
-- [ ] **byte-equal 驗證腳本邊界覆蓋**
-  - 空 actionTable
-  - 連續黑色哨兵
-  - linear === 1 鏈式漸變
-  - duration 邊界（最後一個 keyframe == duration）
-  - 同時間多個 keyframe（髒資料）
-  - 每位 production 使用者各 1 筆真實資料
-- [ ] **轉換器方向**：傾向只做單向 `keyframesToSegments`，新存檔直接存 segment（前提：Q5 確認 raw_data 內容可變）
-- [ ] **trim + 50ms 對齊順序**：所有寫入路徑「先 quantize 50ms，再 trim」
-- [ ] **segment id 生成**：`crypto.randomUUID()` 或單調遞增整數
-- [ ] **拖曳中間狀態**：拖曳期間用 local state / `tempSegment`，放手才 commit；或 reducer 內 history coalesce
-- [ ] **showPart W/S 跨軌跳轉**：基於最近 segment 重寫
-- [ ] **音樂 duration race**：duration 還沒讀到就有 segment 寫入時的處理
+> upstream 在 4 月版寫作後前進了 39 個 commit，以下逐項更正過時假設（2026-08-08 已逐項對照 HEAD 驗證）。
+
+1. **tempActionTable 現在真的是死代碼** — Timeline.jsx 的 tempActionTable 拖曳整段被註解停用（L775-984），現行拖曳 = Move Mode（M 鍵、redux `moveMode`、拖曳期間 direct-DOM transform）+ 邊緣 resize。4 月版的自我修正（「列為 dead 是錯的」）需反轉：**可刪**。
+2. **快捷鍵已變**：`M` = toggleMoveMode、`P` = 改色（原本 M）；`B` 會 prompt 50ms 倍數週期；`handleAlphaChoose` 已刪除（Ctrl+數字 直接走 `handleBrightnessChange`）。
+3. **Q3 已解**：韌體時間單位確為 50ms tick（上傳 `time = floor(ms/50)`）；黑點 -10ms 曾被 f9489cf 制度化為刻意設計，但**使用者已拍板消滅它**（見上表）。
+4. **Q4 已解**：放色預設 1 秒。
+5. **Q5 已解**：raw_data 可改存 v2 segment 格式。
+6. **上傳路徑已變**：前端只走 `POST /api/upload_full`（Home.jsx:411，一次寫 color+raw 兩個 collection）。`upload_items` / `upload_raw` 是死路徑。輸出等價的比對目標 = `handleOutput` 產生的 `players` 陣列。
+7. **死檔清單修正**：**新增 `components/Item.jsx`**（415 行全死，含一份 insertArray 與過時 7 部位名稱）；**移除 WaveSurferplayer.jsx**（EditActionTable.jsx:5 引用、`/edit` 路由活著）；musicsrc/ 仍被 musicData.js 引用（Home.jsx:23、waveform.jsx:4），不可用 4 月版理由刪。
+8. **寫入者清單過時**：audioplayer.jsx 1761→1971 行，新增 `handleUniformSameColorAlphaChange`（L1502）；`blackthreshold=10` 聲明在 **5 個檔案**（audioplayer:104、Timeline:58、Armor:19、Item:19、AccessoryPanel:64）；insertArray 黑點邏輯重複 **4 份**（Armor:100、audioplayer:578、Item:53、AccessoryPanel:64）。
+9. **部位模型過時**：14 → **22**（14 身體 + 8 飾品 acc0-7）。新增 AccessoryPanel.jsx + `config/accessoryConfig.js`（`isPartAllowed` 閘門）。部位名稱重複 **6 處聲明 / 5 個檔案**；`PART_COUNT=22`（Home.jsx:33）、`TOTAL_PARTS=22`（LoadData.jsx:11）。
+10. **undo 機制已變**：歷史在 `UPDATEACTIONTABLE` reducer case 內自動 push（profiles.js:100-115，cap 50，`skipHistory` 逃生口）。剩餘問題只有 EditActionTable.jsx 的獨立 local `useState` history。
+11. **持久化現況**：redux-persist 走 localforage/IndexedDB、2s debounce、StripEphemeralTransform + PeaksTransform，**無 version/migrate hook**。且存在 4 月版未提及的**第三條載入路徑**：`utils/indexedDB.js` 本地備份（原樣存 keyframe actionTable、無版本欄位）。
+12. **新增約束**：`docs/frontend-rendering-optimization.md` 記載的零 re-render 拖曳路徑（rAF 三層分離、direct-DOM、React.memo）必須保留（見 Phase 5 驗收）。
+13. **新發現問題**：actionTable 容器型別不一致 — Home.jsx normalize 產 **array**、LoadData.jsx / sanitizeActionTable.js / Armor.jsx / AccessoryPanel.jsx 寫 **object**（key "0".."21"）、audioplayer 用 `.map`。Phase 1 統一為 array。
+14. **舊 Phase 0.5 廢除** — 「先寫 8 個 keyframe-native utils + 測試、segment 化後重寫」是雙重工。改為：元件拆分只做純搬移，新邏輯一律 segment-native（見 Phase 3 / Phase 5）。
+15. **Q2（linear 統計）不再是 blocker** — 轉換器逐格保語意 + golden fixtures 覆蓋真實資料，無需先統計 mongo。
+16. **後端不動**，但註記已知 bug：`GET /api/raw/{u}/LATEST` 查錯 collection（main.py:243，查 color 而非 raw）→ **golden fixture 擷取須用明確 timestamp 或本地備份，勿用 LATEST**。retention「保留 5 筆」邏輯是 no-op（delete 被註解），upload_full 完全無 retention — 維持現狀不處理。
 
 ---
 
-## 📋 修正後的執行 Roadmap
+## 🔑 四個關鍵設計決策
 
-### Phase 0  Cleanup PR (純減法)
-見上方「Phase 0」清單
+### D1. Golden fixture 測試安全網（動資料模型的前提）
 
-### Phase 0.5  抽 utils + 拆 audioplayer.jsx（已規劃 2026-04-07）
+專案目前**零測試**（無 vitest/jest/pytest，CI 唯一硬門檻是 build）。改 shape 前必須先有安全網：
 
-> 詳細規劃：把 1761 行的 audioplayer.jsx 拆成 9 個元件 + 8 個 utils 純函式。
-> 為 Phase 4 segment 重構與 Phase 6 多軌音訊鋪路。
-> 每一步可獨立 ship/rollback，每步都跑驗收 checklist。
+- 把 Home.jsx:246-390 的 players 建構迴圈**原樣**抽成純函式 `utils/export/buildPlayers.js`（這是測試存在前唯一允許的程式碼變動；merge 前在瀏覽器 console 對真實專案做一次前後 `JSON.stringify` diff 確認）。
+- Fixture 三來源，全部要：
+  1. **真實本地備份**（最佳）：從隊員機器的 IndexedDB（`LightDanceBackupDB/backups`）匯出 `local_backup_*`，commit 成 `{input, expected}` 對放 `utils/export/__fixtures__/`。
+  2. **mongo raw_json**：用明確 timestamp 撈（避開 LATEST bug），每位 production 使用者至少 1 筆。
+  3. **合成邊界案例**：空表、鏈式 `linear===1`、漸變中途接離網格黑點、連續黑點、同時間重複 keyframe、最後 keyframe == duration、object-keyed vs array 容器、僅飾品有資料的舞者。
+- Expected 輸出由抽出的 `buildPlayers` 跑一次產生後 commit；之後每個 Phase 都重跑全部 fixture。
 
-#### Step 1：抽 utils 純函式（無 React，無 redux）
+### D2. 黑色哨兵徹底消滅 + 結構化 diff（2026-08-08 使用者拍板）
 
-每個 util 簽名一律 `(actionTable, args) => newActionTable`，呼叫端負責 dispatch。
-**設計約束**：第一個參數是「資料」，不寫死「色塊」字眼，未來換 segment 改 payload 不改簽名。
+黑色色塊目前只承擔三個功能，segment 世界各有更乾淨的替代：LED 熄滅 = segment 空隙；視覺縫隙 = 真實空隙；漸變不流血 = 段內漸變語意。因此：
 
-- [ ] `utils/actionTable/search.js` — 來源：Armor.jsx + audioplayer.jsx 兩份 `binarySearchFirstGreater`
-  - 簽名：`(arr, target) => index`
-- [ ] `utils/actionTable/insertColor.js` — 來源：Armor `insertArray` + audioplayer `insertFavoriteColorArray`
-  - 簽名：`(actionTable, {armor, part, time, color, duration}) => newTable`
-  - **兩份重複實作合一**，5 分支黑點邏輯封裝
-- [ ] `utils/actionTable/cut.js` — 來源：audioplayer `handleCut`
-  - 簽名：`(actionTable, {armor, part, blockIndex, currentTime}) => newTable`
-  - 含 linear 段插值計算
-- [ ] `utils/actionTable/blink.js` — 來源：audioplayer `applyBlinkEffect`
-  - 簽名：`(actionTable, {armor, part, blockIndex, period, viewBlock, isLinear, targetEndBlock}) => newTable`
-  - viewBlock 從 timelineBlocks 算出後傳入，util 不碰 redux
-- [ ] `utils/actionTable/gradient.js` — 來源：audioplayer `applyGradientEffect`
-  - 簽名：`(actionTable, {armor, part, blockIndex, startColor, endColor}) => newTable`
-  - **重新規格 (B6)**：改成首尾顏色，預設取前後最近色塊
-- [ ] `utils/actionTable/shift.js` — 來源：audioplayer `executeTimeShift`
-  - 簽名：`(actionTable, {start, end, target}) => newTable`
-- [ ] `utils/actionTable/paste.js` — 來源：audioplayer `executeAdvancedPaste` + `ensureBlackBefore`
-  - 簽名：`(actionTable, {targetArmor, targetPart, offset, copiedData, blackthreshold}) => newTable`
-- [ ] `utils/actionTable/deleteRange.js` — 來源：audioplayer `handleMultiDelete` + `removeDuplicateBlackBlocks`
-  - 簽名：`(actionTable, {selections, timelineBlocks}) => newTable`
+- `keyframesToSegments`：色 keyframe @t1 + 黑 keyframe @b → segment `{start: t1, end: ceil(b/TICK_MS)*TICK_MS}`；**所有黑點正規化上網格後丟棄**——黑色不再是資料。
+- `segmentsToKeyframes`（僅供匯出壓平與過渡期 adapter 使用）：segment 後有空隙時，在**網格點 `end` 整點**輸出熄滅。不保留任何 -10ms 相容規則，**`BLACK_SENTINEL_MS` 不存在**。
+- 已知且被接受的輸出差異：黑點從 `g−10` 移到 `g` 後時間格完全不變（`ceil((g−10)/50)*50 = g`）；唯一差異是**線性漸變**插值分母微調（如 990→1000），漸變內部取樣點 RGB 每通道最多 ±1/255，肉眼與硬體上不可見。
+- **等價測試 = 結構化 diff**：比對新舊 `buildPlayers` 輸出，斷言 (a) 所有列 `time` 完全相同；(b) 差異僅出現在漸變內部取樣點且每通道 ≤1；(c) 其他任何差異 = 測試失敗。round-trip 冪等（轉過去再轉回來達到不動點）為必要測試。
 
-**單元測試（vitest 或 jest）**：每個 util 寫 2–4 個 test
-- 正常 case
-- Edge：空 actionTable、邊界 time（0 / duration）、連續黑色斷點
-- Edge：選中色塊在頭/尾
-- 對 `gradient.js` 測「無前後最近色塊」的 fallback
+### D3. Adapter 橋一次切換（取代 4 月版的長混合期）
 
-#### Step 2：audioplayer.jsx 內改呼叫 utils（不拆檔）
+4 月版「讀走 segment、寫走 keyframe」的混合期會讓資料同時活在兩種語意下數週，極難除錯。改為：
 
-- [ ] `handleCut` → `cutAt(actionTable, ...)`
-- [ ] `applyBlinkEffect` → `applyBlink(actionTable, ...)`
-- [ ] `applyGradientEffect` → `applyGradient(actionTable, ...)`（同步改成新規格）
-- [ ] `executeTimeShift` → `shift(actionTable, ...)`
-- [ ] `executeAdvancedPaste` → `paste(actionTable, ...)`
-- [ ] `handleMultiDelete` → `deleteRange(actionTable, ...)`
-- [ ] `insertFavoriteColorArray` → `insertColor(actionTable, ...)`
-- [ ] Armor.jsx `insertArray` → `insertColor(actionTable, ...)`（順手把兩份合一）
-- [ ] **手測完整驗收 checklist**，行為應與重構前完全相同
+1. Phase 2 先證明轉換**冪等 + 結構化 diff 全綠**（閘門）。
+2. Phase 4 **單一原子 PR**：store 換成 segments；舊寫入者各包 `withKeyframeAdapter(fn) = segs => toSegments(fn(toKeyframes(segs)))`，舊渲染改讀 memoized `selectKeyframes` selector——**既有程式碼零改動**，行為不變。
+3. Phase 5 逐個把寫入者/讀取者改寫成 segment 原生並拆掉它的 adapter；全拆完刪橋。
 
-#### Step 3：UI 元件拆分（依依賴順序，每拆一個跑一次驗收）
+代價：過渡期每次編輯 commit 多兩次 O(n) 轉換（拖曳過程不受影響，照走 direct-DOM）。回滾：見 D4 的 persist key bump。
 
-| # | 新元件 | 行數估 | 從 audioplayer 搬走什麼 |
-|---|---|---|---|
-| 1 | `MusicSelector.jsx` | ~50 | fetchMusicList + handleMusicChange + dropdown JSX |
-| 2 | `PlayerControls.jsx` | ~120 | Play/Pause、Speed、Volume、Zoom、Time 顯示 |
-| 3 | `EffectMenu.jsx` | ~150 | effect 按鈕 + 子選單 + 漸變 popup |
-| 4 | `ShiftTool.jsx` | ~100 | shift 三步驟引導 + markers |
-| 5 | `TrackToolbar.jsx` | ~150 | ← → / Cut / Delete / Brightness / Color |
-| 6 | `CopyPasteManager.jsx` | ~200 | handleCopy / executeAdvancedPaste / Whole 系列 + copy mode banner + isCopying state |
-| 7 | `KeyboardShortcuts.jsx` | ~150 | 整段 handleKeyDown |
-| 8 | `AudioPlayer.jsx`（重構後外殼） | ~150 | 剩下：state 容器 + 組合 + Waveform/Timeline layout |
+### D4. schemaVersion + 三條載入路徑統一遷移
 
-- [ ] # 1 MusicSelector.jsx
-- [ ] # 2 PlayerControls.jsx
-- [ ] # 3 EffectMenu.jsx
-- [ ] # 4 ShiftTool.jsx
-- [ ] # 5 TrackToolbar.jsx
-- [ ] # 6 CopyPasteManager.jsx
-- [ ] # 7 KeyboardShortcuts.jsx
-- [ ] # 8 AudioPlayer.jsx 收尾
+單一入口 `utils/migration/loadProjectData.js`：偵測形狀（v1 = `{time, color, linear}` 條目；v2 = `{schemaVersion: 2, actionTable: segments}`）回傳標準 v2。
 
-**狀態歸屬**
-| state | 新家 | 理由 |
-|---|---|---|
-| `isPlaying`, `sourceNode`, `prevTimeRef`, `isExternalSeekRef` | `AudioPlayer.jsx` (lift up) | 多元件需要 |
-| `volume`, `zoomLevel` | `PlayerControls.jsx` | 只與 Waveform 共用 |
-| `brightness` | `TrackToolbar.jsx` | 只有它用 |
-| `effectMenuVisible`/`effectType`/`gradientSettingsVisible`/`startBrightness`/`interval`/`endBrightness` | `EffectMenu.jsx` | 完全內封 |
-| `shiftStep`/`shiftTimes` | `ShiftTool.jsx` | 完全內封 |
-| `apiMusicList` | `MusicSelector.jsx` | 完全內封 |
-| `isCopying` | `CopyPasteManager.jsx` 用 Context 提供（**不放 redux**） | UI ephemeral state，重新整理該歸零 |
+- **路徑 1 redux-persist**：persist key `root` → `root_v2`，自訂 getStoredState fallback 讀舊 `root` key 並遷移。選 key bump 而非 createMigrate 是為了回滾安全：deploy revert 後舊 build 讀原封不動的舊 key。
+- **路徑 2 遠端 raw_data**（LoadData.jsx fetchRawPlayerData）：parse → loadProjectData，v1 mongo 舊文件**永久**保留 lazy migrate。
+- **路徑 3 本地備份**（utils/indexedDB.js）：讀取時遷移；新寫入帶 `schemaVersion: 2`；v1 讀取相容永久保留。
+- 新上傳：`raw_data = JSON.stringify({schemaVersion: 2, actionTable: <segments>, ...})`，後端不解析、不改動。
 
-**跨元件溝通：Context + useSelector 混用**
-- 頻繁變動的資料（actionTable / currentTime / multiSelectedBlocks / duration）→ 各元件直接 `useSelector` 拉，靠 redux selector memo 控 re-render
-- 穩定的 callback handlers → 放 `EditorContext`，value 用 `useMemo` 包，內部用 `store.getState()` 即時取資料避免依賴牽連
-- isCopying 與相關 callback → 開獨立 `CopyPasteContext`（作用域只有 audio editor 子樹）
-- **不**為了求方便把所有東西塞 redux
+---
 
-#### Step 4：統一 keydown listener
+## 🗺️ 分期 Roadmap
 
-- [ ] 列出 audioplayer.jsx 全部快捷鍵 vs ControlPanel.jsx 全部快捷鍵的對照表
-- [ ] 把 ControlPanel 的 W/S/A/D + Ctrl+Z/Y 搬進 KeyboardShortcuts.jsx
-- [ ] 移除 ControlPanel 自己的 document keydown listener
-- [ ] 用 keymap 物件統一 dispatch，避免雙 listener 撞鍵
+### Phase 0 測試安全網（S / 低風險 / **最先做，block 一切**）
 
-#### Step 5：最終資料夾結構
+- [ ] `npm i -D vitest` + `vitest.config.js`；`package.json` 加 `"test": "vitest run"`；接進 `.github/workflows/pr-checks.yml`（取代 echo placeholder）
+- [ ] 抽出 `frontend/src/utils/export/buildPlayers.js`（Home.jsx:246-390 原樣搬），Home.jsx 改呼叫；merge 前 console byte-diff 一次真實專案
+- [ ] 依 D1 擷取三來源 golden fixtures 至 `utils/export/__fixtures__/`
+- [ ] Golden 測試：每個 fixture `buildPlayers(input)` deep-equal committed expected
+- [ ] 實作結構化 diff 比對器（供 Phase 2 使用：time 全同 + 僅漸變內部 ±1）
+- **Ship**：單一 PR。回滾：revert。
 
-```
-frontend/src/
-├── components/audio/
-│   ├── AudioPlayer.jsx          ← 重構後外殼
-│   ├── MusicSelector.jsx
-│   ├── PlayerControls.jsx
-│   ├── TrackToolbar.jsx
-│   ├── EffectMenu.jsx
-│   ├── ShiftTool.jsx
-│   ├── CopyPasteManager.jsx
-│   ├── KeyboardShortcuts.jsx
-│   ├── EditorContext.js
-│   ├── Timeline.jsx              ← 不動（留 Phase 4）
-│   └── waveform.jsx              ← 不動
-└── utils/actionTable/
-    ├── search.js
-    ├── insertColor.js
-    ├── cut.js
-    ├── blink.js
-    ├── gradient.js
-    ├── shift.js
-    ├── paste.js
-    └── deleteRange.js
-```
+### Phase 1 清理與常數統一（M / 低風險 / 4 個獨立 PR，可與 Phase 2 平行）
 
-#### 驗收 checklist（每個 step 都跑）
+- [ ] **死 redux**：刪 `UPDATETIMELINEBLOCK`（單數）、`UPDATEHISTORY`、`UPDATE_IS_DIRTY`、`UPDATEMAGNETACTIVE`/`magnetActive`、**`tempActionTable`**（更正 #1）。保留：`timelineBlocks`、`isColorChangeActive`、`playbackRate`、`fullPeaks`、`moveMode`、`selectedDancerId`
+- [ ] **死檔**：`src/Block.js`、`src/pages/ex.js`、`components/audio/audioUploadBtm.jsx`、**`components/Item.jsx`**；一併刪 Timeline.jsx 已註解的 L775-984 拖曳塊。**不刪** WaveSurferplayer.jsx 與 musicsrc/（更正 #7）
+- [ ] **`constants/time.js`**：`TICK_MS = 50`（可調）、`DEFAULT_SEGMENT_MS = 1000`。現有字面 `50` 與 5 處 `blackthreshold` 宣告改 import（宣告本體在 Phase 5 隨黑點邏輯死亡，先單一來源防 drift）
+- [ ] **`constants/parts.js`**：22 條 `{key, label, type: 'body'|'accessory'}` + `PART_COUNT = 22`；取代 6 處重複宣告（Armor、AccessoryPanel、ControlPanel、EditActionTable ×2、Home/LoadData 的計數常數）；buildPlayers 的輸出欄位順序（hat..acc7）是**韌體 ABI，加測試鎖定**；accessoryConfig.js / isPartAllowed 保留但改 import
+- [ ] **容器統一**：canonical = 7 armor × 22 part 的**巢狀 array**；三條載入邊界 + sanitize 後套 normalize；修正 object 寫入者（LoadData.jsx、sanitizeActionTable.js、Armor.jsx、AccessoryPanel.jsx）。golden 測試保護（buildPlayers 用 for-in 兩者皆可，輸出不變）
+- [ ] **insertArray 四合一**：Armor:100 + audioplayer:578 + AccessoryPanel:64 → 暫時性 `utils/keyframe/insertColorKeyframes.js`（Phase 5 死亡），附 2-3 個黑點分支單元測試
+- **Ship**：各子 PR 獨立。驗收：golden 全綠 + 手動 checklist。
 
-- [ ] 點光衣放色 → 時間軸顯示色塊
-- [ ] 拖曳色塊邊緣 resize
+### Phase 2 Segment 規格 + 轉換器（M / 概念中風險 / 可與 Phase 1、3 平行）
+
+- [ ] Schema 文件（CLAUDE.md + docs/）：`segment = {id, start, end, colorStart, colorEnd, linear, effect?}`；`effect` 欄位**現在預留**（blink metadata 於 Phase 6 落地）；核心型別 generic `Segment<T> = {id, start, end, ...T}`（多軌鋪路）。不變式：排序、不重疊、`start/end % TICK_MS === 0`、`end > start`、空隙 = 熄滅。`id = crypto.randomUUID()`
+- [ ] `utils/segments/convert.js`：`keyframesToSegments` / `segmentsToKeyframes`，實作 D2（黑點上網格後丟棄；壓平在網格點熄滅）
+- [ ] `utils/segments/core.js`（payload-agnostic，不 import 色彩）：不變式檢查、trim 碰撞、quantize、binary search、範圍查詢
+- [ ] 測試：round-trip 冪等；全 fixture 跑 `buildPlayers(toKeyframes(toSegments(k)))` vs `buildPlayers(k)` **結構化 diff 全綠**（time 全同、僅漸變內部 ±1）
+- **閘門**：全綠才准進 Phase 4。Ship：可（未接線的程式碼）。
+
+### Phase 3 audioplayer 拆件 + 鍵盤統一（L / 中風險 / 可與 Phase 2 平行，內部逐元件 PR）
+
+純搬移拆分（handler **原樣搬**，不改寫——Phase 5 才 segment 化）：
+
+- [ ] `MusicSelector.jsx`、`PlayerControls.jsx`、`EffectMenu.jsx`、`ShiftTool.jsx`、`TrackToolbar.jsx`（吸收亮度 + `handleUniformSameColorAlphaChange`）、`CopyPasteManager`（Context，`isCopying` 不進 redux）、外殼 `AudioPlayer.jsx` — 狀態歸屬沿用 4 月版的表格（仍有效）
+- [ ] **單一 `KeyboardManager`**：合併 **3 個** document keydown listener（audioplayer L385-556、ControlPanel L104 W/S/A/D、ControlPanel L430 Ctrl+Z/Y）為宣告式 keymap；動手前先做鍵位對照表（含更正 #2 的 M/P/B）；更新 `docs/shortcuts.md`
+- [ ] Timeline.jsx 與 waveform.jsx 內部不動（留 Phase 5）
+- **每 PR 驗收**：golden 測試 + 完整手動 checklist（見文末）。
+
+### Phase 4 資料模型切換（M 規模 / **高風險** / 單一原子 PR，凍結其他合併）
+
+- [ ] Redux `data.actionTable` 改存 segments；`UPDATEACTIONTABLE` + history 機制形狀不變（cap 50、skipHistory 保留）
+- [ ] `withKeyframeAdapter` 包所有舊寫入者（audioplayer 各操作、Armor/AccessoryPanel 經 insertColorKeyframes、Timeline move/resize commit、EditActionTable）；memoized `selectKeyframes` 供舊渲染（Timeline 色塊、Armor 顯色、播放取樣）
+- [ ] 三條載入路徑接 `utils/migration/loadProjectData.js`；persist key `root`→`root_v2` + 舊 key fallback（D4）；本地備份寫入帶 `schemaVersion: 2`
+- [ ] 匯出：`handleOutput = buildPlayers(segmentsToKeyframes(segments))`；raw_data 存 v2。`sanitizeActionTableTimes` 從上傳路徑退役（量化改為寫入時不變式），只活在 v1 遷移內
+- **驗收**：fixture 以 v1 載入 → 匯出 → 結構化 diff 全綠；完整手動 checklist；測舊瀏覽器情境（殘留舊 persist key）。**回滾**：revert deploy——舊 build 讀原 key；伺服器 v1 raw_data 永遠可載（lazy migrate）。
+
+### Phase 5 逐項 segment 原生化（L / 中風險 / **Phase 4 後高度平行**，每項獨立 PR）
+
+每項：改寫成 `utils/segments/*` 原生 → 拆該項 adapter → golden + checklist → ship。建議順序（讀取路徑與 DAW 核心優先）：
+
+- [ ] **Timeline.jsx**：色塊直接由 segments 渲染（key = `seg.id`）；Move Mode commit（L109-283）與 resize commit（L649-760）改為單 segment 操作（`moveSegment`/`resizeSegment` + trim 碰撞）——「動一塊要同步改 2-N 個 keyframe + 鄰居黑點」邏輯死亡。**零 re-render 驗收**（見下方約束）
+- [ ] **Armor.jsx / AccessoryPanel.jsx**：點擊 → `insertSegment(…, {duration: DEFAULT_SEGMENT_MS, collision: 'trim'})`；isPartAllowed 不動；顯色走 `getColorAt(segments, t)`
+- [ ] **audioplayer 寫入者逐個**（現行行號）：colorChange L211、executeAdvancedPaste L312、insertFavoriteColorArray L578、handleFavoriteColorChoose L734、handleMultiDelete L805（`removeDuplicateBlackBlocks` L949 **直接刪除**，segment 世界無意義）、handleSetLinear L866、applyBlinkEffect L881（暫維持展開成 N 個 segment，metadata 化在 Phase 6）、handleCut L1104（單 segment split，漸變中點插值進 segment util）、handleWholePaste L1215、handleBrightnessChange L1279、**applyGradientEffect L1326**（「每隔 2 格 = 色+黑」寫死假設死亡，改為 per-segment 色/alpha ramp）、executeTimeShift L1387、handleUniformSameColorAlphaChange L1502
+- [ ] **EditActionTable.jsx**：改編輯 segment 欄位；local useState history 併入 redux history（更正 #10 的殘餘項在此落地）
+- [ ] **ControlPanel** W/S 導航 → 最近 segment；audioplayer handleGoLeft/Right 的 skip-black hack 死亡
+- [ ] **最終清掃**：刪 `withKeyframeAdapter`、`selectKeyframes`、`utils/keyframe/insertColorKeyframes.js`、全部 5 處 `blackthreshold`、`ensureBlackBefore`。**`blackthreshold` / -10ms 自此在專案中不存在**
+
+#### 零 re-render 拖曳路徑約束（Phase 5 Timeline PR 的硬性驗收）
+
+- 手勢期間維持 direct-DOM（transform + rAF），**拖曳中零 React render**（React DevTools profiler 驗證）
+- Commit = mouseup 時**恰好一次** dispatch；history 合併為一筆 undo（中間 dispatch 用 skipHistory）
+- 穩定 `seg.id` key + 逐色塊 React.memo；segment 操作只對被改動的 (armor, part) 回傳新陣列，其餘結構共享，維持 memoized selector 有效
+
+### Phase 6 新功能（M / 低中風險 / 逐功能平行）
+
+- [ ] **Blink 改 metadata**（回應 4 月驗收回饋）：`seg.effect = {type:'blink', period}`（period 為 TICK_MS 倍數）；只在 `segmentsToKeyframes` 壓平與 `getColorAt` 預覽時展開；UI 維持單一可拖曳/選取色塊；B 鍵改為對選取設定 effect
+- [ ] DAW 加強：框選（marquee）多選、多 segment 一起拖曳、snap/對齊節拍（core.js quantize）
+- [ ] UI 小修（4 月版遺留）：timeline-settings-block 與 timeline 對齊/高度、lefttool-container 與 controls 按鈕縮小
+- **Ship/回滾**：逐功能。
+
+### Phase 7 多軌音訊（遠期，只記介面決策，不 block 燈光重構）
+
+前面 Phase 已埋好的可能性，實作時不得反悔：
+
+- `Segment<T>` generic core（Phase 2）；`utils/segments/core.js` 永不 import 色彩程式碼
+- Timeline 手勢邏輯（Phase 5）做成可複用 hook
+- raw_data 的 `schemaVersion` envelope 可長出 `tracks` 陣列，後端零改動
+- Phase 3 拆件不得把單一 `sourceNode` 假設更深綁進新元件；多軌時 waveform 改寫為一個 AudioContext + N 個 AudioBufferSourceNode + 每軌 gain node
+
+---
+
+## ⚠️ 風險總覽
+
+| Phase | 規模 | 風險 | Ship/回滾 | 平行性 |
+|---|---|---|---|---|
+| 0 測試 | S | 低 | 單 PR，trivial revert | —（block 一切） |
+| 1 清理 | M | 低 | 4 個獨立 PR | ∥ P2 |
+| 2 轉換器 | M | 中（概念） | 可 ship（未接線） | ∥ P1、P3 |
+| 3 拆件 | L | 中（搬移期行為漂移） | 逐元件 | ∥ P2 |
+| 4 切換 | M | **高**（持久化 + 全寫入者一次過橋） | 單一原子 PR；key bump 回滾 | **否**，凍結其他合併 |
+| 5 原生化 | L | 中 | 逐寫入者 | 高 ∥ |
+| 6 新功能 | M | 低中 | 逐功能 | 高 ∥ |
+
+前三大風險與對策：
+1. **漸變 ±1 輸出差異的範圍失控** → Phase 0 的結構化 diff 比對器把允許差異類別寫成斷言，任何超出即紅燈
+2. **Phase 4 遷移吃掉某人未上傳的本地作品** → key bump + lazy migrate + IndexedDB 備份維持 v1 可讀
+3. **Phase 3 純搬移期間行為漂移** → 每拆一個元件跑 golden + 手動 checklist
+
+---
+
+## ✅ 手動驗收 checklist（每個 Phase 的每個 PR 都跑）
+
+- [ ] 點光衣放色 → 時間軸顯示色塊（Phase 5 起：預設 1 秒）
+- [ ] M 鍵 Move Mode 拖曳移動色塊；拖曳邊緣 resize
 - [ ] click 選色塊、shift+click 多選
-- [ ] Ctrl+C / Ctrl+V 區間複製貼上
+- [ ] Ctrl+C / Ctrl+V 區間複製貼上；Ctrl+Shift+V 固定時間貼上
 - [ ] Shift+C / Shift+V 整條複製貼上
-- [ ] L 鍵切 linear，預覽看到漸變
-- [ ] B 鍵頻閃
+- [ ] L 鍵切漸變，預覽看到漸變
+- [ ] B 鍵頻閃（輸入 50ms 倍數週期）
+- [ ] P 鍵改色；1-8 最愛色；Shift+1-8 插入最愛色；Ctrl+數字 改亮度
 - [ ] Shift 工具三步驟平移
-- [ ] Cut / Delete
+- [ ] C 鍵 Cut / Del 刪除
 - [ ] W/S/A/D 跨軌跳格
 - [ ] Ctrl+Z / Ctrl+Y
-- [ ] Output 上傳，PlayerData 與重構前 byte-equal（mongo diff）
-
-#### 風險與對策
-
-| 風險 | 對策 |
-|---|---|
-| 拆檔過程行為改變難察覺 | 每拆一個元件就跑驗收 checklist |
-| Context 過度 re-render | EditorContext value 用 useMemo + 內部 store.getState()，依賴只放 dispatch |
-| Timeline.jsx 內部還在直接讀 redux | Phase 0.5 不動 Timeline.jsx 內部，留 Phase 4 |
-| utils 簽名定錯，Phase 4 又要改 | 設計時模擬「換成 segments[] 簽名還合理嗎」 |
-| ControlPanel 快捷鍵搬走後漏掉 case | 搬之前先做對照表 |
-
----
-
-### Phase 1  Audit & Spec
-- [ ] 使用者回答上方 Q1~Q5
-- [ ] 細讀 [audioplayer.jsx](frontend/src/components/audio/audioplayer.jsx) 全文，列出所有編輯互動
-- [ ] 寫 segment schema + invariants 文件（更新 CLAUDE.md）
-
-### Phase 2  轉換器 + 驗證腳本
-- [ ] 寫 `frontend/src/utils/segments.js`：`keyframesToSegments()`
-- [ ] 寫驗證腳本：拿 production raw_json 跑 keyframes → segments → 壓平 upload_items，與直接 keyframes 壓平 byte-equal diff
-- [ ] 全綠才能進 Phase 3
-
-### Phase 3  Lazy migrate + 唯讀 segment 渲染
-- [ ] store rehydrate / loadProject 自動轉換成 segment
-- [ ] [Armor.jsx](frontend/src/components/Armor.jsx) render 改吃 segment（getColorForPart）
-- [ ] [ControlPanel.jsx](frontend/src/components/ControlPanel.jsx) 時間軸 render 改吃 segment
-- [ ] [audioplayer.jsx](frontend/src/components/audio/audioplayer.jsx) render 改吃 segment
-- [ ] 寫入路徑暫時保留 keyframe（透過反向 segment→keyframe），確保混合期可運作
-
-### Phase 4  寫入路徑切換
-- [ ] 寫 `insertSegment` / `dragSegment` / `resizeSegment` / `deleteSegment` utils
-- [ ] [Armor.jsx](frontend/src/components/Armor.jsx) `insertArray` 改呼叫 utils
-- [ ] [audioplayer.jsx](frontend/src/components/audio/audioplayer.jsx) 內各個 `insertArray` / `ensureBlackBefore` 改呼叫 utils（與 Armor 共用）
-- [ ] [EditActionTable.jsx](frontend/src/pages/EditActionTable.jsx) 改編輯 segment
-- [ ] 移除所有 `blackthreshold = 10` 與 `cleanActionTableByDuration` 補黑邏輯
-- [ ] [Home.jsx](frontend/src/pages/Home.jsx) `handleOutput` 50ms 取樣改從 segment 直接取
-- [ ] `upload_raw` 內容改存 `schemaVersion: 2` 的 segment JSON
-
-### Phase 5  解鎖新功能（燈光 segment）
-- [ ] DAW 風拖曳移動色塊（segment 中央 = move cursor）
-- [ ] 拖邊 resize segment（segment 邊緣 ±5px = resize cursor）
-- [ ] Ctrl 框選多個色塊
-- [ ] 複製 / 貼上 / 平移 segment
-- [ ] segment 量化 / 對齊節拍
-
-### Phase 6  多軌音訊（DAW 風音樂編輯，長期目標）
-
-> 願景：音軌也像色塊一樣可拖曳、可拼貼多個音軌。修改音樂時不用重新上傳整首。
-
-**設計鋪墊（Phase 0.5/2/4 就要避免反向決策）**
-- [ ] segment utils 介面設計成 generic `Segment<T>`，不要寫死 `colorStart/colorEnd`
-  - 例：`insertSegment(segments, newSeg, { collisionStrategy: 'trim' })` 不關心 payload
-- [ ] 拖曳/resize/move 的 UI 邏輯（重構後的 Timeline.jsx）要能被音軌複用
-- [ ] 50ms 時間網格量化、trim collision、id/多選/undo coalesce 都做成 generic
-
-**音訊 segment 資料模型（草案）**
-```js
-audioTracks = [
-  {
-    id, name,
-    segments: [
-      { id, start, end, sourceFile, sourceOffset, volume, fadeIn, fadeOut },
-      ...
-    ]
-  },
-  ...
-]
-```
-與燈光 segment **幾乎同構**，差別只在 payload 欄位。
-
-**後端改動**
-- [ ] mongo 新 collection `audio_tracks` 或在 `raw_json` 內新增 `tracks` 陣列
-- [ ] `upload_music` 維持不變（音檔池），新增「專案 ↔ 音軌 ↔ 音檔」關聯
-- [ ] 韌體不關心音訊（只吃 PlayerData），所以後端 `color`/`upload_items` 路徑不變
-
-**前端 Waveform 重新設計**
-- [ ] 目前 waveform.jsx 是「整條時間軸只播一個音檔」的單軌設計（單一 sourceNode），需重寫成：
-  - 一個 AudioContext + N 個 AudioBufferSourceNode mix
-  - 每軌獨立 gain node
-  - 預先 decode 所有引用的音檔，cache 成 AudioBuffer
-  - 多軌共用 master timeline 與 currentTime
-- [ ] Phase 0/0.5 拆檔時避免把「單軌假設」更深地綁進新元件
-
-**注意事項**
-- 這是大工程，不應 block 燈光 segment 重構
-- 音軌 segment 與燈光 segment 共用 Timeline UI 框架，但各自有獨立的 redux state
-- 修改音樂的工作流程：把音軌素材切段、拼貼、調整 fade，最後不需要重新上傳音檔（音檔池保持不變）
-
----
-
-## UI 小修
-- timeline-settings-block 與對應之 timeline 沒對齊，甚至有時候高度不相同
-- lefttool-container 及 controls 中按鈕縮小
-
-## 重構：色塊資料模型 keyframe → segment
-
-詳細設計與動機見 CLAUDE.md「色塊資料模型重構計畫」章節。
-
-**核心決策（已拍板）**
-- 資料形狀：`actionTable[armor][part] = [{id, start, end, colorStart, colorEnd}, ...]`
-- segment 之間**可以有間隔**，間隔 = LED 關閉 (黑)
-- 時間最小單位仍為 **50ms**，所有 start/end 對齊到 50ms 網格
-- 漸變語意：**(A) 段內漸變** — `colorStart → colorEnd` 在 `[start, end]` 內完成
-- 拖曳碰撞策略：**trim**（被覆蓋的部分被裁掉）
-- 空白區域：**黑色 (LED off)**
-- **後端資料格式不變** — 換在前端，`upload_items` / `upload_raw` / mongo schema 全部維持原樣
-
-**遷移步驟（每步可獨立 ship/rollback）**
-- [ ] Step 0：寫雙向轉換器 `keyframesToSegments()` / `segmentsToKeyframes()` 放 utils
-- [ ] Step 0.5：寫驗證腳本 — 對現有 raw_json，跑 `keyframes → segments → 壓平 upload_items payload`，與「直接從 keyframes 壓平」做 byte-equal diff，全部通過才繼續
-- [ ] Step 1：載入時 lazy migrate（`loadProject` 拿到舊資料即轉成 segment 進 redux）
-- [ ] Step 2：改 [Armor.jsx](frontend/src/components/Armor.jsx) render path（純讀取，風險最低）
-- [ ] Step 3：把 `insertArray` 5 分支邏輯換成 `insertSegment(start, end, colorStart, colorEnd?)`，碰撞用 trim split
-- [ ] Step 4：改 [EditActionTable.jsx](frontend/src/pages/EditActionTable.jsx) 改成編輯 segment（start/end/colorStart/colorEnd）
-- [ ] Step 5：改 [ControlPanel.jsx](frontend/src/components/ControlPanel.jsx) 時間軸渲染為 segment 矩形；移除 W/S/A/D 的 skip-black 邏輯
-- [ ] Step 6：改 [Home.jsx](frontend/src/pages/Home.jsx) `handleOutput` 50ms 取樣迴圈 — 對每個 tick t 找包含 t 的 segment，無則輸出黑；驗證 byte-equal 通過
-- [ ] Step 7：移除 `cleanActionTableByDuration` 補黑邏輯，改成 segment clamp
-- [ ] Step 8：移除 `blackthreshold = 10ms` 魔術數字
-- [ ] Step 9：（可選）後端 raw_json 一次性 migration script；或永久 lazy migrate
-
-**遷移完成後可加的新功能**
-- [ ] 拖曳移動色塊（DAW 風格）
-- [ ] 拖邊調整 segment 長度 (resize)
-- [ ] Ctrl + 框選多個色塊
-- [ ] 複製 / 貼上 / 平移 segment
-- [ ] segment 量化 / 對齊到節拍
-
-**注意事項**
-- segment 不重疊是強制不變式 (invariant)，所有寫入路徑都要保證
-- 單 tick 閃爍以 `start === end` 或 `end - start === 50` 表達
-- segment 需要穩定 `id` (uuid 或自增)，方便多選與 undo diff
-- redux history 可以用 segment id 做細粒度 diff，連續拖曳可 coalesce 成一筆 undo
+- [ ] 飾品（雨傘/武器）部位可編輯、isPartAllowed 閘門正常
+- [ ] Output 上傳成功；golden 測試全綠（Phase 2 起：結構化 diff 全綠）
+- [ ] 重新整理後 redux-persist 復原正常；本地備份可載入
