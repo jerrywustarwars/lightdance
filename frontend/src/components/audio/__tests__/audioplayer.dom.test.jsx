@@ -91,6 +91,61 @@ describe("快捷鍵", () => {
   });
 });
 
+describe("複製貼上", () => {
+  const selected = (blockIndex = 1, armorIndex = 0, partIndex = 0) => [
+    { armorIndex, partIndex, blockIndex },
+  ];
+
+  it("Ctrl+C 存入剪貼簿並進入複製模式", () => {
+    const store = createTestStore({ multiSelectedBlocks: selected() });
+    mount(store);
+
+    expect(document.querySelector(".copy-mode-banner")).toBeFalsy();
+    pressKey("c", { ctrlKey: true });
+
+    expect(store.getState().profiles.clipboard?.data.length).toBeGreaterThan(0);
+    expect(document.querySelector(".copy-mode-banner")).toBeTruthy();
+  });
+
+  it("Esc 離開複製模式並清空選取", () => {
+    vi.useFakeTimers();
+    try {
+      const store = createTestStore({ multiSelectedBlocks: selected() });
+      mount(store);
+
+      pressKey("c", { ctrlKey: true });
+      expect(document.querySelector(".copy-mode-banner")).toBeTruthy();
+
+      vi.advanceTimersByTime(150); // 讓 100ms 防彈跳的 latch 放開
+      pressKey("Escape");
+      expect(document.querySelector(".copy-mode-banner")).toBeFalsy();
+      expect(store.getState().profiles.multiSelectedBlocks).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("Shift+C 複製整個部位、Shift+V 覆蓋到另一個部位", () => {
+    const store = createTestStore({ multiSelectedBlocks: selected() });
+    mount(store);
+
+    pressKey("C", { shiftKey: true });
+    const copied = store.getState().profiles.clipboard.data;
+    expect(copied.length).toBe(timelineOf(store, 0, 0).length);
+
+    // 換選到另一個部位再貼上（防彈跳需等 100ms 以上，這裡直接改 store）
+    store.dispatch({
+      type: "UPDATE_MULTI_SELECTED_BLOCKS",
+      payload: selected(0, 1, 0),
+    });
+    // 重新掛載讓 handler 讀到新的選取
+    mount(store);
+    pressKey("V", { shiftKey: true });
+
+    expect(timelineOf(store, 1, 0).length).toBe(copied.length);
+  });
+});
+
 describe("色塊工具列", () => {
   const selected = (blockIndex = 1) => [
     { armorIndex: 0, partIndex: 0, blockIndex },

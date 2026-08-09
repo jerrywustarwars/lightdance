@@ -1,9 +1,7 @@
 import React, { useRef, useState, useEffect, createRef } from "react";
-import { store } from "../../redux/store.js"; // 確保引入你的 Redux store
 import { useSelector, useDispatch } from "react-redux";
 import {
   updateActionTable,
-  updateClipboard,
   updateMultiSelectedBlocks,
   toggleMoveMode,
   // updateMusicIndex,
@@ -14,23 +12,18 @@ import MusicSelector from "./MusicSelector.jsx";
 import PlayerControls from "./PlayerControls.jsx";
 import { useTimeShift, ShiftToolButton, ShiftMarkers } from "./ShiftTool.jsx";
 import EffectMenu, { useLightEffects } from "./EffectMenu.jsx";
+import { useCopyPaste, CopyModeBanner } from "./CopyPasteManager.jsx";
 import {
   useTrackActions,
   TrackNavigation,
   TrackEditButtons,
   UniformAlphaMenu,
 } from "./TrackToolbar.jsx";
-import { musicNames } from "./musicData.js";
 import Timeline from "./Timeline.jsx";
 import { produce } from "immer";
 import { updateChosenColor, updateCurrentTime } from "../../redux/actions.js";
-import { set } from "lodash";
 import { TICK_MS, LEGACY_BLACK_SENTINEL_MS } from "../../constants/time.js";
 import { insertColorKeyframes } from "../../utils/actionTable/insertColorKeyframes.js";
-import {
-  ensureBlackBefore,
-  removeDuplicateBlackBlocks,
-} from "../../utils/actionTable/blackSentinel.js";
 
 function AudioPlayer({ setButtonState, timelineRef }) {
   const dispatch = useDispatch();
@@ -39,13 +32,11 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   const currentTime = useSelector((state) => state.profiles.currentTime);
   const duration = useSelector((state) => state.profiles.duration); // 音樂總長度
   const actionTable = data?.actionTable || []; // Redux 狀態中的動作表
-  const timelineBlocks = useSelector((state) => state.profiles.timelineBlocks); // Redux 狀態中的時間軸區塊
   const chosenColor = useSelector((state) => state.profiles.chosenColor);
   const favoriteColor = useSelector((state) => state.profiles.favoriteColor);
   const isColorChangeActive = useSelector(
     (state) => state.profiles.isColorChangeActive,
   );
-  const clipboard = useSelector((state) => state.profiles.clipboard);
   const multiSelectedBlocks = useSelector(
     (state) => state.profiles.multiSelectedBlocks,
   );
@@ -57,12 +48,12 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   const [zoomLevel, setZoomLevel] = useState(1); // 放大級別
   const progressFlagRef = useRef(null); // P0: 進度條 DOM ref，60fps 直接操作
   const [sourceNode, setSourceNode] = useState(null);
-  const blackthreshold = LEGACY_BLACK_SENTINEL_MS;
   const elRefs = useRef([]);
 
   const effects = useLightEffects(); // 漸變/頻閃/亮度階梯：選單與快捷鍵共用
   const shift = useTimeShift(); // 區間平移：按鈕與時間軸標記共用同一份狀態
   const trackActions = useTrackActions(); // 剪下/刪除/導航/亮度/改色：工具列與快捷鍵共用
+  const copyPaste = useCopyPaste(); // 複製貼上與複製模式
 
   useEffect(() => {
     setButtonState(isPlaying);
@@ -107,179 +98,6 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   // 移除了 setProgressWidth 的 useEffect，避免播放期間不必要的 re-render
 
   // 在 AudioPlayer 內部新增狀態
-  const [isCopying, setIsCopying] = useState(false);
-
-  const handleCopy = () => {
-    let startTime, endTime, armorIndex, partIndex, copiedPoints;
-    let sourceBlocksInfo = []; // ✅ 初始化變數，確保其在整個 handleCopy 作用域可用
-
-    // 1. 優先檢查是否有多選 (Shift 多選)
-    if (multiSelectedBlocks && multiSelectedBlocks.length > 0) {
-      const firstBlockPos = multiSelectedBlocks[0];
-      armorIndex = firstBlockPos.armorIndex;
-      partIndex = firstBlockPos.partIndex;
-      sourceBlocksInfo = multiSelectedBlocks; // 儲存多選陣列
-
-      const timelineDataForCopy = actionTable[armorIndex][partIndex];
-      const selectedIndices = multiSelectedBlocks.map((b) => b.blockIndex);
-      const minIdx = Math.min(...selectedIndices);
-      const maxIdx = Math.max(...selectedIndices);
-
-      startTime = timelineDataForCopy[minIdx].time;
-      endTime = timelineDataForCopy[maxIdx + 1]?.time ?? duration;
-    }
-    // 2. 如果沒有多選，檢查是否有單選 (點擊單個 Block)
-    // 注意：這裡假設您的 selectedBlock 格式為 { armorIndex, partIndex, blockIndex }
-    else if (
-      multiSelectedBlocks.length === 0 &&
-      data?.selectedBlock?.armorIndex !== undefined
-    ) {
-      const sBlock = data.selectedBlock;
-      armorIndex = sBlock.armorIndex;
-      partIndex = sBlock.partIndex;
-      sourceBlocksInfo = [sBlock]; // ✅ 將單選包裝成陣列，這樣渲染邏輯就統一了
-
-      const block =
-        timelineBlocks?.[armorIndex]?.[partIndex]?.[sBlock.blockIndex];
-      if (!block) {
-        console.warn("找不到選中的方塊資料");
-        return;
-      }
-
-      startTime = block.startTime;
-      endTime = block.startTime + block.durationTime;
-    } else {
-      console.warn("請先選取方塊再進行複製。");
-      return;
-    }
-
-    // 3. 從 actionTable 提取資料
-    const timelineData = actionTable[armorIndex][partIndex];
-    copiedPoints = timelineData.filter(
-      (p) => p.time >= startTime && p.time <= endTime,
-    );
-
-    if (copiedPoints.length === 0) return;
-
-    // 4. 存入剪貼簿
-    dispatch(
-      updateClipboard({
-        type: "range_fixed_time",
-        data: JSON.parse(JSON.stringify(copiedPoints)),
-        startTime: startTime,
-        endTime: endTime,
-        sourceBlocks: sourceBlocksInfo, // 現在保證這裡一定有值
-      }),
-    );
-
-    setIsCopying(true); // 進入模式，讓 Timeline 顯示標記
-    console.log(
-      "複製成功:",
-      multiSelectedBlocks.length > 0 ? "區間" : "單一區塊",
-    );
-  };
-  const executeAdvancedPaste = (
-    targetArmor,
-    targetPart,
-    offset,
-    copiedData,
-  ) => {
-    const updatedActionTable = produce(actionTable, (draft) => {
-      let timeline = draft[targetArmor][targetPart];
-      if (!Array.isArray(timeline)) return;
-
-      // A. 產生平移後的點，有色區塊強制對齊 50ms
-      const movedPoints = copiedData.map((p) => {
-        const newTime = p.time + offset;
-        const isBlack =
-          (p.color?.R ?? 0) === 0 &&
-          (p.color?.G ?? 0) === 0 &&
-          (p.color?.B ?? 0) === 0;
-        return {
-          ...p,
-          time: isBlack ? newTime : Math.round(newTime / 50) * 50,
-        };
-      });
-      const newStart = movedPoints[0].time;
-      const newEnd = movedPoints[movedPoints.length - 1].time;
-
-      // B. 清理衝突區間：移除目標部位在 [newStart, newEnd] 內的所有點
-      const indicesToRemove = new Set();
-      let lastConflictIdx = -1;
-      timeline.forEach((item, idx) => {
-        if (item.time >= newStart && item.time <= newEnd) {
-          indicesToRemove.add(idx);
-          lastConflictIdx = idx;
-        }
-      });
-
-      // 衝突後方黑塊清理：如果衝突結束後緊跟黑塊，也刪除
-      if (lastConflictIdx !== -1 && lastConflictIdx + 1 < timeline.length) {
-        const nextP = timeline[lastConflictIdx + 1];
-        if (nextP.color.R === 0 && nextP.color.G === 0 && nextP.color.B === 0) {
-          indicesToRemove.add(lastConflictIdx + 1);
-        }
-      }
-
-      let nextTimeline = timeline.filter((_, idx) => !indicesToRemove.has(idx));
-
-      // C. 插入點位並排序
-      nextTimeline = [...nextTimeline, ...movedPoints].sort(
-        (a, b) => a.time - b.time,
-      );
-
-      // D. 智慧黑點緩衝 (檢查起點前方是否需要黑點)
-      const firstColorPoint = movedPoints.find(
-        (p) => p.color.R !== 0 || p.color.G !== 0 || p.color.B !== 0,
-      );
-      if (firstColorPoint) {
-        ensureBlackBefore(nextTimeline, firstColorPoint.time, blackthreshold);
-      }
-
-      draft[targetArmor][targetPart] = nextTimeline.sort(
-        (a, b) => a.time - b.time,
-      );
-    });
-
-    // E. 全域重複清理並更新 Redux
-    const cleaned = removeDuplicateBlackBlocks(updatedActionTable);
-    dispatch(updateActionTable(cleaned));
-    setIsCopying(false);
-    dispatch(updateMultiSelectedBlocks([]));
-  };
-
-  const handlePasteAlignedToTarget = () => {
-    if (!clipboard || multiSelectedBlocks.length === 0) return;
-
-    const {
-      armorIndex: targetArmor,
-      partIndex: targetPart,
-      blockIndex: targetBlockIdx,
-    } = multiSelectedBlocks[0];
-    const targetTime =
-      actionTable[targetArmor][targetPart][targetBlockIdx]?.time ?? 0;
-
-    // 計算偏移量：使用第一個有色區塊時間，避免黑點非對齊時間污染 offset
-    const firstColorPoint = clipboard.data.find(
-      (p) => p.color?.R !== 0 || p.color?.G !== 0 || p.color?.B !== 0,
-    );
-    const firstTime = firstColorPoint
-      ? firstColorPoint.time
-      : clipboard.data[0].time;
-    const offset = targetTime - firstTime;
-
-    executeAdvancedPaste(targetArmor, targetPart, offset, clipboard.data);
-  };
-
-  const handlePasteFixedTime = () => {
-    if (!clipboard || multiSelectedBlocks.length === 0) return;
-    executeAdvancedPaste(
-      multiSelectedBlocks[0].armorIndex,
-      multiSelectedBlocks[0].partIndex,
-      0,
-      clipboard.data,
-    );
-  };
   const keyPress = useRef(false);
 
   const handleKeyDown = (event) => {
@@ -298,12 +116,10 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     );
 
     if (event.key === "Escape") {
-      if (isCopying) {
+      if (copyPaste.isCopying) {
         event.preventDefault(); // ✅ 攔截瀏覽器預設行為
         event.stopPropagation();
-        setIsCopying(false);
-        dispatch(updateMultiSelectedBlocks([]));
-        console.log("Cancel Copying Mode");
+        copyPaste.cancelCopying();
         return;
       }
     }
@@ -346,7 +162,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       if (event.key === "c" || event.key === "C") {
         event.preventDefault();
         console.log("Shift + C: Copy whole timeline");
-        handleWholeCopy();
+        copyPaste.copyWholePart();
       }
       // Shift + V: 貼上整個部位 (整條覆蓋)
       else if (event.key === "v" || event.key === "V") {
@@ -354,7 +170,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
           // 排除 Ctrl+Shift+V
           event.preventDefault();
           console.log("Shift + V: Paste whole timeline");
-          handleWholePaste();
+          copyPaste.pasteWholePart();
         }
       } else if (event.key === "ArrowRight") {
         event.preventDefault();
@@ -392,28 +208,18 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       handleFavoriteColorChoose(parseInt(event.key) - 1);
     }
     if (event.ctrlKey) {
-      // if (event.key === "c" || event.key === "C") {
-      //   event.preventDefault();
-      //   handleWholeCopy();
-      // }
-      // // Ctrl+V: 貼上
-      // else if (event.key === "v" || event.key === "V") {
-      //   event.preventDefault();
-      //   handleWholePaste();
-      // }
       // Ctrl + C: 只要有東西被選中就執行
       if (event.key === "c" || event.key === "C") {
         event.preventDefault();
-        console.log("觸發 Ctrl+C");
-        handleCopy();
+        copyPaste.copyRange();
       }
       // 處理 Ctrl + V 家族 (保持原樣)
       else if (event.key === "v" || event.key === "V") {
         event.preventDefault();
         if (event.shiftKey) {
-          handlePasteFixedTime();
+          copyPaste.pasteAtFixedTime();
         } else {
-          handlePasteAlignedToTarget();
+          copyPaste.pasteAlignedToTarget();
         }
       }
       // Ctrl+數字: 設定透明度
@@ -542,107 +348,6 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     dispatch(updateActionTable(updatedActionTable));
   };
 
-  const handleWholeCopy = () => {
-    console.log("Copy clicked");
-    if (multiSelectedBlocks.length === 0) {
-      console.warn("No block selected. Cannot copy.");
-      return;
-    }
-
-    const { armorIndex, partIndex } = multiSelectedBlocks[0];
-
-    // 取得整個部位的 timeline
-    const timeline = actionTable?.[armorIndex]?.[partIndex];
-
-    if (!timeline || timeline.length === 0) {
-      console.warn("No timeline data found for the selected block.");
-      return;
-    }
-
-    // 深拷貝 timeline 資料
-    const copiedData = JSON.parse(JSON.stringify(timeline));
-
-    // 更新 clipboard 狀態
-    dispatch(
-      updateClipboard({
-        data: copiedData,
-        sourceArmorIndex: armorIndex,
-        sourcePartIndex: partIndex,
-        timestamp: Date.now(),
-      }),
-    );
-
-    console.log(
-      `Copied timeline for Armor ${armorIndex}, Part ${partIndex}:`,
-      copiedData,
-    );
-    console.log(`Total blocks copied: ${copiedData.length}`);
-  };
-
-  const handleWholePaste = () => {
-    console.log("Paste clicked");
-
-    // 檢查剪貼簿是否有資料
-    if (!clipboard || !clipboard.data || clipboard.data.length === 0) {
-      console.warn("Clipboard is empty. Nothing to paste.");
-      return;
-    }
-
-    // 檢查是否有選中的方塊
-    if (multiSelectedBlocks.length === 0) {
-      console.warn("No block selected. Cannot determine paste target.");
-      return;
-    }
-
-    const { armorIndex: targetArmorIndex, partIndex: targetPartIndex } =
-      multiSelectedBlocks[0];
-
-    console.log(
-      `Pasting to Armor ${targetArmorIndex}, Part ${targetPartIndex}`,
-    );
-    console.log(
-      `Source: Armor ${clipboard.sourceArmorIndex}, Part ${clipboard.sourcePartIndex}`,
-    );
-
-    // 深拷貝剪貼簿資料
-    const pastedData = JSON.parse(JSON.stringify(clipboard.data));
-
-    // 使用 Immer 更新 actionTable
-    const updatedActionTable = produce(actionTable, (draft) => {
-      // 完全覆蓋目標部位的 timeline
-      draft[targetArmorIndex][targetPartIndex] = pastedData;
-    });
-
-    // 更新 Redux
-    dispatch(updateActionTable(updatedActionTable));
-
-    console.log(
-      `Pasted ${pastedData.length} blocks to Armor ${targetArmorIndex}, Part ${targetPartIndex}`,
-    );
-
-    // 貼上後，選中目標部位的第一個有效方塊（非黑色）
-    let newBlockIndex = 0;
-    for (let i = 0; i < pastedData.length; i++) {
-      const block = pastedData[i];
-      if (
-        !(block.color.R === 0 && block.color.G === 0 && block.color.B === 0)
-      ) {
-        newBlockIndex = i;
-        break;
-      }
-    }
-
-    dispatch(
-      updateMultiSelectedBlocks([
-        {
-          armorIndex: targetArmorIndex,
-          partIndex: targetPartIndex,
-          blockIndex: newBlockIndex,
-        },
-      ]),
-    );
-  };
-
   const listitem = showPart.map((setting) => (
     <Timeline
       key={setting.id}
@@ -652,23 +357,13 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       zoomValue={zoomLevel}
       ref={elRefs.current[showPart.findIndex((s) => s.id === setting.id)]}
       height={showPart.length <= 7 ? 100 / showPart.length : 14}
-      isCopying={isCopying}
+      isCopying={copyPaste.isCopying}
     />
   ));
 
   return (
     <div className="audio-player-container">
-      {isCopying && (
-        <div className="copy-mode-banner">
-          <span>
-            📋 Copy Mode Active (Interval: {clipboard?.startTime}ms ~{" "}
-            {clipboard?.endTime}ms)
-          </span>
-          <span className="hint-text">
-            Press [ESC] to Cancel or click Target then [Ctrl+V]
-          </span>
-        </div>
-      )}
+      <CopyModeBanner isCopying={copyPaste.isCopying} />
       <div className="controls">
         <MusicSelector
           onTrackChange={() => {
