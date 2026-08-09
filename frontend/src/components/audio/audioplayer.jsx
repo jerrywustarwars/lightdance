@@ -11,19 +11,17 @@ import {
 import "./audioplayer.css";
 import Waveform from "./waveform.jsx";
 import MusicSelector from "./MusicSelector.jsx";
+import PlayerControls from "./PlayerControls.jsx";
 import { musicNames } from "./musicData.js";
 import Timeline from "./Timeline.jsx";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faTrash,
   faPalette,
-  faVolumeHigh,
   faArrowRight,
   faArrowLeft,
   faScissors,
-  faPlay,
   faCircleHalfStroke,
-  faPause,
   faWandMagicSparkles,
   faCheck,
   faTimes,
@@ -34,14 +32,11 @@ import {
   updateChosenColor,
   updatePaletteColor,
   updateIsColorChangeActive,
-  updatePlaybackRate,
   updateCurrentTime,
 } from "../../redux/actions.js";
 import { set } from "lodash";
 import { TICK_MS, LEGACY_BLACK_SENTINEL_MS } from "../../constants/time.js";
 import { insertColorKeyframes } from "../../utils/actionTable/insertColorKeyframes.js";
-
-const MAXZOOMVALUE = 100;
 
 const ensureBlackBefore = (
   timeline,
@@ -100,7 +95,6 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   const multiSelectedBlocks = useSelector(
     (state) => state.profiles.multiSelectedBlocks,
   );
-  const playbackRate = useSelector((state) => state.profiles.playbackRate);
 
   const scrollRef = useRef(null); // 滾動條的容器
   const containerRef = useRef(null); // 波形的容器
@@ -641,43 +635,6 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     dispatch(updateActionTable(updatedActionTable));
   };
 
-  const handleZoom = (event) => {
-    setZoomLevel(Math.floor(event.target.value));
-  };
-
-  const formatTime = (timeInMilliseconds) => {
-    const minutes = Math.floor(timeInMilliseconds / 60000);
-    const seconds = Math.floor((timeInMilliseconds % 60000) / 1000);
-    const milliseconds = Math.floor(timeInMilliseconds % 1000);
-
-    return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}:${
-      milliseconds < 100 ? "0" : ""
-    }${milliseconds < 10 ? "0" : ""}${milliseconds}`;
-  };
-
-  const handleminuszoom = () => {
-    setZoomLevel((prevZoom) =>
-      Math.max((Math.round((prevZoom - 0.05) / 0.05) * 0.05).toFixed(2), 1),
-    );
-  };
-
-  const handlepluszoom = () => {
-    setZoomLevel((prevZoom) =>
-      Math.min(
-        (Math.round((prevZoom + 0.05) / 0.05) * 0.05).toFixed(2),
-        MAXZOOMVALUE,
-      ),
-    );
-  };
-
-  const handleVolumeChange = (event) => {
-    const newVolume = event.target.value;
-    if (isPlaying) {
-      setIsPlaying(false);
-    }
-    setVolume(newVolume);
-  };
-
   const handleMultiDelete = () => {
     console.log("Blacking out multiple blocks:", multiSelectedBlocks);
 
@@ -904,11 +861,6 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     const b = rgba.B.toString(16).padStart(2, "0");
 
     return `#${r}${g}${b}`;
-  };
-
-  const handleSpeedChange = (speed) => {
-    const newSpeed = parseFloat(speed); // 转换为数字
-    dispatch(updatePlaybackRate(newSpeed));
   };
 
   const handleGoLeft = () => {
@@ -1766,77 +1718,14 @@ function AudioPlayer({ setButtonState, timelineRef }) {
           <FontAwesomeIcon icon={faPalette} size="lg" /> {/* 调色板图标 */}
           <span className="tooltip">Color( P )</span>
         </button>
-        {/* 下拉式选单 */}
-        <div className="dropdown">
-          <select
-            id="speed-select"
-            className="dropdown-select"
-            value={playbackRate || 1}
-            onChange={(e) => handleSpeedChange(e.target.value)}
-            style={{ marginLeft: "10px" }}
-          >
-            <option value="0.5">0.5x</option>
-            <option value="0.75">0.75x</option>
-            <option value="1">1x</option>
-            <option value="1.25">1.25x</option>
-            <option value="1.5">1.5x</option>
-            <option value="2">2x</option>
-          </select>
-          <span className="tooltip">Playback speed</span>
-        </div>
-        <div className="play-control">
-          <button className="play-button" onClick={handlePlayPause}>
-            {isPlaying ? (
-              <>
-                <FontAwesomeIcon icon={faPause} size="lg" />
-                <span className="tooltip">Pause ( Space )</span>
-              </>
-            ) : (
-              <>
-                <FontAwesomeIcon icon={faPlay} size="lg" />
-                <span className="tooltip">Play ( Space )</span>
-              </>
-            )}
-          </button>
-          <span className="current-time-box">{formatTime(currentTime)}</span>
-          <span className="time-separator">/</span>
-          <span className="duration-box">{formatTime(duration)}</span>
-          {/* <div className="time-display">
-            {formatTime(currentTime)} / {formatTime(duration)}
-          </div> */}
-        </div>
-        <div className="zoom-controls">
-          <button onClick={handleminuszoom} disabled={zoomLevel < 1}>
-            -
-          </button>
-          <input
-            type="range"
-            min="1"
-            max={MAXZOOMVALUE}
-            step="0.01"
-            value={zoomLevel}
-            onChange={handleZoom}
-            className="zoom-slider"
-          />
-          <button onClick={handlepluszoom} disabled={zoomLevel > MAXZOOMVALUE}>
-            +
-          </button>
-        </div>
-        <div className="volume-control">
-          <div className="volume-icon" style={{ color: "rgb(150, 146, 146)" }}>
-            <FontAwesomeIcon icon={faVolumeHigh} size="lg" />
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={volume}
-            className="volume-slider"
-            onChange={handleVolumeChange}
-            style={{ width: "100px" }}
-          />
-        </div>
+        <PlayerControls
+          isPlaying={isPlaying}
+          setIsPlaying={setIsPlaying}
+          zoomLevel={zoomLevel}
+          setZoomLevel={setZoomLevel}
+          volume={volume}
+          setVolume={setVolume}
+        />
       </div>
       <div className="scroll-container" ref={scrollRef}>
         <div

@@ -91,6 +91,39 @@ describe("快捷鍵", () => {
   });
 });
 
+describe("播放控制列", () => {
+  it("切換播放速度會寫進 Redux", () => {
+    const store = createTestStore();
+    mount(store);
+
+    fireEvent.change(document.querySelector("#speed-select"), {
+      target: { value: "1.5" },
+    });
+    expect(store.getState().profiles.playbackRate).toBe(1.5);
+  });
+
+  it("播放鍵切換播放狀態（圖示跟著換）", () => {
+    mount();
+    const playButton = document.querySelector(".play-button");
+
+    expect(playButton.querySelector(".tooltip").textContent).toContain("Play");
+    fireEvent.click(playButton);
+    expect(
+      document.querySelector(".play-button .tooltip").textContent,
+    ).toContain("Pause");
+  });
+
+  it("顯示目前時間與總長度", () => {
+    const store = createTestStore({ currentTime: 5000 });
+    mount(store);
+
+    expect(document.querySelector(".current-time-box").textContent).toBe(
+      "0:05:000",
+    );
+    expect(document.querySelector(".duration-box").textContent).toBe("0:10:000");
+  });
+});
+
 describe("Shift + 數字：插入最愛顏色", () => {
   /**
    * 這條路徑原本永遠進不來：按住 Shift 時 `Shift+1` 的 `event.key` 是 `"!"`，
