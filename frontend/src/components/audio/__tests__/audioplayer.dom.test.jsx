@@ -91,6 +91,56 @@ describe("快捷鍵", () => {
   });
 });
 
+describe("色塊工具列", () => {
+  const selected = (blockIndex = 1) => [
+    { armorIndex: 0, partIndex: 0, blockIndex },
+  ];
+
+  it("刪除鍵把選取的色塊塗黑並清空選取", () => {
+    const store = createTestStore({ multiSelectedBlocks: selected() });
+    mount(store);
+
+    // 測試光表 index 1 是 1000ms 的紅色塊（見 renderEditor.jsx）
+    expect(timelineOf(store).some((e) => e.color.R === 255)).toBe(true);
+    fireEvent.click(document.querySelector(".delete-button"));
+
+    // 塗黑後和前後的黑點合併，紅色塊整個消失
+    expect(timelineOf(store).some((e) => e.color.R === 255)).toBe(false);
+    expect(store.getState().profiles.multiSelectedBlocks).toEqual([]);
+  });
+
+  it("亮度下拉改變選取色塊的透明度", () => {
+    const store = createTestStore({ multiSelectedBlocks: selected() });
+    mount(store);
+
+    fireEvent.change(document.querySelector("#brightness-select"), {
+      target: { value: "0.3" },
+    });
+    expect(timelineOf(store)[1].color.A).toBeCloseTo(0.3);
+  });
+
+  it("下一個時間點會跳過黑色哨兵", () => {
+    // 測試光表：1000（紅）、1990（黑哨兵）、2000（綠）
+    const store = createTestStore({
+      currentTime: 1000,
+      multiSelectedBlocks: selected(),
+    });
+    mount(store);
+
+    fireEvent.click(document.querySelector(".timeline-right"));
+    // 1990 和 2000 只差 10ms，停在黑點上沒有意義，所以直接跳到 2000
+    expect(store.getState().profiles.currentTime).toBe(2000);
+  });
+
+  it("沒有選取時導航不會移動播放位置", () => {
+    const store = createTestStore({ currentTime: 1000 });
+    mount(store);
+
+    fireEvent.click(document.querySelector(".timeline-right"));
+    expect(store.getState().profiles.currentTime).toBe(1000);
+  });
+});
+
 describe("播放控制列", () => {
   it("切換播放速度會寫進 Redux", () => {
     const store = createTestStore();

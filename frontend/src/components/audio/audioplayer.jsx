@@ -14,24 +14,16 @@ import MusicSelector from "./MusicSelector.jsx";
 import PlayerControls from "./PlayerControls.jsx";
 import { useTimeShift, ShiftToolButton, ShiftMarkers } from "./ShiftTool.jsx";
 import EffectMenu, { useLightEffects } from "./EffectMenu.jsx";
+import {
+  useTrackActions,
+  TrackNavigation,
+  TrackEditButtons,
+  UniformAlphaMenu,
+} from "./TrackToolbar.jsx";
 import { musicNames } from "./musicData.js";
 import Timeline from "./Timeline.jsx";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import {
-  faTrash,
-  faPalette,
-  faArrowRight,
-  faArrowLeft,
-  faScissors,
-  faCircleHalfStroke,
-} from "@fortawesome/free-solid-svg-icons";
 import { produce } from "immer";
-import {
-  updateChosenColor,
-  updatePaletteColor,
-  updateIsColorChangeActive,
-  updateCurrentTime,
-} from "../../redux/actions.js";
+import { updateChosenColor, updateCurrentTime } from "../../redux/actions.js";
 import { set } from "lodash";
 import { TICK_MS, LEGACY_BLACK_SENTINEL_MS } from "../../constants/time.js";
 import { insertColorKeyframes } from "../../utils/actionTable/insertColorKeyframes.js";
@@ -64,33 +56,13 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1); // 放大級別
   const progressFlagRef = useRef(null); // P0: 進度條 DOM ref，60fps 直接操作
-  const [brightness, setBrightness] = useState(1); // 預設亮度為 1 (100%)
   const [sourceNode, setSourceNode] = useState(null);
   const blackthreshold = LEGACY_BLACK_SENTINEL_MS;
   const elRefs = useRef([]);
 
   const effects = useLightEffects(); // 漸變/頻閃/亮度階梯：選單與快捷鍵共用
   const shift = useTimeShift(); // 區間平移：按鈕與時間軸標記共用同一份狀態
-  const [uniformAlphaVisible, setUniformAlphaVisible] = useState(false);
-  const uniformAlphaRef = useRef(null);
-
-  useEffect(() => {
-    const handleClickOutsideUniformAlpha = (e) => {
-      if (
-        uniformAlphaVisible &&
-        uniformAlphaRef.current &&
-        !uniformAlphaRef.current.contains(e.target)
-      ) {
-        setUniformAlphaVisible(false);
-      }
-    };
-
-    document.addEventListener("click", handleClickOutsideUniformAlpha);
-
-    return () => {
-      document.removeEventListener("click", handleClickOutsideUniformAlpha);
-    };
-  }, [uniformAlphaVisible]);
+  const trackActions = useTrackActions(); // 剪下/刪除/導航/亮度/改色：工具列與快捷鍵共用
 
   useEffect(() => {
     setButtonState(isPlaying);
@@ -133,21 +105,6 @@ function AudioPlayer({ setButtonState, timelineRef }) {
 
   // P0: 進度條改由 waveform.jsx 的 rAF 透過 onTimeUpdate callback 直接操作 DOM（60fps）
   // 移除了 setProgressWidth 的 useEffect，避免播放期間不必要的 re-render
-
-  useEffect(() => {
-    if (multiSelectedBlocks.length > 0) {
-      const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
-      const block = actionTable?.[armorIndex]?.[partIndex]?.[blockIndex];
-      console.log(
-        "Selected block for brightness:",
-        multiSelectedBlocks[0],
-        block,
-      );
-      if (block && block.color && block.color.A !== undefined) {
-        setBrightness(block.color.A); // 同步選取的區塊的 alpha 值到亮度控制項
-      }
-    }
-  }, [multiSelectedBlocks, actionTable]);
 
   // 在 AudioPlayer 內部新增狀態
   const [isCopying, setIsCopying] = useState(false);
@@ -402,11 +359,11 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       } else if (event.key === "ArrowRight") {
         event.preventDefault();
         console.log("Shift + ArrowRight pressed. Moving right.");
-        handleGoRight();
+        trackActions.goToNextPoint();
       } else if (event.key === "ArrowLeft") {
         event.preventDefault();
         console.log("Shift + ArrowLeft pressed. Moving left.");
-        handleGoLeft();
+        trackActions.goToPreviousPoint();
       }
     }
 
@@ -416,11 +373,11 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     }
     if (event.key === "p" || event.key === "P") {
       event.preventDefault();
-      ClickedColorChange();
+      trackActions.openColorPicker();
     }
     if (event.key === "c" && !event.ctrlKey) {
       event.preventDefault();
-      handleCut();
+      trackActions.cutSelected();
     }
     if (event.key === "L" || event.key === "l") {
       // Add shortcut for 'L' key
@@ -465,10 +422,10 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       ) {
         event.preventDefault();
         const alphaValue = parseFloat(event.key) / 10;
-        handleBrightnessChange(alphaValue);
+        trackActions.changeBrightness(alphaValue);
       } else if (event.key === "0") {
         event.preventDefault();
-        handleBrightnessChange(0);
+        trackActions.changeBrightness(0);
       }
     }
     // Shift + 1~8：在播放位置插入最愛顏色（和不按 Shift 的 1~8「改選取色塊的顏色」不同）
@@ -482,12 +439,9 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     }
     if (event.key === "Delete" || event.key === "Backspace") {
       event.preventDefault();
-      if (multiSelectedBlocks && multiSelectedBlocks.length > 0) {
-        handleMultiDelete();
-      } else {
-        console.log("Delete or Backspace pressed for single block.");
-        ClickedDelete();
-      }
+      // 原本分成「多選 → handleMultiDelete」與「單選 → ClickedDelete」兩條，
+      // 但 ClickedDelete 只是「有選取才呼叫 handleMultiDelete」，兩條同義
+      trackActions.deleteSelected();
     }
 
     if (event.key === " ") {
@@ -586,290 +540,6 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     });
 
     dispatch(updateActionTable(updatedActionTable));
-  };
-
-  const handleMultiDelete = () => {
-    console.log("Blacking out multiple blocks:", multiSelectedBlocks);
-
-    const groupedByPart = multiSelectedBlocks.reduce((acc, block) => {
-      const key = `${block.armorIndex}-${block.partIndex}`;
-      if (!acc[key]) {
-        acc[key] = [];
-      }
-      acc[key].push(block.blockIndex);
-      return acc;
-    }, {});
-
-    const updatedActionTable = produce(actionTable, (draft) => {
-      Object.keys(groupedByPart).forEach((key) => {
-        const [armorIndexStr, partIndexStr] = key.split("-");
-        const armorIndex = parseInt(armorIndexStr, 10);
-        const partIndex = parseInt(partIndexStr, 10);
-        const blockIndexes = groupedByPart[key];
-
-        const minBlockIndex = Math.min(...blockIndexes);
-        const maxBlockIndex = Math.max(...blockIndexes);
-
-        const partTimelineFromActionTable = draft[armorIndex]?.[partIndex];
-
-        if (!partTimelineFromActionTable) return;
-
-        const selectionStartTime =
-          partTimelineFromActionTable[minBlockIndex]?.time;
-        const selectionEndTime =
-          partTimelineFromActionTable[maxBlockIndex + 1]?.time ?? duration;
-
-        const startIndexToActionTable = partTimelineFromActionTable.findIndex(
-          (entry) => entry.time === selectionStartTime,
-        );
-
-        if (startIndexToActionTable === -1) return;
-
-        partTimelineFromActionTable[startIndexToActionTable].color = {
-          R: 0,
-          G: 0,
-          B: 0,
-          A: 1,
-        };
-        partTimelineFromActionTable[startIndexToActionTable].linear = 0;
-
-        let deleteStartIndex = startIndexToActionTable + 1;
-        let deleteCount = 0;
-        while (
-          deleteStartIndex + deleteCount < partTimelineFromActionTable.length &&
-          partTimelineFromActionTable[deleteStartIndex + deleteCount].time <
-            selectionEndTime
-        ) {
-          deleteCount++;
-        }
-
-        if (deleteCount > 0) {
-          partTimelineFromActionTable.splice(deleteStartIndex, deleteCount);
-        }
-      });
-    });
-
-    const cleanedActionTable = removeDuplicateBlackBlocks(updatedActionTable);
-
-    dispatch(updateActionTable(cleanedActionTable));
-    dispatch(updateMultiSelectedBlocks([]));
-  };
-
-  const ClickedDelete = () => {
-    if (multiSelectedBlocks.length === 0) return;
-    handleMultiDelete();
-  };
-
-  const ClickedColorChange = () => {
-    console.log("Color Change clicked");
-
-    if (multiSelectedBlocks.length === 0) return;
-
-    const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
-
-    const block = actionTable?.[armorIndex]?.[partIndex]?.[blockIndex];
-
-    if (!block || !block.color) {
-      console.warn("Selected block has no color information.");
-      return;
-    }
-
-    // 更新 Redux 的颜色状态
-    const blockColor = block.color;
-    dispatch(updatePaletteColor(rgbaToHex(blockColor)));
-    dispatch(updateChosenColor(blockColor));
-    dispatch(updateIsColorChangeActive(true));
-    console.log("Updated chosenColor:", blockColor);
-
-    // 打开调色盘并同步颜色
-    const palette = document.querySelector("#colorWell");
-    if (palette) {
-      palette.value = rgbaToHex(blockColor); // 将调色盘颜色更新为当前 block 的颜色
-      palette.dispatchEvent(new Event("input")); // 手动触发 input 事件，确保颜色显示正确
-      palette.click(); // 打开调色盘
-    }
-  };
-
-  const rgbaToHex = (rgba) => {
-    const r = rgba.R.toString(16).padStart(2, "0");
-    const g = rgba.G.toString(16).padStart(2, "0");
-    const b = rgba.B.toString(16).padStart(2, "0");
-
-    return `#${r}${g}${b}`;
-  };
-
-  const handleGoLeft = () => {
-    console.log("go left");
-    if (multiSelectedBlocks.length === 0) return;
-
-    const { armorIndex, partIndex } = multiSelectedBlocks[0];
-    const timeline = actionTable[armorIndex]?.[partIndex];
-
-    if (!timeline || timeline.length === 0) {
-      console.warn("No valid timeline found for the selected block.");
-      return;
-    }
-
-    // 获取比 currentTime 小的所有时间点并按降序排序
-    const filteredTimes = timeline
-      .map((block) => block.time)
-      .filter((time) => time < currentTime)
-      .sort((a, b) => b - a);
-
-    // 获取最大时间点和次大时间点
-    const previousTime = filteredTimes[0];
-    const secondPreviousTime = filteredTimes[1];
-
-    // 如果最大时间点与 currentTime 相差 10ms，则取次大时间点
-    let selectedTime = previousTime;
-    if (
-      previousTime !== undefined &&
-      secondPreviousTime !== undefined &&
-      currentTime - previousTime === 10
-    ) {
-      selectedTime = secondPreviousTime;
-    }
-
-    if (selectedTime !== undefined) {
-      selectedTime = Math.round(selectedTime / 50) * 50; // 四舍五入到最近的 10 毫秒
-      // isExternalSeekRef.current = true; // 设置为外部跳转
-      dispatch(updateCurrentTime(selectedTime)); // 更新 Redux 中的 currentTime
-      // audioRef.current.currentTime = selectedTime / 1000; // 更新 audio 元素的播放時間
-    } else {
-      console.warn("No previous time point found.");
-    }
-  };
-
-  const handleGoRight = () => {
-    console.log("go right");
-    if (multiSelectedBlocks.length === 0) return;
-    const { armorIndex, partIndex } = multiSelectedBlocks[0];
-    const timeline = actionTable[armorIndex]?.[partIndex];
-    console.log("timeline:", timeline);
-
-    if (!timeline || timeline.length === 0) {
-      console.warn("No valid timeline found for the selected block.");
-      return;
-    }
-
-    // 获取比 currentTime 大的所有时间点并按升序排序
-    const filteredTimes = timeline
-      .map((block) => block.time)
-      .filter((time) => time > currentTime)
-      .sort((a, b) => a - b);
-
-    if (filteredTimes.length === 0) {
-      console.warn("No next time point found.");
-      return;
-    }
-
-    // 最接近 currentTime 的最小时间点（第一小时间点）
-    const firstTime = filteredTimes[0];
-    // 第二小时间点（如果存在）
-    const secondTime = filteredTimes[1];
-
-    let nextTime = firstTime; // 默认为第一小时间点
-
-    // 如果第一小时间点和第二小时间点相差 10 毫秒，取第二小时间点
-    if (secondTime !== undefined && secondTime - firstTime === 10) {
-      nextTime = secondTime;
-    }
-    if (nextTime !== undefined) {
-      nextTime = Math.round(nextTime / 50) * 50; // 四舍五入到最近的 10 毫秒
-      nextTime = Math.min(nextTime, duration); // 确保不超过音频总时长
-      // isExternalSeekRef.current = true; // 设置为外部跳转
-      dispatch(updateCurrentTime(nextTime)); // 更新 Redux 中的 currentTime
-      console.log("currentTime:", currentTime);
-    } else {
-      console.warn("No next time point found.");
-    }
-  };
-
-  const handleCut = () => {
-    console.log("cut clicked");
-    if (multiSelectedBlocks.length !== 1) {
-      console.warn(
-        "Cut operation is only valid when exactly one block is selected.",
-      );
-      return;
-    }
-
-    // 直接從 Redux store 讀取最新 currentTime，繞過 closure stale 問題
-    const curTime = store.getState().profiles.currentTime;
-
-    const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
-
-    const updatedActionTable = produce(actionTable, (draft) => {
-      const timeline = draft[armorIndex]?.[partIndex];
-      const originalBlock = timeline?.[blockIndex];
-      const nextBlock = timeline?.[blockIndex + 1];
-
-      // 若為最後一個區塊，以 duration 作為隱含結束邊界
-      const blockEndTime = nextBlock?.time ?? duration;
-
-      if (
-        !originalBlock ||
-        curTime <= originalBlock.time ||
-        curTime >= blockEndTime
-      ) {
-        console.warn("Cut operation is not valid at the current time.");
-        return;
-      }
-
-      let newBlockColor = originalBlock.color;
-      const isOriginalLinear = originalBlock.linear === 1;
-
-      if (isOriginalLinear) {
-        const gradientTargetBlock = timeline[blockIndex + 2];
-        const startColor = originalBlock.color;
-        const endColor = gradientTargetBlock?.color || {
-          R: 0,
-          G: 0,
-          B: 0,
-          A: 1,
-        };
-        const startTime = originalBlock.time;
-        const endTime = nextBlock?.time ?? duration;
-
-        if (endTime > startTime) {
-          const ratio = (curTime - startTime) / (endTime - startTime);
-          newBlockColor = {
-            R: Math.round(startColor.R * (1 - ratio) + endColor.R * ratio),
-            G: Math.round(startColor.G * (1 - ratio) + endColor.G * ratio),
-            B: Math.round(startColor.B * (1 - ratio) + endColor.B * ratio),
-            A: (startColor.A ?? 1) * (1 - ratio) + (endColor.A ?? 1) * ratio,
-          };
-        }
-        originalBlock.linear = 1;
-      }
-
-      const newBlackBlock = {
-        time: curTime - blackthreshold,
-        color: { R: 0, G: 0, B: 0, A: 1 },
-        linear: 0,
-      };
-
-      const newBlock = {
-        time: curTime,
-        color: newBlockColor,
-        linear: isOriginalLinear ? 1 : 0,
-      };
-
-      timeline.splice(blockIndex + 1, 0, newBlackBlock, newBlock);
-      timeline.sort((a, b) => a.time - b.time);
-    });
-
-    dispatch(updateActionTable(updatedActionTable));
-
-    dispatch(
-      updateMultiSelectedBlocks([
-        {
-          armorIndex,
-          partIndex,
-          blockIndex: blockIndex + 2,
-        },
-      ]),
-    );
   };
 
   const handleWholeCopy = () => {
@@ -973,119 +643,6 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     );
   };
 
-  const handleBrightnessChange = (newBrightness) => {
-    if (!multiSelectedBlocks || multiSelectedBlocks.length === 0) {
-      console.warn("No blocks selected to change brightness.");
-      return;
-    }
-
-    const rawValue = Number(newBrightness);
-
-    if (Number.isNaN(rawValue)) {
-      console.warn("Invalid brightness value:", newBrightness);
-      return;
-    }
-
-    const alphaValue = Math.max(0, Math.min(1, rawValue));
-
-    const updatedActionTable = produce(actionTable, (draft) => {
-      multiSelectedBlocks.forEach(({ armorIndex, partIndex, blockIndex }) => {
-        const timeline = draft[armorIndex]?.[partIndex];
-
-        if (timeline?.[blockIndex]?.color) {
-          timeline[blockIndex].color.A = alphaValue;
-        }
-      });
-    });
-
-    dispatch(updateActionTable(updatedActionTable));
-
-    const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
-    const firstBlockColor =
-      actionTable?.[armorIndex]?.[partIndex]?.[blockIndex]?.color;
-
-    if (firstBlockColor) {
-      dispatch(updateChosenColor({ ...firstBlockColor, A: alphaValue }));
-    }
-
-    setBrightness(alphaValue);
-  };
-
-  const handleUniformAlphaButtonClick = (e) => {
-    e?.stopPropagation();
-
-    if (!multiSelectedBlocks || multiSelectedBlocks.length !== 1) {
-      alert("請先只選取一個色塊");
-      return;
-    }
-
-    const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
-    const selectedBlock = actionTable?.[armorIndex]?.[partIndex]?.[blockIndex];
-
-    if (!selectedBlock?.color) {
-      alert("找不到 selectedBlock 的顏色資料");
-      return;
-    }
-
-    setUniformAlphaVisible((prev) => !prev);
-  };
-
-  const handleUniformSameColorAlphaChange = (newAlpha) => {
-    if (!multiSelectedBlocks || multiSelectedBlocks.length !== 1) {
-      alert("請先只選取一個色塊");
-      return;
-    }
-
-    const rawValue = Number(newAlpha);
-
-    if (Number.isNaN(rawValue)) {
-      console.warn("Invalid alpha value:", newAlpha);
-      return;
-    }
-
-    const alphaValue = Math.max(0, Math.min(1, rawValue));
-
-    const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
-    const selectedColor =
-      actionTable?.[armorIndex]?.[partIndex]?.[blockIndex]?.color;
-
-    if (!selectedColor) {
-      alert("找不到 selectedBlock 的顏色資料");
-      return;
-    }
-
-    const targetR = Number(selectedColor.R);
-    const targetG = Number(selectedColor.G);
-    const targetB = Number(selectedColor.B);
-
-    const updatedActionTable = produce(actionTable, (draft) => {
-      Object.values(draft || {}).forEach((armor) => {
-        Object.values(armor || {}).forEach((timeline) => {
-          if (!Array.isArray(timeline)) return;
-
-          timeline.forEach((block) => {
-            const color = block?.color;
-            if (!color) return;
-
-            const sameColor =
-              Number(color.R) === targetR &&
-              Number(color.G) === targetG &&
-              Number(color.B) === targetB;
-
-            if (sameColor) {
-              color.A = alphaValue;
-            }
-          });
-        });
-      });
-    });
-
-    dispatch(updateActionTable(updatedActionTable));
-    dispatch(updateChosenColor({ ...selectedColor, A: alphaValue }));
-    setBrightness(alphaValue);
-    setUniformAlphaVisible(false);
-  };
-
   const listitem = showPart.map((setting) => (
     <Timeline
       key={setting.id}
@@ -1119,99 +676,11 @@ function AudioPlayer({ setButtonState, timelineRef }) {
             if (isPlaying) setIsPlaying(false);
           }}
         />
-        <div
-          ref={uniformAlphaRef}
-          className="uniform-alpha-wrapper"
-          onClick={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <button
-            className="shift-main-button"
-            onClick={handleUniformAlphaButtonClick}
-          >
-            <FontAwesomeIcon icon={faCircleHalfStroke} size="lg" />
-            <span className="tooltip">
-              Set opacity for all blocks with selected color
-            </span>
-          </button>
-
-          {uniformAlphaVisible && (
-            <div className="uniform-alpha-menu">
-              {[
-                { value: 0, label: "0%" },
-                { value: 0.1, label: "10%" },
-                { value: 0.2, label: "20%" },
-                { value: 0.3, label: "30%" },
-                { value: 0.4, label: "40%" },
-                { value: 0.5, label: "50%" },
-                { value: 0.6, label: "60%" },
-                { value: 0.7, label: "70%" },
-                { value: 0.8, label: "80%" },
-                { value: 0.9, label: "90%" },
-                { value: 1, label: "100%" },
-              ].map((item) => (
-                <button
-                  key={item.value}
-                  className="uniform-alpha-option"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleUniformSameColorAlphaChange(item.value);
-                  }}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <UniformAlphaMenu actions={trackActions} />
         <ShiftToolButton shift={shift} />
         <EffectMenu effects={effects} />
-        <div className="timeline-controls">
-          <button className="timeline-left" onClick={handleGoLeft}>
-            <FontAwesomeIcon icon={faArrowLeft} size="lg" />
-            <span className="tooltip">Previous Time Point (Shift + ←)</span>
-          </button>
-          <button className="timeline-right" onClick={handleGoRight}>
-            <FontAwesomeIcon icon={faArrowRight} size="lg" />
-            <span className="tooltip">Next Time Point (Shift + →)</span>
-          </button>
-        </div>
-        <button className="cut-button" onClick={handleCut}>
-          <FontAwesomeIcon icon={faScissors} size="lg" />
-          <span className="tooltip">Cut Selected Block ( C )</span>
-        </button>
-        <button className="delete-button" onClick={ClickedDelete}>
-          <FontAwesomeIcon icon={faTrash} size="lg" /> {/* 垃圾桶图标 */}
-          <span className="tooltip">Delete Selected Block ( Del )</span>
-        </button>
-
-        <div className="brightness-control">
-          <FontAwesomeIcon icon={faCircleHalfStroke} />
-          <select
-            id="brightness-select"
-            className="dropdown-select"
-            value={brightness} // 綁定當前亮度
-            onChange={(e) => handleBrightnessChange(e.target.value)} // 處理亮度變化
-            style={{ marginLeft: "10px" }}
-          >
-            <option value="0">0%</option>
-            <option value="0.1">10%</option>
-            <option value="0.2">20%</option>
-            <option value="0.3">30%</option>
-            <option value="0.4">40%</option>
-            <option value="0.5">50%</option>
-            <option value="0.6">60%</option>
-            <option value="0.7">70%</option>
-            <option value="0.8">80%</option>
-            <option value="0.9">90%</option>
-            <option value="1">100%</option>
-          </select>
-          <span className="tooltip">Brightness</span>
-        </div>
-        <button className="color-button" onClick={ClickedColorChange}>
-          <FontAwesomeIcon icon={faPalette} size="lg" /> {/* 调色板图标 */}
-          <span className="tooltip">Color( P )</span>
-        </button>
+        <TrackNavigation actions={trackActions} />
+        <TrackEditButtons actions={trackActions} />
         <PlayerControls
           isPlaying={isPlaying}
           setIsPlaying={setIsPlaying}
