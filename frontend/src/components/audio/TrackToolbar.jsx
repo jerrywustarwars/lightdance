@@ -13,7 +13,6 @@ import { produce } from "immer";
 
 import { store } from "../../redux/store.js";
 import {
-  updateActionTable,
   updateMultiSelectedBlocks,
   updateChosenColor,
   updatePaletteColor,
@@ -22,6 +21,7 @@ import {
 } from "../../redux/actions.js";
 import { TICK_MS, LEGACY_BLACK_SENTINEL_MS } from "../../constants/time.js";
 import { removeDuplicateBlackBlocks } from "../../utils/actionTable/blackSentinel.js";
+import { useKeyframeActionTable } from "../../hooks/useKeyframeActionTable.js";
 
 /**
  * 色塊工具列：前一/下一個時間點、切割、刪除、亮度、改色、統一同色透明度。
@@ -52,7 +52,8 @@ const clampAlpha = (value) => Math.max(0, Math.min(1, Number(value)));
 
 export function useTrackActions() {
   const dispatch = useDispatch();
-  const actionTable = useSelector((state) => state.profiles.data?.actionTable);
+  // Phase 4 過渡橋：store 存 segments，這裡取得 keyframe 視圖 + 寫回用的 commit
+  const { actionTable, commit } = useKeyframeActionTable();
   const currentTime = useSelector((state) => state.profiles.currentTime);
   const duration = useSelector((state) => state.profiles.duration);
   const multiSelectedBlocks = useSelector(
@@ -127,7 +128,7 @@ export function useTrackActions() {
       });
     });
 
-    dispatch(updateActionTable(removeDuplicateBlackBlocks(updatedActionTable)));
+    commit(removeDuplicateBlackBlocks(updatedActionTable));
     dispatch(updateMultiSelectedBlocks([]));
   };
 
@@ -206,14 +207,24 @@ export function useTrackActions() {
       timeline.sort((a, b) => a.time - b.time);
     });
 
-    dispatch(updateActionTable(updatedActionTable));
+    const nextTable = commit(updatedActionTable);
 
-    // 選取跟著移到切出來的後半段（黑點 + 新色塊 = 往後 2 格）
-    dispatch(
-      updateMultiSelectedBlocks([
-        { armorIndex, partIndex, blockIndex: blockIndex + 2 },
-      ]),
+    // 選取跟著移到切出來的後半段。
+    //
+    // 原本寫死 blockIndex + 2（黑哨兵 + 新色塊）。但寫入會經過 segment 的來回，
+    // 黑哨兵被吸收成邊界後索引會往前縮，寫死的偏移會選到隔壁的色塊。
+    // 改成從實際寫入結果裡用時間找回來，不管中間有沒有黑點都正確。
+    const newBlockIndex = nextTable[armorIndex][partIndex].findIndex(
+      (entry) => entry.time === curTime,
     );
+
+    if (newBlockIndex !== -1) {
+      dispatch(
+        updateMultiSelectedBlocks([
+          { armorIndex, partIndex, blockIndex: newBlockIndex },
+        ]),
+      );
+    }
   };
 
   /**
@@ -317,7 +328,7 @@ export function useTrackActions() {
       });
     });
 
-    dispatch(updateActionTable(updatedActionTable));
+    commit(updatedActionTable);
 
     const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
     const firstBlockColor =
@@ -404,7 +415,7 @@ export function useTrackActions() {
       });
     });
 
-    dispatch(updateActionTable(updatedActionTable));
+    commit(updatedActionTable);
     dispatch(updateChosenColor({ ...selectedColor, A: alphaValue }));
     setBrightness(alphaValue);
   };

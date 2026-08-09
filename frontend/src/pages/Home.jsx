@@ -26,19 +26,19 @@ import {
   cleanExpiredBackups,
   deleteLocalBackup,
 } from "../utils/indexedDB.js";
-import { sanitizeActionTableTimes } from "../utils/sanitizeActionTable.js";
 import { buildPlayers } from "../utils/export/buildPlayers.js";
-import { PLAYER_COUNT, PART_COUNT } from "../constants/parts.js";
+import { segmentsToActionTable } from "../utils/segments/convert.js";
 import {
-  normalizeActionTable,
-  createBlackPoint,
-} from "../utils/actionTable/normalizeActionTable.js";
+  SCHEMA_VERSION,
+  normalizeSegmentTable,
+} from "../utils/migration/loadProjectData.js";
+import { PLAYER_COUNT, PART_COUNT } from "../constants/parts.js";
 
+// segment 模型的「全部熄滅」就是每個部位一個空陣列——沒有段就是沒有光，
+// 不需要像 keyframe 模型那樣放一個 time 0 的黑點來表達
 const generateInitialTable = () =>
   Array.from({ length: PLAYER_COUNT }, () =>
-    Array.from({ length: PART_COUNT }, () => [
-      { time: 0, color: { R: 0, G: 0, B: 0, A: 1 }, linear: 0 },
-    ]),
+    Array.from({ length: PART_COUNT }, () => []),
   );
 
 // const cleanActionTableByDuration = (currentTable, maxDuration) => {
@@ -161,12 +161,14 @@ function Home({ rgba, setRgba, setButtonState }) {
     console.log("UPLOAD_ITEMS:", API_ENDPOINTS.UPLOAD_ITEMS);
     setIsDirty(false);
 
-    // 上傳前將有色區塊時間強制對齊 50ms，確保 raw_json 資料乾淨
-    const sanitizedData = {
+    // raw_data 現在存 segments（前端的黑盒子，後端不解析），標上 schemaVersion
+    // 讓載入端知道格式。不再需要 sanitizeActionTableTimes——segment 的邊界
+    // 在寫入時就由不變式保證對齊網格，上傳前不必再洗一次。
+    const rawPayload = {
       ...data,
-      actionTable: sanitizeActionTableTimes(data.actionTable),
+      schemaVersion: SCHEMA_VERSION,
     };
-    const rawDataString = JSON.stringify(sanitizedData);
+    const rawDataString = JSON.stringify(rawPayload);
     const sizeInMB = (rawDataString.length / 1024 / 1024).toFixed(2);
     console.log(`Output raw data size: ${sizeInMB} MB`);
 
@@ -175,7 +177,7 @@ function Home({ rgba, setRgba, setButtonState }) {
     // 1. 本地備份 (IndexedDB + Try-Catch 隔離)
     try {
       const backupData = {
-        data: data,
+        data: rawPayload,
         timestamp: new Date().getTime(),
         displayTime: new Date().toLocaleString(),
         uploaded: false, // 初始設為 false
@@ -189,8 +191,11 @@ function Home({ rgba, setRgba, setButtonState }) {
     // P5: 讓瀏覽器先處理 UI 更新（如 isLoading 狀態），再開始大量計算
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    // 壓平成韌體 PlayerData（純函式，由 golden 測試鎖定輸出）
-    const players = buildPlayers(actionTable);
+    // 壓平成韌體 PlayerData：segments → keyframes → PlayerData。
+    // 兩步都是純函式，由 golden 與 Phase 4 閘門測試鎖定輸出。
+    const players = buildPlayers(
+      segmentsToActionTable(actionTable, { duration }),
+    );
 
     console.log("players : ", players);
     console.log(">>> [1] 上傳的原始資料 (Raw Data):", data);
@@ -279,20 +284,27 @@ function Home({ rgba, setRgba, setButtonState }) {
     } else {
       // 沒變動，直接新建
       dispatch(updateMusicFilename(filename));
-      dispatch(updateActionTable(initialTable));
+      dispatch(updateActionTable(initialTable, { skipHistory: true }));
       setShowNewProjectMenu(false);
     }
   };
 
-  // 僅在 duration 變化時（載入新音檔）正規化 actionTable，
-  // 不在每次 actionTable 編輯時觸發——否則會污染 undo history 並導致 undo 被反轉。
+  // 僅在 duration 變化時（載入新音檔）補齊 actionTable 形狀，
+  // 不在每次編輯時觸發——否則會污染 undo history 並導致 undo 被反轉。
+  //
+  // segment 模型只需要補「7×22 個部位都存在」；keyframe 時代那些頭尾黑點的
+  // 正規化已經不需要了（空隙本身就代表熄滅，長度由 duration 單一來源決定）。
   useEffect(() => {
     if (!actionTable || duration <= 0) return;
 
-    const normalized = normalizeActionTable(actionTable, duration);
+    const normalized = normalizeSegmentTable(actionTable);
 
+    // 逐格比對 reference 就夠了：normalizeSegmentTable 對已存在的部位原樣沿用
     const isDifferent =
-      JSON.stringify(normalized) !== JSON.stringify(actionTable);
+      normalized.length !== actionTable.length ||
+      normalized.some((armor, a) =>
+        armor.some((segments, p) => segments !== actionTable[a]?.[p]),
+      );
 
     if (isDifferent) {
       console.log(
@@ -320,7 +332,7 @@ function Home({ rgba, setRgba, setButtonState }) {
       try {
         await handleOutput(); // 執行你原本的儲存邏輯
         dispatch(updateMusicFilename(pendingMusic));
-        dispatch(updateActionTable(initialTable));
+        dispatch(updateActionTable(initialTable, { skipHistory: true }));
         console.log("actionTable to save:", actionTable);
       } catch (e) {
         alert("儲存失敗，已取消新建。");
@@ -328,7 +340,7 @@ function Home({ rgba, setRgba, setButtonState }) {
       }
     } else if (action === "discard") {
       dispatch(updateMusicFilename(pendingMusic));
-      dispatch(updateActionTable(initialTable));
+      dispatch(updateActionTable(initialTable, { skipHistory: true }));
     }
 
     // 如果是 "cancel"，就直接關閉 Modal，不做任何 dispatch

@@ -6,18 +6,8 @@ import { useDispatch, useSelector } from "react-redux";
 import { updateActionTable, updateMusicFilename } from "../redux/actions.js";
 import { API_ENDPOINTS } from "../config/api.js";
 import { getAllLocalBackups } from "../utils/indexedDB.js";
-import { sanitizeActionTableTimes } from "../utils/sanitizeActionTable.js";
 import { PART_COUNT } from "../constants/parts.js";
-import { toNestedArray } from "../utils/actionTable/toNestedArray.js";
-
-const defaultPartEntry = () => [
-  { time: 0, color: { R: 0, G: 0, B: 0, A: 1 }, linear: 0 },
-];
-
-// 補齊acc0–acc7，並移除board；容器統一為巢狀 array
-function normalizeActionTable(actionTable) {
-  return toNestedArray(actionTable, defaultPartEntry);
-}
+import { loadProjectData } from "../utils/migration/loadProjectData.js";
 
 function Dropdown({ userName, setIsDirty, isDirty, setIsLoaded, isLoaded }) {
   const [timeList, setTimeList] = useState([]);
@@ -27,6 +17,7 @@ function Dropdown({ userName, setIsDirty, isDirty, setIsLoaded, isLoaded }) {
   const actionTable = useSelector(
     (state) => state.profiles.data?.actionTable || [],
   );
+  const duration = useSelector((state) => state.profiles.duration);
   const [localBackups, setLocalBackups] = useState([]);
 
   async function fetchAvailableDataList() {
@@ -102,16 +93,14 @@ function Dropdown({ userName, setIsDirty, isDirty, setIsLoaded, isLoaded }) {
       .then((data) => {
         console.log("Fetched Data:", data); // Log the returned data
         // console.log(data.players); // Log the returned data
-        const restoredActionTable = normalizeActionTable(
-          reverseConversion(
-            // JSON.parse(JSON.stringify(data.players))
-            data,
-          ),
-        );
-        // console.log("Table : ", actionTable);
+        // reverseConversion 從韌體 players 反推出來的是 keyframe 格式，
+        // 一樣要經過遷移入口才能進 store
+        const { segmentTable } = loadProjectData(reverseConversion(data), {
+          duration,
+        });
 
-        dispatch(updateActionTable(restoredActionTable));
-        console.log("After : ", restoredActionTable);
+        dispatch(updateActionTable(segmentTable));
+        console.log("After : ", segmentTable);
 
         // let timeListArray = data.list;
         // setTimeList(timeListArray);
@@ -132,13 +121,13 @@ function Dropdown({ userName, setIsDirty, isDirty, setIsLoaded, isLoaded }) {
 
   const handleLoadLocal = (backup) => {
     if (backup.rawData) {
-      // 根據你的資料結構解構
-      const actionData = sanitizeActionTableTimes(
-        normalizeActionTable(backup.rawData.actionTable || backup.rawData),
+      // 統一走遷移入口：舊備份是 keyframe、新備份是 segment，由形狀自動辨認
+      const { segmentTable, musicFilename: musicFile } = loadProjectData(
+        backup.rawData,
+        { duration },
       );
-      const musicFile = backup.rawData.music_filename;
 
-      dispatch(updateActionTable(actionData));
+      dispatch(updateActionTable(segmentTable));
       dispatch(updateMusicFilename(musicFile));
       setIsDirty(false); // 載入後暫時重置 dirty 狀態
       alert(`已載入本地暫存: ${musicFile}`);
@@ -185,13 +174,13 @@ function Dropdown({ userName, setIsDirty, isDirty, setIsLoaded, isLoaded }) {
           musicFilename = data.music_filename;
         }
 
-        actionData = normalizeActionTable(actionData);
-        // 載入時強制對齊有色區塊時間至 50ms，修復已污染的舊資料
-        actionData = sanitizeActionTableTimes(actionData);
-        console.log("Final ActionData:", actionData);
+        // 統一走遷移入口：伺服器上同時存在 v1（keyframe）與 v2（segment）
+        // 兩種 raw_data，由形狀自動辨認並轉成 segments
+        const { segmentTable } = loadProjectData(actionData, { duration });
+        console.log("Final ActionData:", segmentTable);
         console.log("Final MusicFilename:", musicFilename);
 
-        dispatch(updateActionTable(actionData));
+        dispatch(updateActionTable(segmentTable));
         dispatch(updateMusicFilename(musicFilename));
       })
       .catch((error) => {

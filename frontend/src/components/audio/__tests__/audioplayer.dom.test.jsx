@@ -391,9 +391,8 @@ describe("效果選單與亮度階梯", () => {
     expect(document.querySelector(".gradient-settings-popup")).toBeTruthy();
   });
 
-  it("選取一個色塊後 Apply 會依階梯設定改透明度", () => {
+  it("選取一個色塊後 Apply 會依階梯逐個色塊改透明度", () => {
     const store = createTestStore();
-    // 測試光表在 index 1 是紅色塊、index 3 是綠色塊（見 renderEditor.jsx）
     store.dispatch({
       type: "UPDATE_MULTI_SELECTED_BLOCKS",
       payload: [{ armorIndex: 0, partIndex: 0, blockIndex: 1 }],
@@ -408,10 +407,16 @@ describe("效果選單與亮度階梯", () => {
       ),
     );
 
-    // 預設 10% → 每階 +10% → 100%：blockIndex 起算，stride 2
+    // 測試光表壓平後是 [黑@0, 紅@1000, 綠@2000, 黑@10000]——兩個色塊緊鄰，
+    // 中間沒有黑哨兵（Phase 4 後這是常態）。所以階梯要落在 index 1 與 2，
+    // 而不是舊的 stride 2（1 和 3）。預設 10% → 每階 +10%。
     const timeline = timelineOf(store);
-    expect(timeline[1].color.A).toBeCloseTo(0.1);
-    expect(timeline[3].color.A).toBeCloseTo(0.2);
+    const colored = timeline.filter(
+      (entry) => entry.color.R || entry.color.G || entry.color.B,
+    );
+    expect(colored).toHaveLength(2);
+    expect(colored[0].color.A).toBeCloseTo(0.1);
+    expect(colored[1].color.A).toBeCloseTo(0.2);
     // 套用完面板收起
     expect(document.querySelector(".gradient-settings-popup")).toBeFalsy();
   });

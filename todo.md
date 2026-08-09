@@ -207,13 +207,47 @@ duration，同樣是全程熄滅卻產生不同長度的時間軸。已統一為
 
 > 待辦：`docs/shortcuts.md` 需補上「亮度階梯」與「Shift+1~8」兩個接回來的功能。
 
-### Phase 4 資料模型切換（M 規模 / **高風險** / 單一原子 PR，凍結其他合併）
+### Phase 4 資料模型切換 ✅ 已完成
 
-- [ ] Redux `data.actionTable` 改存 segments；`UPDATEACTIONTABLE` + history 機制形狀不變（cap 50、skipHistory 保留）
-- [ ] `withKeyframeAdapter` 包所有舊寫入者（audioplayer 各操作、Armor/AccessoryPanel 經 insertColorKeyframes、Timeline move/resize commit、EditActionTable）；memoized `selectKeyframes` 供舊渲染（Timeline 色塊、Armor 顯色、播放取樣）
-- [ ] 三條載入路徑接 `utils/migration/loadProjectData.js`；persist key `root`→`root_v2` + 舊 key fallback（D4）；本地備份寫入帶 `schemaVersion: 2`
-- [ ] 匯出：`handleOutput = buildPlayers(segmentsToKeyframes(segments))`；raw_data 存 v2。`sanitizeActionTableTimes` 從上傳路徑退役（量化改為寫入時不變式），只活在 v1 遷移內
-- **驗收**：fixture 以 v1 載入 → 匯出 → 結構化 diff 全綠；完整手動 checklist；測舊瀏覽器情境（殘留舊 persist key）。**回滾**：revert deploy——舊 build 讀原 key；伺服器 v1 raw_data 永遠可載（lazy migrate）。
+store 的 `data.actionTable` 已改存 segments。既有的寫入者與渲染邏輯**一行邏輯都沒改**，
+靠 `useKeyframeActionTable()` 這座橋繼續用 keyframe 思考。
+
+- [x] **遷移入口** `utils/migration/loadProjectData.js`：五條載入路徑
+      （persist rehydrate / Dashboard / LoadData 遠端 / LoadData 本地備份 /
+      LoadData 從韌體 players 反推）全部收斂到這裡
+- [x] **靠形狀辨認、不靠版號**：keyframe 有 `time`、segment 有 `start`/`end`。
+      版號是寫入時才加的欄位，persist 快照根本沒有 envelope——賭每條路徑都記得加，
+      賭輸就是把 segment 當 keyframe 再轉一次（資料直接壞掉）
+- [x] **轉接橋** `utils/segments/withKeyframeAdapter.js` + `hooks/useKeyframeActionTable.js`：
+      逐 (armor, part) 以 reference 快取雙向轉換，沒動到的部位沿用原 reference
+      （memo 才有效、segment id 才穩定）
+- [x] persist key `root` → `root_v2` + rehydrate transform；raw_data / 本地備份帶 `schemaVersion: 2`
+- [x] 匯出改為 `buildPlayers(segmentsToActionTable(segments))`；`sanitizeActionTableTimes` 退出上傳路徑
+- [x] 初始化一律用 `meta.skipHistory` 明示（People.jsx、Home.jsx 新專案）
+
+#### 過程中修掉的三個「stride 2」地雷
+
+黑哨兵模型下「一個視覺色塊 = 顏色點 + 黑點」，所以程式各處寫死了 `+2`。
+segment 壓平回 keyframe 之後**緊鄰的色塊之間沒有黑點**，這個假設全面失效：
+
+| 位置 | 症狀 | 修法 |
+|---|---|---|
+| `EffectMenu` 亮度階梯 | stride 2 跳過一整個色塊 | 改用 `findNextColorIndex()` 逐個色塊走 |
+| `TrackToolbar` 剪下 | 選取落在隔壁色塊 | `commit()` 回傳寫入後的 keyframe 表，用時間找回 index |
+| `profiles.js` history | 「第一個部位只有 1 個元素 = 初始化」的形狀猜測，在 segment 世界會把「放下第一個色塊」誤判成初始化 → 該次編輯無法 undo | 刪掉猜測，初始化改由呼叫端傳 `skipHistory` |
+
+#### 驗收結果
+
+`npm test` **150 passed**、`npm run build` 通過。閘門測試（`loadProjectData.test.js`）：
+**全 fixture 結構性差異 0**（含 2 份真實 production 光表），漸變內部最大通道差 15
+（合成極端案例 100ms 漸變），真實光表 1~2 —— 與 Phase 2 量到的數字完全一致，
+代表遷移本身沒有引入任何新誤差。
+
+**回滾**：revert deploy —— 舊 build 讀原本的 `root` key；伺服器上的 v1 `raw_data`
+永遠可載（lazy migrate）。
+
+> 待辦（下次動手前先做）：手動 checklist 尚未實跑，Timeline 拖曳/resize 的
+> 零 re-render 路徑沒有自動化測試涵蓋。
 
 ### Phase 5 逐項 segment 原生化（L / 中風險 / **Phase 4 後高度平行**，每項獨立 PR）
 

@@ -4,9 +4,12 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faWandMagicSparkles } from "@fortawesome/free-solid-svg-icons";
 import { produce } from "immer";
 
-import { updateActionTable } from "../../redux/actions.js";
+import { useKeyframeActionTable } from "../../hooks/useKeyframeActionTable.js";
 import { TICK_MS, LEGACY_BLACK_SENTINEL_MS } from "../../constants/time.js";
-import { removeDuplicateBlackBlocks } from "../../utils/actionTable/blackSentinel.js";
+import {
+  findNextColorIndex,
+  removeDuplicateBlackBlocks,
+} from "../../utils/actionTable/blackSentinel.js";
 
 /**
  * 效果選單：三種套用在選取色塊上的效果。
@@ -26,7 +29,8 @@ const isBlack = (point) =>
 
 export function useLightEffects() {
   const dispatch = useDispatch();
-  const actionTable = useSelector((state) => state.profiles.data?.actionTable);
+  // Phase 4 過渡橋：store 存 segments，這裡取得 keyframe 視圖 + 寫回用的 commit
+  const { actionTable, commit } = useKeyframeActionTable();
   const duration = useSelector((state) => state.profiles.duration);
   const multiSelectedBlocks = useSelector(
     (state) => state.profiles.multiSelectedBlocks,
@@ -45,7 +49,7 @@ export function useLightEffects() {
       });
     });
 
-    dispatch(updateActionTable(updatedActionTable));
+    commit(updatedActionTable);
   };
 
   /** 頻閃：把選取的色塊切成 `period` 毫秒一次的閃爍 */
@@ -126,7 +130,7 @@ export function useLightEffects() {
       timeline.sort((a, b) => a.time - b.time);
     });
 
-    dispatch(updateActionTable(removeDuplicateBlackBlocks(updatedActionTable)));
+    commit(removeDuplicateBlackBlocks(updatedActionTable));
   };
 
   /**
@@ -150,26 +154,24 @@ export function useLightEffects() {
       // 判斷方向：end 大於 start 就遞增，否則遞減
       const ascending = endPercent > startPercent;
       let current = startPercent;
-      let step = 0;
 
-      // 用 while 讓 current 每次 + 或 - stepPercent，直到過了 endPercent
+      // 逐個「有顏色的」關鍵格往後走。原本寫死 blockIndex + step * 2
+      //（假設每個色塊後面都跟著一個黑哨兵），色塊緊鄰時會跳過一整塊——
+      // Phase 4 之後緊鄰是常態，所以改成明確地找下一個色塊。
+      let idx = findNextColorIndex(timeline, blockIndex);
+
       while (
-        (ascending && current <= endPercent) ||
-        (!ascending && current >= endPercent)
+        idx !== -1 &&
+        ((ascending && current <= endPercent) ||
+          (!ascending && current >= endPercent))
       ) {
-        // stride 2 = 黑哨兵模型下「一個視覺色塊 = 顏色點 + 黑點」兩個 keyframe
-        // （與 audioplayer 其他處的 blockIndex + 2 一致）。Phase 5 原生化
-        // segment 後這裡會改成「往後第 N 個 segment」。
-        const idx = blockIndex + step * 2;
-        if (timeline[idx]) {
-          timeline[idx].color.A = current / 100;
-        }
+        timeline[idx].color.A = current / 100;
         current += ascending ? stepPercent : -stepPercent;
-        step += 1;
+        idx = findNextColorIndex(timeline, idx + 1);
       }
     });
 
-    dispatch(updateActionTable(updated));
+    commit(updated);
     return true;
   };
 

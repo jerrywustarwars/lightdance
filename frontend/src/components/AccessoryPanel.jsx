@@ -1,6 +1,7 @@
 import { useState, memo } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { updateActionTable, updateCurrentTime } from "../redux/actions";
+import { updateCurrentTime } from "../redux/actions";
+import { useKeyframeActionTable } from "../hooks/useKeyframeActionTable.js";
 import { ACCESSORY_CONFIGS } from "../config/accessoryConfig.js";
 import "./AccessoryPanel.css";
 import { PART_KEYS } from "../constants/parts.js";
@@ -15,7 +16,8 @@ const PART_NAMES = PART_KEYS;
 function AccessoryPanel() {
   const dispatch = useDispatch();
   const selectedDancerId = useSelector((s) => s.profiles.selectedDancerId);
-  const actionTable = useSelector((s) => s.profiles.data?.actionTable || []);
+  // Phase 4 過渡橋：store 存 segments，這裡取得 keyframe 視圖 + 寫回用的 commit
+  const { actionTable, commit } = useKeyframeActionTable();
   const time = useSelector((s) => s.profiles.currentTime);
   const duration = useSelector((s) => s.profiles.duration);
   const chosenColor = useSelector((s) => s.profiles.chosenColor);
@@ -74,7 +76,7 @@ function AccessoryPanel() {
       },
     );
 
-    dispatch(updateActionTable(updatedActionTable));
+    commit(updatedActionTable);
   };
 
   const [open, setOpen] = useState(true);

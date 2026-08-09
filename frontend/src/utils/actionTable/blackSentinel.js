@@ -21,6 +21,23 @@ const isBlack = (point) =>
   point.color.R === 0 && point.color.G === 0 && point.color.B === 0;
 
 /**
+ * 從 `fromIndex` 開始往後找下一個「有顏色」的關鍵格，找不到回傳 -1。
+ *
+ * **不要用 `index + 2` 代替這個函式。** 黑哨兵模型下「一個視覺色塊 = 顏色點
+ * + 黑點」，往後跳 2 格剛好是下一個色塊——但那只在色塊之間真的有黑點時成立。
+ * 兩個色塊緊鄰時沒有黑點，stride 2 會直接跳過一整個色塊。
+ *
+ * Phase 4 之後這件事變成常態：store 存 segments，壓平回 keyframe 時緊鄰的
+ * 色塊之間本來就不會有黑點，寫死的 stride 2 會落在錯誤的位置。
+ */
+export const findNextColorIndex = (timeline, fromIndex) => {
+  for (let i = Math.max(0, fromIndex); i < timeline.length; i++) {
+    if (!isBlack(timeline[i])) return i;
+  }
+  return -1;
+};
+
+/**
  * 確保 `targetTime` 之前有黑點，讓前一段色塊在此確實熄滅。
  *
  * 就地修改傳入的 timeline（呼叫端通常在 immer draft 裡用）。

@@ -5,6 +5,7 @@ import { persistStore, persistReducer, createTransform } from "redux-persist";
 
 // 假設你有個 profiles reducer
 import profiles from "./reducers/profiles";
+import { toSegmentTable } from "../utils/migration/loadProjectData.js";
 
 // 配置 localforage
 localforage.config({
@@ -126,12 +127,45 @@ const PeaksTransform = createTransform(
   }
 );
 
+/**
+ * 載入時把光表遷移成 segment 形狀。
+ *
+ * 為什麼要放在 transform 而不只是靠 key bump：使用者的瀏覽器裡可能還留著
+ * 舊 build 寫進 `root_v2` 之前的資料，也可能是 v2 但被舊 build 覆寫過。
+ * 這裡以形狀為準（見 utils/migration/loadProjectData.js），任何情況都轉對。
+ */
+const MigrateActionTableTransform = createTransform(
+  (inboundState) => inboundState, // 寫入時不動：store 裡本來就是 segments
+  (outboundState, key) => {
+    if (key !== "profiles" || !outboundState?.data?.actionTable) {
+      return outboundState;
+    }
+
+    return {
+      ...outboundState,
+      data: {
+        ...outboundState.data,
+        actionTable: toSegmentTable(outboundState.data.actionTable, {
+          duration: outboundState.duration ?? 0,
+        }),
+      },
+    };
+  },
+);
+
 // 配置 persist 設置
 const persistConfig = {
-  key: "root", 
+  // Phase 4 把 store 的光表形狀從 keyframe 換成 segment。key 從 root bump 成
+  // root_v2 之後，舊 build 讀 root、新 build 讀 root_v2，兩者互不干擾——
+  // 這是 deploy 出事時能直接 revert 的保險。
+  key: "root_v2",
   storage: debouncedStorage,
   whitelist: ["profiles"],
-  transforms: [StripEphemeralTransform, PeaksTransform],
+  transforms: [
+    StripEphemeralTransform,
+    PeaksTransform,
+    MigrateActionTableTransform,
+  ],
 };
 
 // 結合 reducers

@@ -217,6 +217,11 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 
 ## 更新記錄
 
+- **2026-08-09（下午）**：**Phase 4 完成** —— store 的 `data.actionTable` 改存 segments。
+  新增遷移入口 `utils/migration/loadProjectData.js`（五條載入路徑統一、靠形狀辨認格式）、
+  轉接橋 `utils/segments/withKeyframeAdapter.js` + `hooks/useKeyframeActionTable.js`
+  （逐部位 reference 快取，既有寫入者零邏輯改動）；persist key bump `root` → `root_v2`。
+  測試 150 passed，閘門測試全 fixture 結構性差異 0
 - **2026-08-09**：`refract` 分支完成重構 Phase 0–3。測試從 0 建到 125；audioplayer.jsx 從 1,992 行拆到 368 行（`components/audio/` 下 6 個新元件 + `hooks/useKeyboardShortcuts.js`）；segment 轉換器與 Phase 4 閘門測試就位
 - **2026-05-06**：修復區塊剪下失敗與紅線視覺偏移（blockIndex 語意統一、currentTime 同步、stale closure 消除、duration 溢出防護），更新 `docs/frontend-rendering-optimization.md`
 - **2026-05-04**：前端效能優化（rAF 三層分離、React.memo、persist 剝離、middleware 禁用），新增 `docs/frontend-rendering-optimization.md`

@@ -8,7 +8,8 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import { produce } from "immer";
 
-import { updateActionTable, updateCurrentTime } from "../../redux/actions.js";
+import { updateCurrentTime } from "../../redux/actions.js";
+import { useKeyframeActionTable } from "../../hooks/useKeyframeActionTable.js";
 import { TICK_MS } from "../../constants/time.js";
 import {
   ensureBlackBefore,
@@ -33,7 +34,8 @@ const isBlack = (point) =>
 
 export function useTimeShift() {
   const dispatch = useDispatch();
-  const actionTable = useSelector((state) => state.profiles.data?.actionTable);
+  // Phase 4 過渡橋：store 存 segments，這裡取得 keyframe 視圖 + 寫回用的 commit
+  const { actionTable, commit } = useKeyframeActionTable();
   const currentTime = useSelector((state) => state.profiles.currentTime);
 
   // 0: 關閉, 1: 選起始, 2: 選結束, 3: 選目標
@@ -138,7 +140,7 @@ export function useTimeShift() {
       });
     });
 
-    dispatch(updateActionTable(removeDuplicateBlackBlocks(updatedActionTable)));
+    commit(removeDuplicateBlackBlocks(updatedActionTable));
     dispatch(updateCurrentTime(safeTarget));
   };
 

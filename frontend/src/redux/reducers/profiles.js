@@ -77,24 +77,13 @@ export const profiles = (state = initialState, action) => {
         };
       }
 
-      if (state.history.length > 0) {
-        // 这里的逻辑似乎是检查某种特定的 actionTable 格式，保留它
-        if (
-          Array.isArray(newActionTable) &&
-          newActionTable[0] &&
-          newActionTable[0][0] &&
-          newActionTable[0][0].length === 1
-        ) {
-          return {
-            ...state,
-            data: {
-              ...state.data,
-              actionTable: newActionTable,
-              music_filename: newMusicFilename,
-            },
-          };
-        }
-      }
+      // 【Phase 4 移除】這裡原本有一條「第一個部位只有 1 個關鍵格就跳過 history」
+      // 的判斷，用來偵測「還在初始化」。keyframe 世界裡「只有一個 time 0 的黑點」
+      // 確實等於空白，但 segment 世界裡「只有 1 個 segment」是完全正常的編輯狀態
+      // （放了一個色塊），沿用會讓那次編輯無法 undo。
+      //
+      // 初始化本來就有明確的表達方式：呼叫端傳 meta.skipHistory（見上方分支）。
+      // 用形狀猜測意圖是這個 bug 的來源，直接刪掉。
 
       const newHistory = Array.isArray(state.history)
         ? [...state.history, state.data.actionTable]

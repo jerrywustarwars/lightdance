@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { updateActionTable } from "../redux/actions";
+import { useKeyframeActionTable } from "../hooks/useKeyframeActionTable.js";
 import { useNavigate } from "react-router-dom";
 import WaveSurferPlayer from "../components/audio/WaveSurferplayer";
 import { isPartAllowed } from "../config/accessoryConfig";
@@ -9,7 +9,8 @@ import { PART_LABELS } from "../constants/parts.js";
 function EditActionTable() {
   const dispatch = useDispatch();
   const navigate = useNavigate(); // 🔹 用來做頁面跳轉
-  const actionTable = useSelector((state) => state.profiles.data?.actionTable || []);
+  // Phase 4 過渡橋：store 存 segments，這裡取得 keyframe 視圖 + 寫回用的 commit
+  const { actionTable, commit } = useKeyframeActionTable();
 
   const partName = PART_LABELS;
 
@@ -37,14 +38,14 @@ function EditActionTable() {
   const handleUndo = () => {
     if (historyIndex > 0) {
       setHistoryIndex(historyIndex - 1);
-      dispatch(updateActionTable(history[historyIndex - 1]));
+      commit(history[historyIndex - 1]);
     }
   };
 
   const handleRedo = () => {
     if (historyIndex < history.length - 1) {
       setHistoryIndex(historyIndex + 1);
-      dispatch(updateActionTable(history[historyIndex + 1]));
+      commit(history[historyIndex + 1]);
     }
   };
 
@@ -52,7 +53,7 @@ function EditActionTable() {
     const updatedTable = JSON.parse(JSON.stringify(history[historyIndex]));
     updatedTable[armorIndex][partIndex][blockIndex][key] = value;
     saveToHistory(updatedTable);
-    dispatch(updateActionTable(updatedTable));
+    commit(updatedTable);
   };
 
   const handleAddBlock = () => {
@@ -63,7 +64,7 @@ function EditActionTable() {
       color: { R: 255, G: 255, B: 255, A: 1 },
     });
     saveToHistory(updatedTable);
-    dispatch(updateActionTable(updatedTable));
+    commit(updatedTable);
   };
 
   const handleDeleteBlock = (blockIndex) => {
@@ -71,7 +72,7 @@ function EditActionTable() {
     const updatedTable = JSON.parse(JSON.stringify(history[historyIndex]));
     updatedTable[selectedArmor][selectedPart].splice(blockIndex, 1);
     saveToHistory(updatedTable);
-    dispatch(updateActionTable(updatedTable));
+    commit(updatedTable);
   };
 
   const handleSave = () => {
@@ -86,7 +87,7 @@ function EditActionTable() {
       }))
       .sort((a, b) => a.time - b.time);
     saveToHistory(updatedTable);
-    dispatch(updateActionTable(updatedTable));
+    commit(updatedTable);
     alert("ActionTable updated with fixed times!");
   };
 

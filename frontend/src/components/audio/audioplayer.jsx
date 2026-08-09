@@ -1,7 +1,6 @@
 import React, { useRef, useState, useEffect, createRef } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import {
-  updateActionTable,
   updateMultiSelectedBlocks,
   toggleMoveMode,
   // updateMusicIndex,
@@ -25,14 +24,15 @@ import { updateChosenColor, updateCurrentTime } from "../../redux/actions.js";
 import { TICK_MS, LEGACY_BLACK_SENTINEL_MS } from "../../constants/time.js";
 import { insertColorKeyframes } from "../../utils/actionTable/insertColorKeyframes.js";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts.js";
+import { useKeyframeActionTable } from "../../hooks/useKeyframeActionTable.js";
 
 function AudioPlayer({ setButtonState, timelineRef }) {
   const dispatch = useDispatch();
-  const data = useSelector((state) => state.profiles.data);
   const showPart = useSelector((state) => state.profiles.showPart);
   const currentTime = useSelector((state) => state.profiles.currentTime);
   const duration = useSelector((state) => state.profiles.duration); // 音樂總長度
-  const actionTable = data?.actionTable || []; // Redux 狀態中的動作表
+  // Phase 4 過渡橋：store 存 segments，這裡取得 keyframe 視圖 + 寫回用的 commit
+  const { actionTable, commit } = useKeyframeActionTable();
   const chosenColor = useSelector((state) => state.profiles.chosenColor);
   const favoriteColor = useSelector((state) => state.profiles.favoriteColor);
   const isColorChangeActive = useSelector(
@@ -81,7 +81,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       });
 
       // 通过 Redux 更新 actionTable
-      dispatch(updateActionTable(updatedActionTable));
+      commit(updatedActionTable);
 
       console.log("Updated actionTable with new color:", chosenColor);
 
@@ -145,7 +145,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       },
     );
 
-    dispatch(updateActionTable(updatedActionTable)); // 更新 Redux
+    commit(updatedActionTable); // 更新 Redux
   };
 
   /** B 鍵與效果選單共用的頻閃流程 */
@@ -184,7 +184,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       });
     });
 
-    dispatch(updateActionTable(updatedActionTable));
+    commit(updatedActionTable);
   };
 
   /**

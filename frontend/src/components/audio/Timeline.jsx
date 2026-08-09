@@ -1,13 +1,13 @@
 import React, { useRef, useState, useEffect, forwardRef, memo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
-  updateActionTable,
   updateTimelineBlocks,
   updateIsColorChangeActive,
   updateMultiSelectedBlocks,
   updateMoveMode,
   updateCurrentTime,
 } from "../../redux/actions";
+import { useKeyframeActionTable } from "../../hooks/useKeyframeActionTable.js";
 
 import { produce } from "immer";
 // cloneDeep 已移除：tempActionTable cascade 已合併，drag 復原時再加回
@@ -52,7 +52,8 @@ const Timeline = forwardRef(
     const timelineBlocks = useSelector(
       (state) => state.profiles.timelineBlocks?.[armorIndex]?.[partIndex] || [] // 當前時間軸的方塊數據
     );
-    const actionTable = useSelector((state) => state.profiles.data?.actionTable || []); // 原始動作表
+    // Phase 4 過渡橋：store 存 segments，這裡取得 keyframe 視圖 + 寫回用的 commit
+    const { actionTable, commit } = useKeyframeActionTable(); // 原始動作表
     const duration = useSelector((state) => state.profiles.duration); // 總時長
     const multiSelectedBlocks = useSelector((state) => state.profiles.multiSelectedBlocks); // 全局多選中方塊
     const clipboard = useSelector((state) => state.profiles.clipboard);
@@ -150,7 +151,7 @@ const Timeline = forwardRef(
                   }
                 }
               });
-              dispatch(updateActionTable(updatedTable));
+              commit(updatedTable);
             }
           }
         }
@@ -234,7 +235,7 @@ const Timeline = forwardRef(
                   }
                 }
               });
-              dispatch(updateActionTable(updatedTable));
+              commit(updatedTable);
             }
           }
 
@@ -712,7 +713,7 @@ const Timeline = forwardRef(
                 }
               }
             });
-            dispatch(updateActionTable(updatedTable));
+            commit(updatedTable);
           }
         }
 

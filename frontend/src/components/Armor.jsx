@@ -12,11 +12,12 @@ import {
   updateCurrentTime,
   updateSelectedDancer,
 } from "../redux/actions";
+import { useKeyframeActionTable } from "../hooks/useKeyframeActionTable.js";
 
 const Armor = (props) => {
   const dispatch = useDispatch();
-  const data = useSelector((state) => state.profiles.data);
-  const actionTable = data?.actionTable || [];
+  // Phase 4 過渡橋：store 存 segments，這裡取得 keyframe 視圖 + 寫回用的 commit
+  const { actionTable, commit } = useKeyframeActionTable();
   const time = useSelector((state) => state.profiles.currentTime);
   const duration = useSelector((state) => state.profiles.duration);
   const chosenColor = useSelector((state) => state.profiles.chosenColor);
@@ -93,7 +94,7 @@ const Armor = (props) => {
       },
     );
 
-    dispatch(updateActionTable(updatedActionTable));
+    commit(updatedActionTable);
   }
 
   const isSelected = (part) => {

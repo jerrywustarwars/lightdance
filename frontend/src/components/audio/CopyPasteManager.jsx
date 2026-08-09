@@ -3,7 +3,6 @@ import { useDispatch, useSelector } from "react-redux";
 import { produce } from "immer";
 
 import {
-  updateActionTable,
   updateClipboard,
   updateMultiSelectedBlocks,
 } from "../../redux/actions.js";
@@ -12,6 +11,7 @@ import {
   ensureBlackBefore,
   removeDuplicateBlackBlocks,
 } from "../../utils/actionTable/blackSentinel.js";
+import { useKeyframeActionTable } from "../../hooks/useKeyframeActionTable.js";
 
 /**
  * 複製貼上：兩種粒度、兩種貼上對齊方式。
@@ -36,7 +36,8 @@ const isBlack = (point) =>
 export function useCopyPaste() {
   const dispatch = useDispatch();
   const data = useSelector((state) => state.profiles.data);
-  const actionTable = data?.actionTable;
+  // Phase 4 過渡橋：store 存 segments，這裡取得 keyframe 視圖 + 寫回用的 commit
+  const { actionTable, commit } = useKeyframeActionTable();
   const duration = useSelector((state) => state.profiles.duration);
   const clipboard = useSelector((state) => state.profiles.clipboard);
   const timelineBlocks = useSelector((state) => state.profiles.timelineBlocks);
@@ -166,7 +167,7 @@ export function useCopyPaste() {
     });
 
     // E. 全域重複清理並更新 Redux
-    dispatch(updateActionTable(removeDuplicateBlackBlocks(updatedActionTable)));
+    commit(removeDuplicateBlackBlocks(updatedActionTable));
     setIsCopying(false);
     dispatch(updateMultiSelectedBlocks([]));
   };
@@ -255,7 +256,7 @@ export function useCopyPaste() {
       draft[targetArmorIndex][targetPartIndex] = pastedData;
     });
 
-    dispatch(updateActionTable(updatedActionTable));
+    commit(updatedActionTable);
 
     // 貼上後，選中目標部位的第一個有效方塊（非黑色）
     const firstColorIndex = pastedData.findIndex((block) => !isBlack(block));
