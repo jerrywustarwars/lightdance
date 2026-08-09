@@ -417,6 +417,44 @@ describe("效果選單與亮度階梯", () => {
   });
 });
 
+describe("既有的鍵位衝突（Phase 3d 刻意保留）", () => {
+  /**
+   * 原本的 `handleKeyDown` 是一串平行的 `if`（不是 `else if`），這兩組鍵
+   * 因此會同時觸發兩個動作。統一鍵盤處理時忠實保留，這裡把它鎖住——
+   * 哪天要修，會是紅燈提醒而不是靜默的行為改變。
+   */
+
+  it("Shift+→ 同時推進 50ms 和跳到下一個關鍵格", () => {
+    // 測試光表在 2000ms 有綠色塊；從 1000ms 出發
+    const store = createTestStore({
+      currentTime: 1000,
+      multiSelectedBlocks: [{ armorIndex: 0, partIndex: 0, blockIndex: 1 }],
+    });
+    mount(store);
+
+    pressKey("ArrowRight", { shiftKey: true });
+
+    // 兩條都跑了：先 +50 變 1050，再跳到下個關鍵格 2000（後者覆蓋前者）
+    expect(store.getState().profiles.currentTime).toBe(2000);
+  });
+
+  it("Ctrl+1 同時觸發最愛色與透明度，後者的 dispatch 蓋掉前者", () => {
+    const store = createTestStore({
+      favoriteColor: [[{ R: 11, G: 22, B: 33, A: 1 }]],
+      multiSelectedBlocks: [{ armorIndex: 0, partIndex: 0, blockIndex: 1 }],
+    });
+    mount(store);
+
+    pressKey("1", { ctrlKey: true });
+
+    // 兩個 handler 都跑了，但它們是從同一份 actionTable 快照各自 produce 出
+    // 新表再 dispatch，所以後跑的透明度整份蓋掉前面的最愛色——套色被靜默丟棄。
+    const block = timelineOf(store)[1];
+    expect(block.color.R).toBe(255); // 還是原本的紅色，最愛色沒留下
+    expect(block.color.A).toBeCloseTo(0.1); // 只有透明度生效
+  });
+});
+
 describe("快捷鍵的 100ms 防彈跳", () => {
   it("同一個鍵在 100ms 內連按第二次會被忽略", () => {
     vi.useFakeTimers();

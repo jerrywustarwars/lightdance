@@ -24,6 +24,7 @@ import { produce } from "immer";
 import { updateChosenColor, updateCurrentTime } from "../../redux/actions.js";
 import { TICK_MS, LEGACY_BLACK_SENTINEL_MS } from "../../constants/time.js";
 import { insertColorKeyframes } from "../../utils/actionTable/insertColorKeyframes.js";
+import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts.js";
 
 function AudioPlayer({ setButtonState, timelineRef }) {
   const dispatch = useDispatch();
@@ -97,181 +98,6 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   // P0: 進度條改由 waveform.jsx 的 rAF 透過 onTimeUpdate callback 直接操作 DOM（60fps）
   // 移除了 setProgressWidth 的 useEffect，避免播放期間不必要的 re-render
 
-  // 在 AudioPlayer 內部新增狀態
-  const keyPress = useRef(false);
-
-  const handleKeyDown = (event) => {
-    if (keyPress.current) return; // 避免重複觸發
-
-    keyPress.current = true;
-    setTimeout(() => (keyPress.current = false), 100);
-
-    console.log(
-      "Pressed key:",
-      event.key,
-      "Code:",
-      event.code,
-      "Shift:",
-      event.shiftKey,
-    );
-
-    if (event.key === "Escape") {
-      if (copyPaste.isCopying) {
-        event.preventDefault(); // ✅ 攔截瀏覽器預設行為
-        event.stopPropagation();
-        copyPaste.cancelCopying();
-        return;
-      }
-    }
-    if (event.key === "b" || event.key === "B") {
-      event.preventDefault();
-      if (multiSelectedBlocks.length === 1) {
-        const userInput = window.prompt(
-          `請輸入頻閃間隔 (ms)，必須為 ${TICK_MS} 的倍數：`,
-          "100",
-        );
-        if (userInput !== null) {
-          // 如果使用者沒點取消
-          effects.applyBlink(userInput);
-        }
-      } else {
-        console.warn("Please select exactly one block to use Blink effect.");
-      }
-    }
-    if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
-      event.preventDefault();
-      if (event.key === "ArrowRight") {
-        console.log("ArrowRight pressed. Advancing 50ms");
-        dispatch(
-          updateCurrentTime(
-            currentTime + 50 > duration
-              ? Math.floor(duration / 50) * 50
-              : currentTime + 50,
-          ),
-        );
-      } else if (event.key === "ArrowLeft") {
-        console.log("ArrowLeft pressed. Going back 50ms");
-        dispatch(
-          updateCurrentTime(currentTime - 50 < 0 ? 0 : currentTime - 50),
-        );
-      }
-    }
-
-    if (event.shiftKey) {
-      // Shift + C: 複製整個部位
-      if (event.key === "c" || event.key === "C") {
-        event.preventDefault();
-        console.log("Shift + C: Copy whole timeline");
-        copyPaste.copyWholePart();
-      }
-      // Shift + V: 貼上整個部位 (整條覆蓋)
-      else if (event.key === "v" || event.key === "V") {
-        if (!event.ctrlKey) {
-          // 排除 Ctrl+Shift+V
-          event.preventDefault();
-          console.log("Shift + V: Paste whole timeline");
-          copyPaste.pasteWholePart();
-        }
-      } else if (event.key === "ArrowRight") {
-        event.preventDefault();
-        console.log("Shift + ArrowRight pressed. Moving right.");
-        trackActions.goToNextPoint();
-      } else if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        console.log("Shift + ArrowLeft pressed. Moving left.");
-        trackActions.goToPreviousPoint();
-      }
-    }
-
-    if (event.key === "m" || event.key === "M") {
-      event.preventDefault();
-      dispatch(toggleMoveMode());
-    }
-    if (event.key === "p" || event.key === "P") {
-      event.preventDefault();
-      trackActions.openColorPicker();
-    }
-    if (event.key === "c" && !event.ctrlKey) {
-      event.preventDefault();
-      trackActions.cutSelected();
-    }
-    if (event.key === "L" || event.key === "l") {
-      // Add shortcut for 'L' key
-      event.preventDefault();
-      console.log("L key pressed. Toggling linear property.");
-      effects.toggleLinear();
-    }
-
-    if (["1", "2", "3", "4", "5", "6", "7", "8"].includes(event.key)) {
-      console.log("Number key pressed.");
-      event.preventDefault();
-      handleFavoriteColorChoose(parseInt(event.key) - 1);
-    }
-    if (event.ctrlKey) {
-      // Ctrl + C: 只要有東西被選中就執行
-      if (event.key === "c" || event.key === "C") {
-        event.preventDefault();
-        copyPaste.copyRange();
-      }
-      // 處理 Ctrl + V 家族 (保持原樣)
-      else if (event.key === "v" || event.key === "V") {
-        event.preventDefault();
-        if (event.shiftKey) {
-          copyPaste.pasteAtFixedTime();
-        } else {
-          copyPaste.pasteAlignedToTarget();
-        }
-      }
-      // Ctrl+數字: 設定透明度
-      else if (
-        ["1", "2", "3", "4", "5", "6", "7", "8", "9"].includes(event.key)
-      ) {
-        event.preventDefault();
-        const alphaValue = parseFloat(event.key) / 10;
-        trackActions.changeBrightness(alphaValue);
-      } else if (event.key === "0") {
-        event.preventDefault();
-        trackActions.changeBrightness(0);
-      }
-    }
-    // Shift + 1~8：在播放位置插入最愛顏色（和不按 Shift 的 1~8「改選取色塊的顏色」不同）
-    //
-    // 這裡必須用 event.code 而不是 event.key：按住 Shift 時 event.key 會是符號
-    // （Shift+1 → "!"），所以原本用 key 比對數字的寫法永遠不成立，這個功能一直進不來。
-    if (event.shiftKey && !event.ctrlKey && /^Digit[1-8]$/.test(event.code)) {
-      event.preventDefault();
-      const colorIndex = parseInt(event.code.slice("Digit".length), 10) - 1;
-      handleFavoriteColorInsert(colorIndex);
-    }
-    if (event.key === "Delete" || event.key === "Backspace") {
-      event.preventDefault();
-      // 原本分成「多選 → handleMultiDelete」與「單選 → ClickedDelete」兩條，
-      // 但 ClickedDelete 只是「有選取才呼叫 handleMultiDelete」，兩條同義
-      trackActions.deleteSelected();
-    }
-
-    if (event.key === " ") {
-      // 監聽空白鍵
-      event.preventDefault();
-      console.log("Space pressed.");
-      handlePlayPause();
-    }
-  };
-
-  // P2: 使用 ref 確保鍵盤監聽器只綁定一次，但總是呼叫最新的 handleKeyDown
-  // 在 render 期間直接賦值（而非 useEffect），確保在下一個事件（如 keydown）
-  // 觸發前 ref 已指向最新版本，避免 stale closure
-  const handleKeyDownRef = useRef(handleKeyDown);
-  handleKeyDownRef.current = handleKeyDown;
-
-  useEffect(() => {
-    const stableHandler = (e) => handleKeyDownRef.current(e);
-    document.addEventListener("keydown", stableHandler);
-    return () => {
-      document.removeEventListener("keydown", stableHandler);
-    };
-  }, []); // 只掛載一次，不再因 currentTime/multiSelectedBlocks 變化而重新綁定
-
   /**
    * 把 1~8 的序號換算成最愛顏色盤上的座標。
    * 顏色盤還沒載入時（favoriteColor 預設是空陣列）回傳 null，呼叫端跳過。
@@ -322,6 +148,19 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     dispatch(updateActionTable(updatedActionTable)); // 更新 Redux
   };
 
+  /** B 鍵與效果選單共用的頻閃流程 */
+  const promptBlink = () => {
+    if (multiSelectedBlocks.length !== 1) {
+      console.warn("Please select exactly one block to use Blink effect.");
+      return;
+    }
+    const userInput = window.prompt(
+      `請輸入頻閃間隔 (ms)，必須為 ${TICK_MS} 的倍數：`,
+      "100",
+    );
+    if (userInput !== null) effects.applyBlink(userInput);
+  };
+
   const handlePlayPause = () => {
     if (!isPlaying) {
       setIsPlaying(true);
@@ -347,6 +186,101 @@ function AudioPlayer({ setButtonState, timelineRef }) {
 
     dispatch(updateActionTable(updatedActionTable));
   };
+
+  /**
+   * 編輯器的鍵盤配置。
+   *
+   * ⚠️ **有兩組鍵位是重疊的**——原本的 `handleKeyDown` 是一串平行的 `if`
+   * （不是 `else if`），所以這兩組會同時觸發兩個動作。這裡忠實保留：
+   *
+   * | 鍵 | 同時觸發 |
+   * |---|---|
+   * | `Shift+←/→` | 播放位置 ±50ms **和** 跳到上/下個關鍵格 |
+   * | `Ctrl+1~8` | 套用最愛色 N **和** 設定透明度 N/10（數字那條沒有 ctrl 守衛）|
+   *
+   * 要修的話是獨立的行為變更，不該混在拆件裡做。
+   */
+  const shortcuts = [
+    // 複製模式
+    {
+      key: "Escape",
+      when: () => copyPaste.isCopying,
+      stopPropagation: true,
+      handler: copyPaste.cancelCopying,
+    },
+    { key: "c", ctrl: true, handler: copyPaste.copyRange },
+    {
+      key: "v",
+      ctrl: true,
+      shift: false,
+      handler: copyPaste.pasteAlignedToTarget,
+    },
+    { key: "v", ctrl: true, shift: true, handler: copyPaste.pasteAtFixedTime },
+    { key: "c", ctrl: false, shift: true, handler: copyPaste.copyWholePart },
+    { key: "v", ctrl: false, shift: true, handler: copyPaste.pasteWholePart },
+
+    // 播放位置
+    {
+      key: "ArrowRight",
+      handler: () =>
+        dispatch(
+          updateCurrentTime(
+            Math.min(
+              currentTime + TICK_MS,
+              Math.floor(duration / TICK_MS) * TICK_MS,
+            ),
+          ),
+        ),
+    },
+    {
+      key: "ArrowLeft",
+      handler: () =>
+        dispatch(updateCurrentTime(Math.max(currentTime - TICK_MS, 0))),
+    },
+    { key: "ArrowRight", shift: true, handler: trackActions.goToNextPoint },
+    { key: "ArrowLeft", shift: true, handler: trackActions.goToPreviousPoint },
+
+    // 編輯
+    { key: "m", handler: () => dispatch(toggleMoveMode()) },
+    { key: "p", handler: trackActions.openColorPicker },
+    { key: "c", ctrl: false, shift: false, handler: trackActions.cutSelected },
+    {
+      key: ["Delete", "Backspace"],
+      // 原本分成「多選 → handleMultiDelete」與「單選 → ClickedDelete」兩條，
+      // 但 ClickedDelete 只是「有選取才呼叫 handleMultiDelete」，兩條同義
+      handler: trackActions.deleteSelected,
+    },
+    { key: " ", handler: handlePlayPause },
+
+    // 效果
+    { key: "l", handler: effects.toggleLinear },
+    { key: "b", handler: promptBlink },
+
+    // 最愛顏色與透明度
+    {
+      key: ["1", "2", "3", "4", "5", "6", "7", "8"],
+      handler: (event) => handleFavoriteColorChoose(parseInt(event.key) - 1),
+    },
+    {
+      key: ["1", "2", "3", "4", "5", "6", "7", "8", "9"],
+      ctrl: true,
+      handler: (event) =>
+        trackActions.changeBrightness(parseInt(event.key) / 10),
+    },
+    { key: "0", ctrl: true, handler: () => trackActions.changeBrightness(0) },
+    {
+      // 按住 Shift 時數字鍵的 event.key 會是符號（Shift+1 → "!"），只能用 code 比對
+      code: /^Digit[1-8]$/,
+      shift: true,
+      ctrl: false,
+      handler: (event) =>
+        handleFavoriteColorInsert(
+          parseInt(event.code.slice("Digit".length), 10) - 1,
+        ),
+    },
+  ];
+
+  useKeyboardShortcuts(shortcuts);
 
   const listitem = showPart.map((setting) => (
     <Timeline
@@ -393,11 +327,9 @@ function AudioPlayer({ setButtonState, timelineRef }) {
           }}
         >
           <ShiftMarkers shift={shift} />
-          <div
-            className="timeline-container"
-            ref={timelineRef}
-            onKeyDown={handleKeyDown}
-          >
+          {/* 快捷鍵統一由 useKeyboardShortcuts 掛在 document 上，
+              這裡不再重複註冊 onKeyDown（原本同一個 handler 綁了兩次） */}
+          <div className="timeline-container" ref={timelineRef}>
             {listitem}
           </div>
           <div className="waveform-container" ref={containerRef}>

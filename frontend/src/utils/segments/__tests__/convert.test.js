@@ -232,7 +232,9 @@ describe("Phase 4 閘門：全 fixture 語意等價", () => {
       `轉換器造成的漸變內部差異（全體最大 ${worstDelta}）：\n  ` +
         (summary.join("\n  ") || "（無）"),
     );
-  });
+    // 這條會把真實光表逐 tick 展開比對（54 萬關鍵格），機器忙的時候會超過
+    // vitest 預設的 5 秒
+  }, 30000);
 
   it("畫面色差在預設容許值 16 以內", () => {
     for (const fixture of fixtures) {

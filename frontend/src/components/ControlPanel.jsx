@@ -26,6 +26,7 @@ import {
 } from "../redux/actions.js";
 import { isPartAllowed } from "../config/accessoryConfig.js";
 import { PART_LABELS } from "../constants/parts.js";
+import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts.js";
 
 function ControlPanel({ setButtonState }) {
   const [timelineHeight, setTimelineHeight] = useState(0); // 儲存計算後的高度
@@ -34,9 +35,13 @@ function ControlPanel({ setButtonState }) {
   const settingRef = useRef(null); // 左側設定區容器
   const [selectedTimelines, setSelectedTimelines] = useState([]);
   const [showModal, setShowModal] = useState(false);
-  const multiSelectedBlocks = useSelector((state) => state.profiles.multiSelectedBlocks);
+  const multiSelectedBlocks = useSelector(
+    (state) => state.profiles.multiSelectedBlocks,
+  );
   const moveMode = useSelector((state) => state.profiles.moveMode);
-  const actionTable = useSelector((state) => state.profiles.data?.actionTable || []);
+  const actionTable = useSelector(
+    (state) => state.profiles.data?.actionTable || [],
+  );
   const currentTime = useSelector((state) => state.profiles.currentTime);
   const showPart = useSelector((state) => state.profiles.showPart);
   const dispatch = useDispatch();
@@ -54,36 +59,14 @@ function ControlPanel({ setButtonState }) {
     }
   }, [showPart]);
 
-  const keyPress = useRef(false);
-  const handleKeyDown = (event) => {
-    if (keyPress.current) return; // 避免重複觸發
-
-    keyPress.current = true;
-    setTimeout(() => (keyPress.current = false), 100);
-
-    if (event.key === "a") {
-      event.preventDefault();
-      moveSelectedBlockLeft();
-    }
-    if (event.key === "d") {
-      event.preventDefault();
-      moveSelectedBlockRight();
-    }
-    if (event.key === "w") {
-      event.preventDefault();
-      moveSelectedBlockUp();
-    }
-    if (event.key === "s") {
-      event.preventDefault();
-      moveSelectedBlockDown();
-    }
-  };
-  useEffect(() => {
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [multiSelectedBlocks, currentTime]);
+  // WASD 移動選取的色塊。和 audioplayer 的快捷鍵各自有獨立的 100ms 防彈跳，
+  // 與拆件前的兩個 listener 行為相同。
+  useKeyboardShortcuts([
+    { key: "a", handler: () => moveSelectedBlockLeft() },
+    { key: "d", handler: () => moveSelectedBlockRight() },
+    { key: "w", handler: () => moveSelectedBlockUp() },
+    { key: "s", handler: () => moveSelectedBlockDown() },
+  ]);
 
   const moveSelectedBlockUp = () => {
     console.log("moveSelectedBlockUp");
@@ -97,7 +80,7 @@ function ControlPanel({ setButtonState }) {
 
     // 找到 showPart 裡目前選擇的 timeline 的索引
     const currentIndex = showPart.findIndex(
-      (p) => p.armorIndex === armorIndex && p.partIndex === partIndex
+      (p) => p.armorIndex === armorIndex && p.partIndex === partIndex,
     );
 
     if (currentIndex <= 0) return; // 如果已經是第一個 timeline，就不往上
@@ -136,11 +119,13 @@ function ControlPanel({ setButtonState }) {
     }
 
     dispatch(
-      updateMultiSelectedBlocks([{
-        armorIndex: prevArmor,
-        partIndex: prevPart,
-        blockIndex: newBlockIndex,
-      }])
+      updateMultiSelectedBlocks([
+        {
+          armorIndex: prevArmor,
+          partIndex: prevPart,
+          blockIndex: newBlockIndex,
+        },
+      ]),
     );
   };
   const moveSelectedBlockDown = () => {
@@ -155,7 +140,7 @@ function ControlPanel({ setButtonState }) {
 
     // 找到 showPart 裡目前選擇的 timeline 的索引
     const currentIndex = showPart.findIndex(
-      (p) => p.armorIndex === armorIndex && p.partIndex === partIndex
+      (p) => p.armorIndex === armorIndex && p.partIndex === partIndex,
     );
 
     if (currentIndex === -1 || currentIndex >= showPart.length - 1) return; // 如果已經是最後一個 timeline，就不往下
@@ -194,11 +179,13 @@ function ControlPanel({ setButtonState }) {
     }
 
     dispatch(
-      updateMultiSelectedBlocks([{
-        armorIndex: nextArmor,
-        partIndex: nextPart,
-        blockIndex: newBlockIndex,
-      }])
+      updateMultiSelectedBlocks([
+        {
+          armorIndex: nextArmor,
+          partIndex: nextPart,
+          blockIndex: newBlockIndex,
+        },
+      ]),
     );
   };
   const moveSelectedBlockLeft = () => {
@@ -231,11 +218,13 @@ function ControlPanel({ setButtonState }) {
       }
     }
     dispatch(
-      updateMultiSelectedBlocks([{
-        armorIndex,
-        partIndex,
-        blockIndex: newBlockIndex,
-      }])
+      updateMultiSelectedBlocks([
+        {
+          armorIndex,
+          partIndex,
+          blockIndex: newBlockIndex,
+        },
+      ]),
     );
   };
 
@@ -267,11 +256,13 @@ function ControlPanel({ setButtonState }) {
       }
     }
     dispatch(
-      updateMultiSelectedBlocks([{
-        armorIndex,
-        partIndex,
-        blockIndex: newBlockIndex,
-      }])
+      updateMultiSelectedBlocks([
+        {
+          armorIndex,
+          partIndex,
+          blockIndex: newBlockIndex,
+        },
+      ]),
     );
   };
   // 处理复选框选择变化
@@ -282,8 +273,8 @@ function ControlPanel({ setButtonState }) {
         ? [...prev, selection]
         : prev.filter(
             (item) =>
-              !(item.armorIndex === armorIndex && item.partIndex === partIndex)
-          )
+              !(item.armorIndex === armorIndex && item.partIndex === partIndex),
+          ),
     );
   };
   // 全选/取消全选某列（所有人物的某种部件）
@@ -292,8 +283,8 @@ function ControlPanel({ setButtonState }) {
       (_, armorIndex) =>
         selectedTimelines.some(
           (item) =>
-            item.armorIndex === armorIndex && item.partIndex === partIndex
-        )
+            item.armorIndex === armorIndex && item.partIndex === partIndex,
+        ),
     );
 
     setSelectedTimelines((prev) => {
@@ -301,14 +292,14 @@ function ControlPanel({ setButtonState }) {
       Array.from({ length: 7 }).forEach((_, armorIndex) => {
         const exists = updated.some(
           (item) =>
-            item.armorIndex === armorIndex && item.partIndex === partIndex
+            item.armorIndex === armorIndex && item.partIndex === partIndex,
         );
         if (!isColumnFullySelected && !exists) {
           updated.push({ armorIndex, partIndex });
         } else if (isColumnFullySelected && exists) {
           const index = updated.findIndex(
             (item) =>
-              item.armorIndex === armorIndex && item.partIndex === partIndex
+              item.armorIndex === armorIndex && item.partIndex === partIndex,
           );
           if (index !== -1) updated.splice(index, 1);
         }
@@ -319,10 +310,12 @@ function ControlPanel({ setButtonState }) {
 
   // 切换行全选/取消全选
   const toggleRowSelect = (armorIndex) => {
-    const isRowFullySelected = Array.from({ length: 22 }).every((_, partIndex) =>
-      selectedTimelines.some(
-        (item) => item.armorIndex === armorIndex && item.partIndex === partIndex
-      )
+    const isRowFullySelected = Array.from({ length: 22 }).every(
+      (_, partIndex) =>
+        selectedTimelines.some(
+          (item) =>
+            item.armorIndex === armorIndex && item.partIndex === partIndex,
+        ),
     );
 
     setSelectedTimelines((prev) => {
@@ -330,14 +323,14 @@ function ControlPanel({ setButtonState }) {
       Array.from({ length: 22 }).forEach((_, partIndex) => {
         const exists = updated.some(
           (item) =>
-            item.armorIndex === armorIndex && item.partIndex === partIndex
+            item.armorIndex === armorIndex && item.partIndex === partIndex,
         );
         if (!isRowFullySelected && !exists) {
           updated.push({ armorIndex, partIndex });
         } else if (isRowFullySelected && exists) {
           const index = updated.findIndex(
             (item) =>
-              item.armorIndex === armorIndex && item.partIndex === partIndex
+              item.armorIndex === armorIndex && item.partIndex === partIndex,
           );
           if (index !== -1) updated.splice(index, 1);
         }
@@ -353,8 +346,8 @@ function ControlPanel({ setButtonState }) {
           id: index + 1,
           armorIndex: selection.armorIndex,
           partIndex: selection.partIndex,
-        }))
-      )
+        })),
+      ),
     );
     setShowModal(false); // 关闭模态框
   };
@@ -388,35 +381,19 @@ function ControlPanel({ setButtonState }) {
     }
   }, [timelineRef]);
 
-  useEffect(() => {
-    const handleKeyDown = (event) => {
-      // 檢查是否按下 Ctrl+Z（Undo）
-      if (event.ctrlKey && event.key === "z") {
-        event.preventDefault();
-        undo();
-      }
-
-      // 檢查是否按下 Ctrl+Y（Redo）
-      if (event.ctrlKey && event.key === "y") {
-        event.preventDefault();
-        redo();
-      }
-
-    };
-
-    // 添加全局鍵盤事件監聽器
-    document.addEventListener("keydown", handleKeyDown);
-
-    // 清除事件監聽器
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, []);
+  // 復原/重做刻意**不防彈跳**：按住 Ctrl+Z 要能連續復原（拆件前這條也沒有 latch）
+  useKeyboardShortcuts(
+    [
+      { key: "z", ctrl: true, handler: () => undo() },
+      { key: "y", ctrl: true, handler: () => redo() },
+    ],
+    { debounceMs: 0 },
+  );
 
   const handleSettingChange = (index, key, value) => {
     let tmp = JSON.parse(JSON.stringify(showPart));
     tmp = tmp.map((setting, i) =>
-      i === index ? { ...setting, [key]: value } : setting
+      i === index ? { ...setting, [key]: value } : setting,
     );
     // console.log("new array : ", tmp);
     dispatch(updateShowPart(tmp));
@@ -469,7 +446,7 @@ function ControlPanel({ setButtonState }) {
 
   const handleToggleTimelineVisibility = (id) => {
     const updatedShowPart = showPart.map((setting) =>
-      setting.id === id ? { ...setting, hidden: !setting.hidden } : setting
+      setting.id === id ? { ...setting, hidden: !setting.hidden } : setting,
     );
     dispatch(updateShowPart(updatedShowPart));
   };
@@ -477,97 +454,102 @@ function ControlPanel({ setButtonState }) {
   const height = showPart?.length <= 7 ? 100 / showPart?.length : 14;
   return (
     <div className="control-panel">
-      {showModal && createPortal(
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Armor</th>
-                  {Array.from({ length: 7 }).map((_, armorIndex) => (
-                    <th key={armorIndex}>
-                      <button
-                        className={`allsel-button ${
-                          Array.from({ length: 22 }).every((_, partIndex) =>
-                            selectedTimelines.some(
-                              (item) =>
-                                item.armorIndex === armorIndex &&
-                                item.partIndex === partIndex
-                            )
-                          )
-                            ? "selected"
-                            : ""
-                        }`}
-                        onClick={() => toggleRowSelect(armorIndex)}
-                      >
-                        All
-                      </button>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {Array.from({ length: 22 }).map((_, partIndex) => (
-                  <tr key={partIndex}>
-                    <td>
-                      <button
-                        className={`allsel-button ${
-                          Array.from({ length: 7 }).every((_, armorIndex) =>
-                            selectedTimelines.some(
-                              (item) =>
-                                item.armorIndex === armorIndex &&
-                                item.partIndex === partIndex
-                            )
-                          )
-                            ? "selected"
-                            : ""
-                        }`}
-                        onClick={() => toggleColumnSelect(partIndex)}
-                      >
-                        All
-                      </button>
-                    </td>
-                    {Array.from({ length: 7 }).map((_, armorIndex) => {
-                      const allowed = isPartAllowed(armorIndex, partIndex);
-                      const isSelected = allowed && selectedTimelines.some(
-                        (item) =>
-                          item.armorIndex === armorIndex &&
-                          item.partIndex === partIndex
-                      );
-
-                      return (
-                        <td key={armorIndex}>
+      {showModal &&
+        createPortal(
+          <div className="modal-overlay">
+            <div className="modal-content">
+              <div className="modal-table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Armor</th>
+                      {Array.from({ length: 7 }).map((_, armorIndex) => (
+                        <th key={armorIndex}>
                           <button
-                            className={`checkbox-button ${
-                              isSelected ? "selected" : ""
-                            } ${!allowed ? "disabled-part" : ""}`}
-                            disabled={!allowed}
-                            onClick={() =>
-                              allowed && handleCheckboxChange(
-                                armorIndex,
-                                partIndex,
-                                !isSelected
+                            className={`allsel-button ${
+                              Array.from({ length: 22 }).every((_, partIndex) =>
+                                selectedTimelines.some(
+                                  (item) =>
+                                    item.armorIndex === armorIndex &&
+                                    item.partIndex === partIndex,
+                                ),
                               )
-                            }
+                                ? "selected"
+                                : ""
+                            }`}
+                            onClick={() => toggleRowSelect(armorIndex)}
                           >
-                            {partName[partIndex]}
+                            All
+                          </button>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.from({ length: 22 }).map((_, partIndex) => (
+                      <tr key={partIndex}>
+                        <td>
+                          <button
+                            className={`allsel-button ${
+                              Array.from({ length: 7 }).every((_, armorIndex) =>
+                                selectedTimelines.some(
+                                  (item) =>
+                                    item.armorIndex === armorIndex &&
+                                    item.partIndex === partIndex,
+                                ),
+                              )
+                                ? "selected"
+                                : ""
+                            }`}
+                            onClick={() => toggleColumnSelect(partIndex)}
+                          >
+                            All
                           </button>
                         </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                        {Array.from({ length: 7 }).map((_, armorIndex) => {
+                          const allowed = isPartAllowed(armorIndex, partIndex);
+                          const isSelected =
+                            allowed &&
+                            selectedTimelines.some(
+                              (item) =>
+                                item.armorIndex === armorIndex &&
+                                item.partIndex === partIndex,
+                            );
+
+                          return (
+                            <td key={armorIndex}>
+                              <button
+                                className={`checkbox-button ${
+                                  isSelected ? "selected" : ""
+                                } ${!allowed ? "disabled-part" : ""}`}
+                                disabled={!allowed}
+                                onClick={() =>
+                                  allowed &&
+                                  handleCheckboxChange(
+                                    armorIndex,
+                                    partIndex,
+                                    !isSelected,
+                                  )
+                                }
+                              >
+                                {partName[partIndex]}
+                              </button>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="modal-buttons">
+                <button onClick={() => setShowModal(false)}>Cancel</button>
+                <button onClick={applySelection}>Apply</button>
+              </div>
             </div>
-            <div className="modal-buttons">
-              <button onClick={() => setShowModal(false)}>Cancel</button>
-              <button onClick={applySelection}>Apply</button>
-            </div>
-          </div>
-        </div>
-      , document.body)}
+          </div>,
+          document.body,
+        )}
       <div className="downpart-container">
         <div className="lefttool-container">
           <div className="leftupcorner">
@@ -628,7 +610,7 @@ function ControlPanel({ setButtonState }) {
                       handleSettingChange(
                         index,
                         "armorIndex",
-                        Number(e.target.value)
+                        Number(e.target.value),
                       )
                     }
                   >
@@ -648,7 +630,7 @@ function ControlPanel({ setButtonState }) {
                       handleSettingChange(
                         index,
                         "partIndex",
-                        Number(e.target.value)
+                        Number(e.target.value),
                       )
                     }
                   >
@@ -656,7 +638,8 @@ function ControlPanel({ setButtonState }) {
                       const allowed = isPartAllowed(setting.armorIndex, i);
                       return (
                         <option key={i} value={i} disabled={!allowed}>
-                          {partName[i]}{!allowed ? "x" : ""}
+                          {partName[i]}
+                          {!allowed ? "x" : ""}
                         </option>
                       );
                     })}
