@@ -217,6 +217,12 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 
 ## 更新記錄
 
+- **2026-08-09（晚）**：**效能稽核與優化**。三項實測影響最大的問題：
+  ① persist 每次編輯序列化 72.9ms（`serialize: false` 後 0.5ms，主因是
+  `Float32Array` 被 JSON 化成 5.3MB）；② undo 用 `JSON.stringify` 深度比較
+  （53ms → O(1) reference）；③ 訂閱粒度太粗（新增 `useKeyframePartTimeline` /
+  `useKeyframeArmorTimelines`，一次編輯只重算 1/154 條 Timeline、1/7 個 Armor）。
+  另修好 Phase 4 引入的回歸：no-op 編輯會佔掉一格 undo。測試 168 passed
 - **2026-08-09（下午）**：**Phase 4 完成** —— store 的 `data.actionTable` 改存 segments。
   新增遷移入口 `utils/migration/loadProjectData.js`（五條載入路徑統一、靠形狀辨認格式）、
   轉接橋 `utils/segments/withKeyframeAdapter.js` + `hooks/useKeyframeActionTable.js`
