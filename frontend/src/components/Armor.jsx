@@ -12,12 +12,13 @@ import {
   updateCurrentTime,
   updateSelectedDancer,
 } from "../redux/actions";
-import { useKeyframeActionTable } from "../hooks/useKeyframeActionTable.js";
+import { useKeyframeArmorTimelines } from "../hooks/useKeyframeActionTable.js";
 
 const Armor = (props) => {
   const dispatch = useDispatch();
-  // Phase 4 過渡橋：store 存 segments，這裡取得 keyframe 視圖 + 寫回用的 commit
-  const { actionTable, commit } = useKeyframeActionTable();
+  // Phase 4 過渡橋：只訂閱**自己這位舞者**的 22 個部位。訂閱整張表的話，
+  // 任何舞者被編輯都會讓 7 個 Armor 全部重算 22 個顏色。
+  const { timelines, commitPart } = useKeyframeArmorTimelines(props.index);
   const time = useSelector((state) => state.profiles.currentTime);
   const duration = useSelector((state) => state.profiles.duration);
   const chosenColor = useSelector((state) => state.profiles.chosenColor);
@@ -31,7 +32,7 @@ const Armor = (props) => {
 
   // 根據部位名稱和當前時間計算顏色
   const getColorForPart = (part) => {
-    const partData = actionTable?.[myId]?.[part] || [];
+    const partData = timelines[part] || [];
     const timeIndex = binarySearchFirstGreater(partData, time);
     const prevData = partData?.[timeIndex - 1];
     const nextData = partData?.[timeIndex];
@@ -73,28 +74,21 @@ const Armor = (props) => {
       Object.fromEntries(
         partNames.map((name, index) => [name, getColorForPart(index)]),
       ),
-    [time, actionTable, myId],
+    [time, timelines, myId],
   );
 
   function insertArray(part) {
     const nowTime = Math.floor(time / TICK_MS) * TICK_MS;
     dispatch(updateCurrentTime(nowTime));
 
-    // 容器維持 array（見 utils/actionTable/toNestedArray.js）
-    const updatedActionTable = Array.from(actionTable).map(
-      (player, playerIndex) => {
-        if (playerIndex !== myId) return player;
-        const updatedPlayer = Array.from(player);
-        updatedPlayer[part] = insertColorKeyframes(player[part], {
-          time: nowTime,
-          color: chosenColor,
-          duration,
-        });
-        return updatedPlayer;
-      },
+    commitPart(
+      part,
+      insertColorKeyframes(timelines[part], {
+        time: nowTime,
+        color: chosenColor,
+        duration,
+      }),
     );
-
-    commit(updatedActionTable);
   }
 
   const isSelected = (part) => {

@@ -28,7 +28,13 @@ import { keyframesToSegments, segmentsToKeyframes } from "./convert.js";
  */
 const keyframeCache = new WeakMap();
 
-function cachedSegmentsToKeyframes(segments, duration) {
+/**
+ * 單一部位的 segments → keyframes，以 segments 陣列的 reference 做快取。
+ *
+ * 同一份 segments 轉出來的一定是同一個 keyframe 陣列，呼叫端因此可以用
+ * reference 比較判斷「這條時間軸有沒有變」。
+ */
+export function toKeyframes(segments, duration) {
   const cached = keyframeCache.get(segments);
   if (cached && cached.duration === duration) return cached.keyframes;
 
@@ -42,7 +48,7 @@ export function toKeyframeTable(segmentTable, duration) {
   if (!Array.isArray(segmentTable)) return [];
 
   return segmentTable.map((armor) =>
-    armor.map((segments) => cachedSegmentsToKeyframes(segments, duration)),
+    armor.map((segments) => toKeyframes(segments, duration)),
   );
 }
 
@@ -63,19 +69,36 @@ export function toSegmentTableIncremental(
 ) {
   let changed = false;
 
-  const nextSegmentTable = nextKeyframeTable.map((armor, armorIdx) =>
-    armor.map((timeline, partIdx) => {
+  const nextSegmentTable = nextKeyframeTable.map((armor, armorIdx) => {
+    const prevArmorSegments = prevSegmentTable?.[armorIdx];
+    let armorChanged = false;
+
+    const nextArmor = armor.map((timeline, partIdx) => {
       const prevTimeline = prevKeyframeTable?.[armorIdx]?.[partIdx];
-      const prevSegments = prevSegmentTable?.[armorIdx]?.[partIdx];
+      const prevSegments = prevArmorSegments?.[partIdx];
 
       // immer 對沒動到的路徑回傳同一個 reference —— 直接沿用舊的 segments，
       // 連 id 都保住
       if (prevSegments && timeline === prevTimeline) return prevSegments;
 
+      armorChanged = true;
       changed = true;
       return keyframesToSegments(timeline, { duration });
-    }),
-  );
+    });
+
+    // 這位舞者完全沒被動到就沿用原本那一列。
+    // 讓「只訂閱某位舞者」的元件（Armor、AccessoryPanel）也能用 reference
+    // 比較跳過重算——否則每次編輯都會換掉全部 7 列的 reference。
+    if (
+      !armorChanged &&
+      Array.isArray(prevArmorSegments) &&
+      prevArmorSegments.length === nextArmor.length
+    ) {
+      return prevArmorSegments;
+    }
+
+    return nextArmor;
+  });
 
   // 沒有任何部位變動就回傳**原本那張表**，而不是內容相同的新陣列。
   //

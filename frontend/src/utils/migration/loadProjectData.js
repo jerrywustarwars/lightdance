@@ -112,10 +112,21 @@ export function loadProjectData(payload, { duration = 0 } = {}) {
     );
   }
 
-  return {
-    segmentTable: toSegmentTable(table, { duration }),
-    musicFilename: envelope.music_filename,
-  };
+  const segmentTable = toSegmentTable(table, { duration });
+
+  // 開發時把壞掉的部位印出來。刻意不 throw —— 載入路徑上炸掉等於使用者的
+  // 光表打不開，比帶著一點髒資料繼續工作糟糕得多。
+  if (import.meta.env?.DEV) {
+    const problems = checkSegmentTable(segmentTable);
+    if (problems.length > 0) {
+      console.warn(
+        `[loadProjectData] ${problems.length} 個部位不符合 segment 不變式`,
+        problems.slice(0, 5),
+      );
+    }
+  }
+
+  return { segmentTable, musicFilename: envelope.music_filename };
 }
 
 /**

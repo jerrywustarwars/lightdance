@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch, useSelector, useStore } from "react-redux";
 import { produce } from "immer";
 
 import {
@@ -35,15 +35,19 @@ const isBlack = (point) =>
 
 export function useCopyPaste() {
   const dispatch = useDispatch();
-  const data = useSelector((state) => state.profiles.data);
+  const store = useStore();
   // Phase 4 過渡橋：store 存 segments，這裡取得 keyframe 視圖 + 寫回用的 commit
   const { actionTable, commit } = useKeyframeActionTable();
   const duration = useSelector((state) => state.profiles.duration);
   const clipboard = useSelector((state) => state.profiles.clipboard);
-  const timelineBlocks = useSelector((state) => state.profiles.timelineBlocks);
   const multiSelectedBlocks = useSelector(
     (state) => state.profiles.multiSelectedBlocks,
   );
+
+  // `data.selectedBlock` 與 `timelineBlocks` 只有在按下複製時才會用到，
+  // 訂閱它們純粹是浪費：每次編輯都會 dispatch 好幾次 UPDATETIMELINEBLOCKS
+  //（一個可見的 Timeline 一次），訂閱整包等於讓整個 audioplayer 跟著重繪。
+  // 改成呼叫時才從 store 現讀。
 
   // 複製模式：Timeline 靠它顯示來源標記，純 UI 狀態不進 Redux
   const [isCopying, setIsCopying] = useState(false);
@@ -71,15 +75,17 @@ export function useCopyPaste() {
     // 2. 如果沒有多選，檢查是否有單選 (點擊單個 Block)
     else if (
       multiSelectedBlocks.length === 0 &&
-      data?.selectedBlock?.armorIndex !== undefined
+      store.getState().profiles.data?.selectedBlock?.armorIndex !== undefined
     ) {
-      const sBlock = data.selectedBlock;
+      const sBlock = store.getState().profiles.data.selectedBlock;
       armorIndex = sBlock.armorIndex;
       partIndex = sBlock.partIndex;
       sourceBlocksInfo = [sBlock]; // 單選包裝成陣列，讓渲染邏輯統一
 
       const block =
-        timelineBlocks?.[armorIndex]?.[partIndex]?.[sBlock.blockIndex];
+        store.getState().profiles.timelineBlocks?.[armorIndex]?.[partIndex]?.[
+          sBlock.blockIndex
+        ];
       if (!block) {
         console.warn("找不到選中的方塊資料");
         return;

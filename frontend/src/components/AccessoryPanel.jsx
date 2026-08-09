@@ -1,7 +1,7 @@
 import { useState, memo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { updateCurrentTime } from "../redux/actions";
-import { useKeyframeActionTable } from "../hooks/useKeyframeActionTable.js";
+import { useKeyframeArmorTimelines } from "../hooks/useKeyframeActionTable.js";
 import { ACCESSORY_CONFIGS } from "../config/accessoryConfig.js";
 import "./AccessoryPanel.css";
 import { PART_KEYS } from "../constants/parts.js";
@@ -16,8 +16,9 @@ const PART_NAMES = PART_KEYS;
 function AccessoryPanel() {
   const dispatch = useDispatch();
   const selectedDancerId = useSelector((s) => s.profiles.selectedDancerId);
-  // Phase 4 過渡橋：store 存 segments，這裡取得 keyframe 視圖 + 寫回用的 commit
-  const { actionTable, commit } = useKeyframeActionTable();
+  // Phase 4 過渡橋：只訂閱目前選到的那位舞者（selectedDancerId 為 null 時
+  // 這個面板本來就不顯示內容）
+  const { timelines, commitPart } = useKeyframeArmorTimelines(selectedDancerId);
   const time = useSelector((s) => s.profiles.currentTime);
   const duration = useSelector((s) => s.profiles.duration);
   const chosenColor = useSelector((s) => s.profiles.chosenColor);
@@ -31,7 +32,7 @@ function AccessoryPanel() {
       : null;
 
   const getColor = (partIdx) => {
-    const partData = actionTable?.[selectedDancerId]?.[partIdx] || [];
+    const partData = timelines[partIdx] || [];
     const idx = binarySearchFirstGreater(partData, time);
     const prev = partData[idx - 1];
     const next = partData[idx];
@@ -62,21 +63,14 @@ function AccessoryPanel() {
     const nowTime = Math.floor(time / TICK_MS) * TICK_MS;
     dispatch(updateCurrentTime(nowTime));
 
-    // 容器維持 array（見 utils/actionTable/toNestedArray.js）
-    const updatedActionTable = Array.from(actionTable).map(
-      (player, playerIdx) => {
-        if (playerIdx !== selectedDancerId) return player;
-        const updatedPlayer = Array.from(player);
-        updatedPlayer[partIdx] = insertColorKeyframes(player[partIdx], {
-          time: nowTime,
-          color: chosenColor,
-          duration,
-        });
-        return updatedPlayer;
-      },
+    commitPart(
+      partIdx,
+      insertColorKeyframes(timelines[partIdx], {
+        time: nowTime,
+        color: chosenColor,
+        duration,
+      }),
     );
-
-    commit(updatedActionTable);
   };
 
   const [open, setOpen] = useState(true);

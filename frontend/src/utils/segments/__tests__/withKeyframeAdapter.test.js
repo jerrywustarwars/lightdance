@@ -121,6 +121,30 @@ describe("toSegmentTableIncremental", () => {
     expect(nextSegments).toBe(prevSegments);
   });
 
+  it("沒被動到的舞者沿用整列 reference", () => {
+    /**
+     * 這條守的是 Armor / AccessoryPanel 的逐舞者訂閱：
+     * 編輯舞者 0 時，舞者 1 那一列的 reference 必須不變，
+     * 否則 7 個 Armor 每次都會重算 22 個顏色。
+     */
+    const prevSegments = makeSegmentTable();
+    const prevKeyframes = toKeyframeTable(prevSegments, DURATION);
+
+    const nextKeyframes = produce(prevKeyframes, (draft) => {
+      draft[0][0][1].color.R = 128;
+    });
+
+    const nextSegments = toSegmentTableIncremental(
+      nextKeyframes,
+      prevKeyframes,
+      prevSegments,
+      { duration: DURATION },
+    );
+
+    expect(nextSegments[0]).not.toBe(prevSegments[0]); // 被改的舞者
+    expect(nextSegments[1]).toBe(prevSegments[1]); // 沒被改的舞者：整列沿用
+  });
+
   it("形狀改變（補齊部位）不會被誤判成沒變動", () => {
     const prevSegments = makeSegmentTable();
     const prevKeyframes = toKeyframeTable(prevSegments, DURATION);

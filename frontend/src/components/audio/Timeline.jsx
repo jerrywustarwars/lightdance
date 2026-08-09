@@ -7,12 +7,11 @@ import {
   updateMoveMode,
   updateCurrentTime,
 } from "../../redux/actions";
-import { useKeyframeActionTable } from "../../hooks/useKeyframeActionTable.js";
+import { useKeyframePartTimeline } from "../../hooks/useKeyframeActionTable.js";
 
 import { produce } from "immer";
 // cloneDeep 已移除：tempActionTable cascade 已合併，drag 復原時再加回
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { LEGACY_BLACK_SENTINEL_MS } from "../../constants/time.js";
 import {
   faWandMagicSparkles,
 } from "@fortawesome/free-solid-svg-icons";
@@ -52,12 +51,14 @@ const Timeline = forwardRef(
     const timelineBlocks = useSelector(
       (state) => state.profiles.timelineBlocks?.[armorIndex]?.[partIndex] || [] // 當前時間軸的方塊數據
     );
-    // Phase 4 過渡橋：store 存 segments，這裡取得 keyframe 視圖 + 寫回用的 commit
-    const { actionTable, commit } = useKeyframeActionTable(); // 原始動作表
+    // Phase 4 過渡橋：只訂閱**自己這一個部位**的 keyframe 時間軸。
+    // 訂閱整張表的話，任何地方的編輯都會換掉 reference，154 條 Timeline 全部
+    // 重算 blocks 並各自 dispatch 一次——現在只有真的被改到的那條會動。
+    const { timeline: partTimeline, commitPart } =
+      useKeyframePartTimeline(armorIndex, partIndex);
     const duration = useSelector((state) => state.profiles.duration); // 總時長
     const multiSelectedBlocks = useSelector((state) => state.profiles.multiSelectedBlocks); // 全局多選中方塊
     const clipboard = useSelector((state) => state.profiles.clipboard);
-    const blackthreshold = LEGACY_BLACK_SENTINEL_MS;
     const STRETCH_MIN_MS  = 50; // Stretch Mode：block 可縮到的最小持續時間（ms）
     const MIN_BLOCK_GAP_MS = 50; // 相鄰兩個有色 block 之間必須保留的最小間距（ms）
 
@@ -73,9 +74,9 @@ const Timeline = forwardRef(
     const isBlackEntry = (e) =>
       e?.color?.R === 0 && e?.color?.G === 0 && e?.color?.B === 0;
     // 用 ref 保持最新值供 useEffect 閉包使用
-    const actionTableRef = useRef(actionTable);
+    const partTimelineRef = useRef(partTimeline);
     const durationRef = useRef(duration);
-    useEffect(() => { actionTableRef.current = actionTable; }, [actionTable]);
+    useEffect(() => { partTimelineRef.current = partTimeline; }, [partTimeline]);
     useEffect(() => { durationRef.current = duration; }, [duration]);
 
     // Resize 相關 ref（零延遲邊緣拖曳，不觸發 React 重繪）
@@ -105,11 +106,9 @@ const Timeline = forwardRef(
           const pixelsPerMs = rect.width / durationRef.current;
           const dt = Math.round((dragPx / pixelsPerMs) / 50) * 50;
           if (dt !== 0) {
-            const curActionTable = actionTableRef.current;
-            const partData = curActionTable[armorIndex]?.[partIndex];
-            if (partData) {
-              const updatedTable = produce(curActionTable, (draft) => {
-                const pd = draft[armorIndex][partIndex];
+            const partData = partTimelineRef.current;
+            if (partData.length > 0) {
+              const updatedTimeline = produce(partData, (pd) => {
                 let i = idx;
                 if (pd[i] === undefined) return;
 
@@ -151,7 +150,7 @@ const Timeline = forwardRef(
                   }
                 }
               });
-              commit(updatedTable);
+              commitPart(updatedTimeline);
             }
           }
         }
@@ -189,11 +188,9 @@ const Timeline = forwardRef(
           const dt = Math.round((dragPx / pixelsPerMs) / 50) * 50;
 
           if (dt !== 0) {
-            const curActionTable = actionTableRef.current;
-            const partData = curActionTable[armorIndex]?.[partIndex];
-            if (partData) {
-              const updatedTable = produce(curActionTable, (draft) => {
-                const pd = draft[armorIndex][partIndex];
+            const partData = partTimelineRef.current;
+            if (partData.length > 0) {
+              const updatedTimeline = produce(partData, (pd) => {
                 let i = idx;
                 if (pd[i] === undefined) return;
 
@@ -235,7 +232,7 @@ const Timeline = forwardRef(
                   }
                 }
               });
-              commit(updatedTable);
+              commitPart(updatedTimeline);
             }
           }
 
@@ -338,10 +335,9 @@ const Timeline = forwardRef(
       }
     }, [canvasWidth]);
 
-    // 根據 tempActionTable 和 duration 計算新的方塊數據
-    // P3: 直接從 actionTable 計算 timelineBlocks，不再經過 tempActionTable 中轉
+    // 由這個部位的時間軸算出畫面上的色塊。
+    // 依賴只有 partTimeline —— 別的部位被編輯時這裡完全不會重跑。
     useEffect(() => {
-      const partTimeline = actionTable?.[armorIndex]?.[partIndex];
 
       if (!Array.isArray(partTimeline)) {
         dispatch(
@@ -399,7 +395,7 @@ const Timeline = forwardRef(
           value: newBlocks,
         })
       );
-    }, [actionTable, duration, armorIndex, partIndex, dispatch]);
+    }, [partTimeline, duration, armorIndex, partIndex, dispatch]);
 
     // 處理鼠標按下事件
     const handleMouseDown = (e, index) => {
@@ -423,7 +419,7 @@ const Timeline = forwardRef(
         // Bug fix：timelineBlocks index ≠ actionTable index（刪除後相鄰黑塊合併導致偏移）
         // 用 block.startTime 反查 actionTable 真正的 index
         // 必須排除 black entry：當 black entry 與 colored entry 同時間（緊鄰 block），findIndex 若只比對時間會取到錯誤 index
-        const partData = actionTable[armorIndex][partIndex];
+        const partData = partTimeline;
         const atIdx = partData.findIndex(entry => entry.time === block.startTime && !isBlackEntry(entry));
         if (atIdx === -1) return;
 
@@ -482,7 +478,7 @@ const Timeline = forwardRef(
       // 邊緣 resize 邏輯：已選中的有色 block 在邊緣按下時啟動 resize，不進入普通選取流程
       {
         // 查找 actionTable index 用於比較選中狀態
-        const partDataForResize = actionTable[armorIndex][partIndex];
+        const partDataForResize = partTimeline;
         const atIdxForResize = partDataForResize.findIndex(entry => entry.time === block.startTime && !isBlackEntry(entry));
         const isSelected = atIdxForResize !== -1 && multiSelectedBlocks.some(b =>
           b.armorIndex === armorIndex && b.partIndex === partIndex && b.blockIndex === atIdxForResize
@@ -497,7 +493,7 @@ const Timeline = forwardRef(
       if (isCopying) {
         // 關鍵：在尋找貼上目標時，僅更新單選(綠框目標)
         if (!isBlackBlock) {
-          const partDataForCopy = actionTable[armorIndex][partIndex];
+          const partDataForCopy = partTimeline;
           const atIdxForCopy = partDataForCopy.findIndex(entry => entry.time === block.startTime && !isBlackEntry(entry));
           if (atIdxForCopy !== -1) {
             dispatch(updateMultiSelectedBlocks([{ armorIndex, partIndex, blockIndex: atIdxForCopy }]));
@@ -512,7 +508,7 @@ const Timeline = forwardRef(
       }
 
       // timelineBlocks index ≠ actionTable index
-      const partData = actionTable[armorIndex][partIndex];
+      const partData = partTimeline;
       const atIdx = partData.findIndex(entry => entry.time === block.startTime && !isBlackEntry(entry));
       if (atIdx === -1) return;
 
@@ -570,7 +566,7 @@ const Timeline = forwardRef(
     // edge: 'left' | 'right'，tlIdx: timelineBlocks index
     const startBlockResize = (e, tlIdx, edge) => {
       const block = timelineBlocks[tlIdx];
-      const partData = actionTable[armorIndex][partIndex];
+      const partData = partTimeline;
       // 必須排除 black entry：當 black entry 與 colored entry 同時間（緊鄰 block），findIndex 若只比對時間會取到錯誤 index
       const atIdx = partData.findIndex(entry => entry.time === block.startTime && !isBlackEntry(entry));
       if (atIdx === -1) return;
@@ -664,9 +660,7 @@ const Timeline = forwardRef(
             const rawDeltaMs = dragPx / pxPerMs;
             const dur = durationRef.current;
 
-            const updatedTable = produce(actionTableRef.current, (draft) => {
-              const pd = draft[armorIndex][partIndex];
-
+            const updatedTimeline = produce(partTimelineRef.current, (pd) => {
               if (savedEdge === 'right') {
                 if (pd[savedIdx + 1] === undefined) return;
 
@@ -713,7 +707,7 @@ const Timeline = forwardRef(
                 }
               }
             });
-            commit(updatedTable);
+            commitPart(updatedTimeline);
           }
         }
 
@@ -797,7 +791,7 @@ const Timeline = forwardRef(
       >
       {timelineBlocks.map((block, index) => {
         // --- 0. 查找 actionTable 中的實際 index（timelineBlocks 與 actionTable 索引不對齊）---
-        const partData = actionTable[armorIndex]?.[partIndex];
+        const partData = partTimeline;
         const atIdx = partData?.findIndex(entry => entry.time === block.startTime && !(entry?.color?.R === 0 && entry?.color?.G === 0 && entry?.color?.B === 0)) ?? -1;
 
         // --- 1. 定義狀態變數 ---
