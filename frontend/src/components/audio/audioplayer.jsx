@@ -10,6 +10,7 @@ import {
 } from "../../redux/actions.js";
 import "./audioplayer.css";
 import Waveform from "./waveform.jsx";
+import MusicSelector from "./MusicSelector.jsx";
 import { musicNames } from "./musicData.js";
 import Timeline from "./Timeline.jsx";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -35,9 +36,7 @@ import {
   updateIsColorChangeActive,
   updatePlaybackRate,
   updateCurrentTime,
-  updateMusicFilename,
 } from "../../redux/actions.js";
-import { API_ENDPOINTS } from "../../config/api.js";
 import { set } from "lodash";
 import { TICK_MS, LEGACY_BLACK_SENTINEL_MS } from "../../constants/time.js";
 import { insertColorKeyframes } from "../../utils/actionTable/insertColorKeyframes.js";
@@ -87,9 +86,6 @@ const ensureBlackBefore = (
 function AudioPlayer({ setButtonState, timelineRef }) {
   const dispatch = useDispatch();
   const data = useSelector((state) => state.profiles.data);
-  // const musicIndex = data?.music_index ?? 2;
-  const userName = useSelector((state) => state.profiles.user);
-  const musicFilename = data?.music_filename || "2026_funding.mp3";
   const showPart = useSelector((state) => state.profiles.showPart);
   const currentTime = useSelector((state) => state.profiles.currentTime);
   const duration = useSelector((state) => state.profiles.duration); // 音樂總長度
@@ -126,7 +122,6 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   const [startBrightness, setStartBrightness] = useState(10);
   const [brightnessStep, setBrightnessStep] = useState(10);
   const [endBrightness, setEndBrightness] = useState(100);
-  const [apiMusicList, setApiMusicList] = useState([]);
   const [shiftStep, setShiftStep] = useState(0); // 0: 關閉, 1: 選起始, 2: 選結束, 3: 選目標
   const [shiftTimes, setShiftTimes] = useState({ start: 0, end: 0, target: 0 });
   const [uniformAlphaVisible, setUniformAlphaVisible] = useState(false);
@@ -149,36 +144,6 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       document.removeEventListener("click", handleClickOutsideUniformAlpha);
     };
   }, [uniformAlphaVisible]);
-
-  useEffect(() => {
-    const fetchMusicList = async () => {
-      if (!userName) return;
-      try {
-        const response = await fetch(
-          `${API_ENDPOINTS.BASE}/get_music_list/${userName}`,
-        );
-        const data = await response.json();
-        if (data && data.music_list) {
-          setApiMusicList(data.music_list);
-        }
-      } catch (error) {
-        console.error("抓取音樂清單失敗:", error);
-      }
-    };
-
-    fetchMusicList();
-  }, [userName]);
-
-  // 處理選單切換音樂
-  const handleMusicChange = (e) => {
-    const newFilename = e.target.value;
-    // 更新 Redux 中的 music_filename
-    dispatch(updateMusicFilename(newFilename));
-    // 如果正在播放，停止播放以觸發 waveform 重新載入
-    if (isPlaying) {
-      setIsPlaying(false);
-    }
-  };
 
   useEffect(() => {
     setButtonState(isPlaying);
@@ -1544,44 +1509,12 @@ function AudioPlayer({ setButtonState, timelineRef }) {
         </div>
       )}
       <div className="controls">
-        {/* 僅顯示目前的檔名，無選單功能 */}
-        {/* <div className="current-track-display" style={{ marginRight: "10px", display: "flex", alignItems: "center" }}>
-          <span className="badge bg-secondary" style={{ padding: "8px", fontSize: "14px" }}>
-            🎵 {musicFilename}
-          </span>
-        </div> */}
-        <div
-          className="current-track-display"
-          style={{ marginRight: "10px", display: "flex", alignItems: "center" }}
-        >
-          <div className="dropdown">
-            <select
-              className="dropdown-select"
-              value={musicFilename}
-              onChange={handleMusicChange}
-              style={{
-                minWidth: "150px",
-                backgroundColor: "#2c3e50",
-                color: "white",
-                border: "1px solid #34495e",
-                borderRadius: "4px",
-                padding: "5px",
-              }}
-            >
-              {/* 如果目前的音樂不在清單中，顯示一個預設選項 */}
-              {!apiMusicList.includes(musicFilename) && (
-                <option value={musicFilename}>{musicFilename} (目前)</option>
-              )}
-
-              {apiMusicList.map((filename, index) => (
-                <option key={index} value={filename}>
-                  🎵 {filename}
-                </option>
-              ))}
-            </select>
-            <span className="tooltip">Switch Track</span>
-          </div>
-        </div>
+        <MusicSelector
+          onTrackChange={() => {
+            // 換歌時停止播放，讓 waveform 重新載入音檔
+            if (isPlaying) setIsPlaying(false);
+          }}
+        />
         <div
           ref={uniformAlphaRef}
           className="uniform-alpha-wrapper"
