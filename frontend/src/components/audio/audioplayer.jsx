@@ -190,15 +190,13 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   /**
    * 編輯器的鍵盤配置。
    *
-   * ⚠️ **有兩組鍵位是重疊的**——原本的 `handleKeyDown` 是一串平行的 `if`
-   * （不是 `else if`），所以這兩組會同時觸發兩個動作。這裡忠實保留：
+   * ⚠️ **`Shift+←/→` 是刻意保留的重疊鍵位**：兩條綁定都會執行，先 ±50ms
+   * 再跳到上/下個關鍵格（後者覆蓋前者）。沒有選取色塊時 `goToNextPoint`
+   * 會直接 return，於是退化成 ±50ms —— 這個 fallback 蠻好用，所以留著。
+   * `updateCurrentTime` 不進 undo history，不會有副作用。
    *
-   * | 鍵 | 同時觸發 |
-   * |---|---|
-   * | `Shift+←/→` | 播放位置 ±50ms **和** 跳到上/下個關鍵格 |
-   * | `Ctrl+1~8` | 套用最愛色 N **和** 設定透明度 N/10（數字那條沒有 ctrl 守衛）|
-   *
-   * 要修的話是獨立的行為變更，不該混在拆件裡做。
+   * （`Ctrl+1~8` 原本也有同樣的重疊，但那組會產生兩筆 history、
+   * 讓一次 Ctrl+Z 停在使用者沒看過的中間狀態，已加 `ctrl: false` 修掉。）
    */
   const shortcuts = [
     // 複製模式
@@ -259,6 +257,10 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     // 最愛顏色與透明度
     {
       key: ["1", "2", "3", "4", "5", "6", "7", "8"],
+      // ctrl: false 是必要的守衛：沒有它，Ctrl+1 會同時打中這條和下面的透明度，
+      // 兩個 handler 從同一份 actionTable 快照各自 produce 再 dispatch，
+      // 結果是套色被蓋掉、卻多留一筆 history（一次 Ctrl+Z 復原不完）。
+      ctrl: false,
       handler: (event) => handleFavoriteColorChoose(parseInt(event.key) - 1),
     },
     {
@@ -267,7 +269,8 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       handler: (event) =>
         trackActions.changeBrightness(parseInt(event.key) / 10),
     },
-    { key: "0", ctrl: true, handler: () => trackActions.changeBrightness(0) },
+    // Ctrl+0 補完 Ctrl+1~9 的 10%~90%，所以是 100%（不是 0%）
+    { key: "0", ctrl: true, handler: () => trackActions.changeBrightness(1) },
     {
       // 按住 Shift 時數字鍵的 event.key 會是符號（Shift+1 → "!"），只能用 code 比對
       code: /^Digit[1-8]$/,

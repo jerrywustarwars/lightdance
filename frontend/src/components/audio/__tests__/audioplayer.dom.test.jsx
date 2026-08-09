@@ -417,14 +417,55 @@ describe("效果選單與亮度階梯", () => {
   });
 });
 
-describe("既有的鍵位衝突（Phase 3d 刻意保留）", () => {
+describe("透明度快捷鍵", () => {
+  const withPalette = (overrides = {}) =>
+    createTestStore({
+      favoriteColor: [[{ R: 11, G: 22, B: 33, A: 1 }]],
+      multiSelectedBlocks: [{ armorIndex: 0, partIndex: 0, blockIndex: 1 }],
+      ...overrides,
+    });
+
+  it("Ctrl+1 只設透明度，不套最愛色，且只進一筆 history", () => {
+    // 「1~8 套最愛色」那條沒有 ctrl 守衛時，Ctrl+1 會同時打中兩條綁定：
+    // 兩個 handler 從同一份快照各自 produce 再 dispatch，套色被蓋掉但仍留下
+    // 一筆 history，導致按一次 Ctrl+Z 會停在使用者沒看過的中間狀態。
+    const store = withPalette();
+    mount(store);
+
+    const historyBefore = store.getState().profiles.history.length;
+    pressKey("1", { ctrlKey: true });
+
+    const block = timelineOf(store)[1];
+    expect(block.color.R).toBe(255); // 顏色不動（還是測試光表的紅色）
+    expect(block.color.A).toBeCloseTo(0.1);
+    expect(store.getState().profiles.history.length).toBe(historyBefore + 1);
+  });
+
+  it("Ctrl+0 設為 100%（補完 Ctrl+1~9 的 10%~90%）", () => {
+    const store = withPalette();
+    mount(store);
+
+    pressKey("0", { ctrlKey: true });
+    expect(timelineOf(store)[1].color.A).toBeCloseTo(1);
+  });
+
+  it("不按 Ctrl 的 1~8 才是套最愛色", () => {
+    const store = withPalette();
+    mount(store);
+
+    pressKey("1");
+    expect(timelineOf(store)[1].color.R).toBe(11);
+  });
+});
+
+describe("Shift+←/→ 的重疊鍵位（刻意保留）", () => {
   /**
-   * 原本的 `handleKeyDown` 是一串平行的 `if`（不是 `else if`），這兩組鍵
-   * 因此會同時觸發兩個動作。統一鍵盤處理時忠實保留，這裡把它鎖住——
-   * 哪天要修，會是紅燈提醒而不是靜默的行為改變。
+   * 這組鍵兩條綁定都會執行：先 ±50ms、再跳到上/下個關鍵格（後者覆蓋前者）。
+   * `updateCurrentTime` 不進 history，沒有 undo 副作用，而且沒選取色塊時
+   * 退化成 ±50ms 是個好用的 fallback，所以維持現狀並在此鎖住。
    */
 
-  it("Shift+→ 同時推進 50ms 和跳到下一個關鍵格", () => {
+  it("有選取時跳到下一個關鍵格", () => {
     // 測試光表在 2000ms 有綠色塊；從 1000ms 出發
     const store = createTestStore({
       currentTime: 1000,
@@ -433,25 +474,15 @@ describe("既有的鍵位衝突（Phase 3d 刻意保留）", () => {
     mount(store);
 
     pressKey("ArrowRight", { shiftKey: true });
-
-    // 兩條都跑了：先 +50 變 1050，再跳到下個關鍵格 2000（後者覆蓋前者）
     expect(store.getState().profiles.currentTime).toBe(2000);
   });
 
-  it("Ctrl+1 同時觸發最愛色與透明度，後者的 dispatch 蓋掉前者", () => {
-    const store = createTestStore({
-      favoriteColor: [[{ R: 11, G: 22, B: 33, A: 1 }]],
-      multiSelectedBlocks: [{ armorIndex: 0, partIndex: 0, blockIndex: 1 }],
-    });
+  it("沒有選取時退化成 +50ms", () => {
+    const store = createTestStore({ currentTime: 1000 });
     mount(store);
 
-    pressKey("1", { ctrlKey: true });
-
-    // 兩個 handler 都跑了，但它們是從同一份 actionTable 快照各自 produce 出
-    // 新表再 dispatch，所以後跑的透明度整份蓋掉前面的最愛色——套色被靜默丟棄。
-    const block = timelineOf(store)[1];
-    expect(block.color.R).toBe(255); // 還是原本的紅色，最愛色沒留下
-    expect(block.color.A).toBeCloseTo(0.1); // 只有透明度生效
+    pressKey("ArrowRight", { shiftKey: true });
+    expect(store.getState().profiles.currentTime).toBe(1050);
   });
 });
 
