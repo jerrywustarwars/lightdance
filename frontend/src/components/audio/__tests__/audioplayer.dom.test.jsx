@@ -91,6 +91,123 @@ describe("快捷鍵", () => {
   });
 });
 
+describe("Shift + 數字：插入最愛顏色", () => {
+  /**
+   * 這條路徑原本永遠進不來：按住 Shift 時 `Shift+1` 的 `event.key` 是 `"!"`，
+   * 而條件寫的是 `["1".."8"].includes(event.key)`。改用 `event.code` 才接得回來。
+   */
+  const storeWithPalette = () =>
+    createTestStore({
+      currentTime: 5000,
+      favoriteColor: [
+        [
+          { R: 1, G: 2, B: 3, A: 1 },
+          { R: 4, G: 5, B: 6, A: 1 },
+        ],
+      ],
+      multiSelectedBlocks: [{ armorIndex: 0, partIndex: 0, blockIndex: 1 }],
+    });
+
+  it("在播放位置插入最愛顏色", () => {
+    const store = storeWithPalette();
+    mount(store);
+
+    const before = timelineOf(store).length;
+    pressKey("!", { shiftKey: true, code: "Digit1" });
+
+    const after = timelineOf(store);
+    expect(after.length).toBeGreaterThan(before);
+    expect(
+      after.some((entry) => entry.color.R === 1 && entry.color.G === 2),
+    ).toBe(true);
+  });
+
+  it("顏色盤還沒載入時不會炸掉", () => {
+    // favoriteColor 預設是空陣列，原本的 favoriteColor[0].length 會直接 throw
+    const store = createTestStore({
+      currentTime: 5000,
+      multiSelectedBlocks: [{ armorIndex: 0, partIndex: 0, blockIndex: 1 }],
+    });
+    mount(store);
+
+    const before = JSON.stringify(timelineOf(store));
+    pressKey("!", { shiftKey: true, code: "Digit1" });
+    expect(JSON.stringify(timelineOf(store))).toBe(before);
+  });
+});
+
+describe("效果選單與亮度階梯", () => {
+  const openEffectMenu = () => {
+    fireEvent.click(document.querySelector(".effect-button"));
+    return document.querySelector(".effect-menu");
+  };
+
+  const menuItem = (text) =>
+    [...document.querySelectorAll(".effect-menu-item")].find(
+      (el) => el.textContent.trim() === text,
+    );
+
+  it("點 Effect 按鈕會展開三個選項", () => {
+    mount();
+    expect(openEffectMenu()).toBeTruthy();
+    expect(menuItem("漸變 (L)")).toBeTruthy();
+    expect(menuItem("頻閃 (B)")).toBeTruthy();
+    expect(menuItem("亮度階梯")).toBeTruthy();
+  });
+
+  it("點「亮度階梯」會打開設定面板", () => {
+    mount();
+    openEffectMenu();
+    expect(document.querySelector(".gradient-settings-popup")).toBeFalsy();
+
+    fireEvent.click(menuItem("亮度階梯"));
+    expect(document.querySelector(".gradient-settings-popup")).toBeTruthy();
+  });
+
+  it("沒有選取色塊時按 Apply 不會改動光表，面板留著", () => {
+    const store = createTestStore();
+    mount(store);
+    openEffectMenu();
+    fireEvent.click(menuItem("亮度階梯"));
+
+    const before = JSON.stringify(timelineOf(store));
+    fireEvent.click(
+      [...document.querySelectorAll(".gradient-settings-actions button")].find(
+        (el) => el.textContent === "Apply",
+      ),
+    );
+
+    expect(JSON.stringify(timelineOf(store))).toBe(before);
+    // 面板不關閉，使用者可以去選色塊後再按一次
+    expect(document.querySelector(".gradient-settings-popup")).toBeTruthy();
+  });
+
+  it("選取一個色塊後 Apply 會依階梯設定改透明度", () => {
+    const store = createTestStore();
+    // 測試光表在 index 1 是紅色塊、index 3 是綠色塊（見 renderEditor.jsx）
+    store.dispatch({
+      type: "UPDATE_MULTI_SELECTED_BLOCKS",
+      payload: [{ armorIndex: 0, partIndex: 0, blockIndex: 1 }],
+    });
+    mount(store);
+    openEffectMenu();
+    fireEvent.click(menuItem("亮度階梯"));
+
+    fireEvent.click(
+      [...document.querySelectorAll(".gradient-settings-actions button")].find(
+        (el) => el.textContent === "Apply",
+      ),
+    );
+
+    // 預設 10% → 每階 +10% → 100%：blockIndex 起算，stride 2
+    const timeline = timelineOf(store);
+    expect(timeline[1].color.A).toBeCloseTo(0.1);
+    expect(timeline[3].color.A).toBeCloseTo(0.2);
+    // 套用完面板收起
+    expect(document.querySelector(".gradient-settings-popup")).toBeFalsy();
+  });
+});
+
 describe("快捷鍵的 100ms 防彈跳", () => {
   it("同一個鍵在 100ms 內連按第二次會被忽略", () => {
     vi.useFakeTimers();

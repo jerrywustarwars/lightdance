@@ -106,7 +106,6 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   );
   const playbackRate = useSelector((state) => state.profiles.playbackRate);
 
-  const audioRef = useRef(null); // 音檔的引用
   const scrollRef = useRef(null); // 滾動條的容器
   const containerRef = useRef(null); // 波形的容器
   const [volume, setVolume] = useState(0.5); // 音量
@@ -117,16 +116,15 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   const [sourceNode, setSourceNode] = useState(null);
   const blackthreshold = LEGACY_BLACK_SENTINEL_MS;
   const elRefs = useRef([]);
-  const isExternalSeekRef = useRef(false); // 🔥 用 ref 避免重渲染
-
-  const prevTimeRef = useRef(currentTime);
 
   const [effectMenuVisible, setEffectMenuVisible] = useState(false);
-  const [effectType, setEffectType] = useState(null); // 'gradient' | 'blink'
+  const [effectType, setEffectType] = useState(null); // 'gradient'（亮度階梯設定面板）
   const [gradientSettingsVisible, setGradientSettingsVisible] = useState(false);
 
+  // 亮度階梯的設定：從 startBrightness 每次加減 brightnessStep 直到 endBrightness
+  // （brightnessStep 不可命名為 interval —— 那會遮蔽全域的 window.setInterval）
   const [startBrightness, setStartBrightness] = useState(10);
-  const [interval, setInterval] = useState(10);
+  const [brightnessStep, setBrightnessStep] = useState(10);
   const [endBrightness, setEndBrightness] = useState(100);
   const [apiMusicList, setApiMusicList] = useState([]);
   const [shiftStep, setShiftStep] = useState(0); // 0: 關閉, 1: 選起始, 2: 選結束, 3: 選目標
@@ -181,36 +179,6 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       setIsPlaying(false);
     }
   };
-
-  useEffect(() => {
-    // 如果這不是外部觸發的跳轉，就跳過
-    if (!isExternalSeekRef.current) {
-      prevTimeRef.current = currentTime;
-      return;
-    }
-
-    // ✅ 是我們自己用按鍵或 UI 觸發的跳轉！
-    console.log("🔁 Detected external seek!");
-
-    if (sourceNode) {
-      try {
-        sourceNode.stop();
-      } catch (e) {
-        console.warn("sourceNode already stopped");
-      }
-    }
-
-    // 讓 waveform 自己重新處理播放
-    setIsPlaying(false);
-    setTimeout(() => setIsPlaying(true), 0);
-
-    isExternalSeekRef.current = false; // ✅ 重設 flag
-    prevTimeRef.current = currentTime;
-  }, [currentTime]);
-
-  useEffect(() => {
-    console.log("zoomLevel:", zoomLevel);
-  }, [zoomLevel]);
 
   useEffect(() => {
     setButtonState(isPlaying);
@@ -530,16 +498,6 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       }
     }
 
-    // if (event.shiftKey && event.key === "ArrowRight") {
-    //   event.preventDefault();
-    //   console.log("Shift + ArrowRight pressed. Moving right.");
-    //   handleGoRight();
-    // }
-    // if (event.shiftKey && event.key === "ArrowLeft") {
-    //   event.preventDefault();
-    //   console.log("Shift + ArrowLeft pressed. Moving left.");
-    //   handleGoLeft();
-    // }
     if (event.key === "m" || event.key === "M") {
       event.preventDefault();
       dispatch(toggleMoveMode());
@@ -601,12 +559,13 @@ function AudioPlayer({ setButtonState, timelineRef }) {
         handleBrightnessChange(0);
       }
     }
-    if (
-      event.shiftKey &&
-      ["1", "2", "3", "4", "5", "6", "7", "8"].includes(event.key)
-    ) {
+    // Shift + 1~8：在播放位置插入最愛顏色（和不按 Shift 的 1~8「改選取色塊的顏色」不同）
+    //
+    // 這裡必須用 event.code 而不是 event.key：按住 Shift 時 event.key 會是符號
+    // （Shift+1 → "!"），所以原本用 key 比對數字的寫法永遠不成立，這個功能一直進不來。
+    if (event.shiftKey && !event.ctrlKey && /^Digit[1-8]$/.test(event.code)) {
       event.preventDefault();
-      const colorIndex = parseInt(event.key) - 1;
+      const colorIndex = parseInt(event.code.slice("Digit".length), 10) - 1;
       handleFavoriteColorInsert(colorIndex);
     }
     if (event.key === "Delete" || event.key === "Backspace") {
@@ -641,10 +600,22 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     };
   }, []); // 只掛載一次，不再因 currentTime/multiSelectedBlocks 變化而重新綁定
 
+  /**
+   * 把 1~8 的序號換算成最愛顏色盤上的座標。
+   * 顏色盤還沒載入時（favoriteColor 預設是空陣列）回傳 null，呼叫端跳過。
+   */
+  const favoriteColorAt = (colorIndex) => {
+    const columns = favoriteColor?.[0]?.length;
+    if (!columns) return null;
+    const row = Math.floor(colorIndex / columns); // 計算第幾列
+    const col = colorIndex % columns; // 計算第幾行
+    return favoriteColor[row % favoriteColor.length][col] ?? null;
+  };
+
   const handleFavoriteColorInsert = (colorIndex) => {
-    const row = Math.floor(colorIndex / favoriteColor[0].length); // 計算第幾列
-    const col = colorIndex % favoriteColor[0].length; // 計算第幾行
-    insertFavoriteColorArray(favoriteColor[row % favoriteColor.length][col]);
+    const color = favoriteColorAt(colorIndex);
+    if (!color) return;
+    insertFavoriteColorArray(color);
   };
 
   const insertFavoriteColorArray = (color) => {
@@ -690,11 +661,10 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   const handleFavoriteColorChoose = (index) => {
     if (multiSelectedBlocks.length === 0) return;
 
-    const updatedActionTable = produce(actionTable, (draft) => {
-      const row = Math.floor(index / favoriteColor[0].length); // 計算第幾列
-      const col = index % favoriteColor[0].length; // 計算第幾行
-      const newColor = { ...favoriteColor[row % favoriteColor.length][col] };
+    const newColor = favoriteColorAt(index);
+    if (!newColor) return; // 顏色盤還沒載入
 
+    const updatedActionTable = produce(actionTable, (draft) => {
       multiSelectedBlocks.forEach(({ armorIndex, partIndex, blockIndex }) => {
         const timeline = draft[armorIndex]?.[partIndex];
         if (timeline && timeline[blockIndex]) {
@@ -705,21 +675,6 @@ function AudioPlayer({ setButtonState, timelineRef }) {
 
     dispatch(updateActionTable(updatedActionTable));
   };
-
-  // const handleAlphaChoose = (alphaValue) => {
-  //   if (multiSelectedBlocks.length === 0) return;
-
-  //   const updatedActionTable = produce(actionTable, (draft) => {
-  //     multiSelectedBlocks.forEach(({ armorIndex, partIndex, blockIndex }) => {
-  //       const timeline = draft[armorIndex]?.[partIndex];
-  //       if (timeline && timeline[blockIndex]?.color) {
-  //         timeline[blockIndex].color.A = alphaValue;
-  //       }
-  //     });
-  //   });
-
-  //   dispatch(updateActionTable(updatedActionTable));
-  // };
 
   const handleZoom = (event) => {
     setZoomLevel(Math.floor(event.target.value));
@@ -1314,12 +1269,16 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     }
   };
 
-  const applyGradientEffect = (startBrightness, interval, endBrightness) => {
+  /**
+   * 亮度階梯：從選取的色塊開始往後，把連續色塊的透明度依 start → end 逐階套用。
+   *
+   * @returns {boolean} 是否真的套用了（沒有恰好選一個色塊時回傳 false，讓面板留著）
+   */
+  const applyGradientEffect = (startPercent, stepPercent, endPercent) => {
     if (multiSelectedBlocks.length !== 1) {
-      console.warn(
-        "Gradient effect is only valid when exactly one block is selected.",
-      );
-      return;
+      // 原本只 console.warn，使用者按下 Apply 會完全沒有反應——改成看得見的提示
+      alert("請先選取「一個」色塊，再套用亮度階梯。");
+      return false;
     }
 
     const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
@@ -1329,25 +1288,29 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       if (!Array.isArray(timeline)) return;
 
       // 判斷方向：end 大於 start 就遞增，否則遞減
-      const ascending = endBrightness > startBrightness;
-      let current = startBrightness;
+      const ascending = endPercent > startPercent;
+      let current = startPercent;
       let step = 0;
 
-      // 用 while 讓 current 每次 + 或 - interval，直到過了 endBrightness
+      // 用 while 讓 current 每次 + 或 - stepPercent，直到過了 endPercent
       while (
-        (ascending && current <= endBrightness) ||
-        (!ascending && current >= endBrightness)
+        (ascending && current <= endPercent) ||
+        (!ascending && current >= endPercent)
       ) {
+        // stride 2 = 黑哨兵模型下「一個視覺色塊 = 顏色點 + 黑點」兩個 keyframe
+        // （與檔案其他處的 blockIndex + 2 一致）。Phase 5 原生化 segment 後
+        // 這裡會改成「往後第 N 個 segment」。
         const idx = blockIndex + step * 2;
         if (timeline[idx]) {
           timeline[idx].color.A = current / 100;
         }
-        current += ascending ? interval : -interval;
+        current += ascending ? stepPercent : -stepPercent;
         step += 1;
       }
     });
 
     dispatch(updateActionTable(updated));
+    return true;
   };
 
   const handleShiftStep = () => {
@@ -1727,10 +1690,21 @@ function AudioPlayer({ setButtonState, timelineRef }) {
               >
                 頻閃 (B)
               </div>
+
+              {/* 亮度階梯：從選取的色塊往後，把連續色塊的透明度做成階梯 */}
+              <div
+                className="effect-menu-item"
+                onClick={() => {
+                  setEffectType("gradient");
+                  setGradientSettingsVisible(true);
+                }}
+              >
+                亮度階梯
+              </div>
             </div>
           )}
 
-          {/* 二級設定 panel：只在選了 gradient 時顯示 */}
+          {/* 二級設定 panel：只在選了亮度階梯時顯示 */}
           {gradientSettingsVisible && effectType === "gradient" && (
             <div className="gradient-settings-popup">
               {/* 起始亮度 */}
@@ -1750,12 +1724,12 @@ function AudioPlayer({ setButtonState, timelineRef }) {
                 })}
               </select>
 
-              {/* 間隔 */}
+              {/* 每一階的亮度增量 */}
               <label>間隔：</label>
               <select
                 className="dropdown-select"
-                value={interval}
-                onChange={(e) => setInterval(Number(e.target.value))}
+                value={brightnessStep}
+                onChange={(e) => setBrightnessStep(Number(e.target.value))}
               >
                 {[10, 20].map((v) => (
                   <option key={v} value={v}>
@@ -1783,13 +1757,18 @@ function AudioPlayer({ setButtonState, timelineRef }) {
               <div className="gradient-settings-actions">
                 <button
                   onClick={() => {
-                    applyGradientEffect(
-                      startBrightness,
-                      interval,
-                      endBrightness,
-                    );
+                    if (
+                      !applyGradientEffect(
+                        startBrightness,
+                        brightnessStep,
+                        endBrightness,
+                      )
+                    ) {
+                      return; // 沒有恰好選一個色塊：留著面板讓使用者去選
+                    }
                     setGradientSettingsVisible(false);
                     setEffectMenuVisible(false);
+                    setEffectType(null);
                   }}
                 >
                   Apply
@@ -1799,6 +1778,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
                     // 什麼都不做，只關掉面板
                     setGradientSettingsVisible(false);
                     setEffectMenuVisible(false);
+                    setEffectType(null);
                   }}
                 >
                   Cancel
@@ -1960,7 +1940,6 @@ function AudioPlayer({ setButtonState, timelineRef }) {
             <Waveform
               isPlaying={isPlaying}
               setIsPlaying={setIsPlaying}
-              // audioRef={audioRef}
               scrollRef={scrollRef}
               sourceNode={sourceNode}
               setSourceNode={setSourceNode}

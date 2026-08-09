@@ -50,7 +50,6 @@ const AudioWaveform = ({
   url,
   isPlaying,
   setIsPlaying,
-  // audioRef,
   zoomValue,
   scrollRef,
   volume,
@@ -298,12 +297,6 @@ const AudioWaveform = ({
   //   return () => cancelAnimationFrame(animationFrameRef.current); // 清理動畫
   // }, [isPlaying, zoomValue]);
 
-  // useEffect(() => {
-  //   if (audioRef.current) {
-  //     audioRef.current.playbackRate = playbackRate || 1;
-  //   }
-  // }, [playbackRate]);
-
   function drawWaveforms(canvas) {
     const context = canvas.getContext("2d");
     const height = canvas.height;
@@ -371,16 +364,6 @@ const AudioWaveform = ({
   }
 
   // 處理波形點擊，更新播放時間
-  // const handleWaveformClick = (event) => {
-  //   const container = containerRef.current;
-  //   const rect = container.getBoundingClientRect();
-  //   const hoverX = event.clientX - rect.left;
-  //   const progress = hoverX / container.offsetWidth;
-  //   const newTime = Math.floor((progress * duration) / 50) * 50; // 根據進度計算新時間
-  //   dispatch(updateCurrentTime(newTime)); // 更新 Redux
-  //   audioRef.current.currentTime = newTime / 1000; // 更新 audio 元素的播放時間
-  // };
-
   const handleWaveformClick = (e) => {
     if (!audioBuffer) return;
     const rect = containerRef.current.getBoundingClientRect();
@@ -421,16 +404,6 @@ const AudioWaveform = ({
 
   return (
     <div>
-      {/* <audio
-        ref={audioRef}
-        src={url}
-        onEnded={() => {
-          setIsPlaying(false);
-          dispatch(updateCurrentTime(0));
-        }}
-        controls
-        style={{ display: "none" }}
-      /> */}
       <canvas
         ref={canvasRef}
         width={scrollRef.current?.clientWidth}
@@ -495,20 +468,14 @@ const AudioWaveform = ({
 function Wave({
   isPlaying,
   setIsPlaying,
-  // audioRef,
   zoomValue,
   scrollRef,
-  currentTime,
-  setCurrentTime,
   containerRef,
   sourceNode,
   setSourceNode,
   volume,
   onTimeUpdate,
 }) {
-  // useEffect(() => {
-  //   audioRef.current.volume = volume;
-  // }, [volume, audioRef]);
   // const musicIndex = useSelector((state) => state.profiles.data?.music_index ?? 2);
   const musicFilename = useSelector((state) => state.profiles.data?.music_filename || "2026_funding.mp3");
   const userName = useSelector((state) => state.profiles.user);
@@ -522,15 +489,12 @@ function Wave({
         url={resolvedUrl}
         isPlaying={isPlaying}
         setIsPlaying={setIsPlaying}
-        // audioRef={audioRef}
         sourceNode={sourceNode}
         setSourceNode={setSourceNode}
         scrollRef={scrollRef}
         containerRef={containerRef}
         zoomValue={zoomValue}
         volume={volume}
-        currentTime={currentTime}
-        setCurrentTime={setCurrentTime}
         onTimeUpdate={onTimeUpdate}
       />
     </div>
