@@ -12,11 +12,8 @@ import "./audioplayer.css";
 import Waveform from "./waveform.jsx";
 import MusicSelector from "./MusicSelector.jsx";
 import PlayerControls from "./PlayerControls.jsx";
-import {
-  useTimeShift,
-  ShiftToolButton,
-  ShiftMarkers,
-} from "./ShiftTool.jsx";
+import { useTimeShift, ShiftToolButton, ShiftMarkers } from "./ShiftTool.jsx";
+import EffectMenu, { useLightEffects } from "./EffectMenu.jsx";
 import { musicNames } from "./musicData.js";
 import Timeline from "./Timeline.jsx";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -27,7 +24,6 @@ import {
   faArrowLeft,
   faScissors,
   faCircleHalfStroke,
-  faWandMagicSparkles,
 } from "@fortawesome/free-solid-svg-icons";
 import { produce } from "immer";
 import {
@@ -73,15 +69,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   const blackthreshold = LEGACY_BLACK_SENTINEL_MS;
   const elRefs = useRef([]);
 
-  const [effectMenuVisible, setEffectMenuVisible] = useState(false);
-  const [effectType, setEffectType] = useState(null); // 'gradient'（亮度階梯設定面板）
-  const [gradientSettingsVisible, setGradientSettingsVisible] = useState(false);
-
-  // 亮度階梯的設定：從 startBrightness 每次加減 brightnessStep 直到 endBrightness
-  // （brightnessStep 不可命名為 interval —— 那會遮蔽全域的 window.setInterval）
-  const [startBrightness, setStartBrightness] = useState(10);
-  const [brightnessStep, setBrightnessStep] = useState(10);
-  const [endBrightness, setEndBrightness] = useState(100);
+  const effects = useLightEffects(); // 漸變/頻閃/亮度階梯：選單與快捷鍵共用
   const shift = useTimeShift(); // 區間平移：按鈕與時間軸標記共用同一份狀態
   const [uniformAlphaVisible, setUniformAlphaVisible] = useState(false);
   const uniformAlphaRef = useRef(null);
@@ -366,12 +354,12 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       event.preventDefault();
       if (multiSelectedBlocks.length === 1) {
         const userInput = window.prompt(
-          "請輸入頻閃間隔 (ms)，必須為 50 的倍數：",
+          `請輸入頻閃間隔 (ms)，必須為 ${TICK_MS} 的倍數：`,
           "100",
         );
         if (userInput !== null) {
           // 如果使用者沒點取消
-          applyBlinkEffect(userInput);
+          effects.applyBlink(userInput);
         }
       } else {
         console.warn("Please select exactly one block to use Blink effect.");
@@ -438,7 +426,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       // Add shortcut for 'L' key
       event.preventDefault();
       console.log("L key pressed. Toggling linear property.");
-      handleSetLinear();
+      effects.toggleLinear();
     }
 
     if (["1", "2", "3", "4", "5", "6", "7", "8"].includes(event.key)) {
@@ -670,97 +658,6 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   const ClickedDelete = () => {
     if (multiSelectedBlocks.length === 0) return;
     handleMultiDelete();
-  };
-
-  const handleSetLinear = () => {
-    if (multiSelectedBlocks.length === 0) return;
-
-    const updatedActionTable = produce(actionTable, (draft) => {
-      multiSelectedBlocks.forEach(({ armorIndex, partIndex, blockIndex }) => {
-        const block = draft[armorIndex]?.[partIndex]?.[blockIndex];
-        if (block) {
-          block.linear = block.linear === 1 ? 0 : 1;
-        }
-      });
-    });
-
-    dispatch(updateActionTable(updatedActionTable));
-  };
-
-  const applyBlinkEffect = (periodInput) => {
-    const period = parseInt(periodInput, 10);
-    if (isNaN(period) || period <= 0 || period % 50 !== 0) {
-      alert("請輸入 50 的倍數！");
-      return;
-    }
-
-    const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
-
-    const updatedActionTable = produce(actionTable, (draft) => {
-      const timeline = draft[armorIndex][partIndex];
-      const viewEntry = timeline[blockIndex];
-      if (!viewEntry) return;
-
-      // 1. 強制校正起始點到 50ms 網格
-      const startTime = Math.round(viewEntry.time / 50) * 50;
-      const viewNextEntry = timeline[blockIndex + 1];
-      const totalDuration = (viewNextEntry?.time ?? duration) - viewEntry.time;
-      const activeBlock = timeline[blockIndex];
-      const isLinear = activeBlock.linear === 1;
-
-      let targetEndBlock = null;
-      if (isLinear) {
-        for (let i = blockIndex + 1; i < timeline.length; i++) {
-          const p = timeline[i];
-          if (p.color.R !== 0 || p.color.G !== 0 || p.color.B !== 0) {
-            targetEndBlock = p;
-            break;
-          }
-        }
-      }
-
-      const blinkCount = Math.floor(totalDuration / period);
-      const newPoints = [];
-
-      for (let i = 0; i < blinkCount; i++) {
-        const baseTime = startTime + i * period; // 這裡絕對是 50 的倍數
-        let currentColor = { ...activeBlock.color };
-
-        if (isLinear && targetEndBlock) {
-          const f =
-            (baseTime - activeBlock.time) /
-            (targetEndBlock.time - activeBlock.time);
-          currentColor = {
-            R: Math.round(
-              activeBlock.color.R * (1 - f) + targetEndBlock.color.R * f,
-            ),
-            G: Math.round(
-              activeBlock.color.G * (1 - f) + targetEndBlock.color.G * f,
-            ),
-            B: Math.round(
-              activeBlock.color.B * (1 - f) + targetEndBlock.color.B * f,
-            ),
-            A: activeBlock.color.A * (1 - f) + targetEndBlock.color.A * f,
-          };
-        }
-
-        // ✅ 彩色點：絕對對齊 50ms
-        newPoints.push({ time: baseTime, color: currentColor, linear: 0 });
-
-        // ✅ 黑色緩衝點：保留 10ms 縫隙（這點不會是 50 倍數，但能維持閃爍感）
-        newPoints.push({
-          time: baseTime + period - blackthreshold,
-          color: { R: 0, G: 0, B: 0, A: 1 },
-          linear: 0,
-        });
-      }
-
-      timeline.splice(blockIndex, 1, ...newPoints);
-      timeline.sort((a, b) => a.time - b.time);
-    });
-
-    dispatch(updateActionTable(removeDuplicateBlackBlocks(updatedActionTable)));
-    setEffectMenuVisible(false);
   };
 
   const ClickedColorChange = () => {
@@ -1114,60 +1011,6 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     setBrightness(alphaValue);
   };
 
-  const handleEffect = () => {
-    // 切換最外層選單
-    setEffectMenuVisible((vis) => !vis);
-    // 如果收起時一併隱藏設定 panel
-    if (effectMenuVisible) {
-      setGradientSettingsVisible(false);
-      setEffectType(null);
-    }
-  };
-
-  /**
-   * 亮度階梯：從選取的色塊開始往後，把連續色塊的透明度依 start → end 逐階套用。
-   *
-   * @returns {boolean} 是否真的套用了（沒有恰好選一個色塊時回傳 false，讓面板留著）
-   */
-  const applyGradientEffect = (startPercent, stepPercent, endPercent) => {
-    if (multiSelectedBlocks.length !== 1) {
-      // 原本只 console.warn，使用者按下 Apply 會完全沒有反應——改成看得見的提示
-      alert("請先選取「一個」色塊，再套用亮度階梯。");
-      return false;
-    }
-
-    const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
-
-    const updated = produce(actionTable, (draft) => {
-      const timeline = draft[armorIndex][partIndex];
-      if (!Array.isArray(timeline)) return;
-
-      // 判斷方向：end 大於 start 就遞增，否則遞減
-      const ascending = endPercent > startPercent;
-      let current = startPercent;
-      let step = 0;
-
-      // 用 while 讓 current 每次 + 或 - stepPercent，直到過了 endPercent
-      while (
-        (ascending && current <= endPercent) ||
-        (!ascending && current >= endPercent)
-      ) {
-        // stride 2 = 黑哨兵模型下「一個視覺色塊 = 顏色點 + 黑點」兩個 keyframe
-        // （與檔案其他處的 blockIndex + 2 一致）。Phase 5 原生化 segment 後
-        // 這裡會改成「往後第 N 個 segment」。
-        const idx = blockIndex + step * 2;
-        if (timeline[idx]) {
-          timeline[idx].color.A = current / 100;
-        }
-        current += ascending ? stepPercent : -stepPercent;
-        step += 1;
-      }
-    });
-
-    dispatch(updateActionTable(updated));
-    return true;
-  };
-
   const handleUniformAlphaButtonClick = (e) => {
     e?.stopPropagation();
 
@@ -1322,136 +1165,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
           )}
         </div>
         <ShiftToolButton shift={shift} />
-        <div className="effect-wrapper">
-          <button className="effect-button" onClick={handleEffect}>
-            <FontAwesomeIcon icon={faWandMagicSparkles} size="lg" />
-            <span className="tooltip">Effect</span>
-          </button>
-
-          {/* 一級選單 */}
-          {effectMenuVisible && (
-            <div className="effect-menu">
-              <div
-                className="effect-menu-item"
-                onClick={() => {
-                  handleSetLinear();
-                  setEffectMenuVisible(false);
-                }}
-              >
-                漸變 (L)
-              </div>
-
-              <div
-                className="effect-menu-item"
-                onClick={() => {
-                  const userInput = window.prompt(
-                    "請輸入頻閃間隔 (ms)，必須為 50 的倍數：",
-                    "100",
-                  );
-                  if (userInput !== null) {
-                    applyBlinkEffect(userInput);
-                  }
-                }}
-              >
-                頻閃 (B)
-              </div>
-
-              {/* 亮度階梯：從選取的色塊往後，把連續色塊的透明度做成階梯 */}
-              <div
-                className="effect-menu-item"
-                onClick={() => {
-                  setEffectType("gradient");
-                  setGradientSettingsVisible(true);
-                }}
-              >
-                亮度階梯
-              </div>
-            </div>
-          )}
-
-          {/* 二級設定 panel：只在選了亮度階梯時顯示 */}
-          {gradientSettingsVisible && effectType === "gradient" && (
-            <div className="gradient-settings-popup">
-              {/* 起始亮度 */}
-              <label>起始亮度：</label>
-              <select
-                className="dropdown-select"
-                value={startBrightness}
-                onChange={(e) => setStartBrightness(Number(e.target.value))}
-              >
-                {[...Array(10)].map((_, i) => {
-                  const v = (i + 1) * 10;
-                  return (
-                    <option key={v} value={v}>
-                      {v}%
-                    </option>
-                  );
-                })}
-              </select>
-
-              {/* 每一階的亮度增量 */}
-              <label>間隔：</label>
-              <select
-                className="dropdown-select"
-                value={brightnessStep}
-                onChange={(e) => setBrightnessStep(Number(e.target.value))}
-              >
-                {[10, 20].map((v) => (
-                  <option key={v} value={v}>
-                    {v} %
-                  </option>
-                ))}
-              </select>
-
-              {/* 結束亮度 */}
-              <label>結束亮度：</label>
-              <select
-                className="dropdown-select"
-                value={endBrightness}
-                onChange={(e) => setEndBrightness(Number(e.target.value))}
-              >
-                {[...Array(10)].map((_, i) => {
-                  const v = (i + 1) * 10;
-                  return (
-                    <option key={v} value={v}>
-                      {v}%
-                    </option>
-                  );
-                })}
-              </select>
-              <div className="gradient-settings-actions">
-                <button
-                  onClick={() => {
-                    if (
-                      !applyGradientEffect(
-                        startBrightness,
-                        brightnessStep,
-                        endBrightness,
-                      )
-                    ) {
-                      return; // 沒有恰好選一個色塊：留著面板讓使用者去選
-                    }
-                    setGradientSettingsVisible(false);
-                    setEffectMenuVisible(false);
-                    setEffectType(null);
-                  }}
-                >
-                  Apply
-                </button>
-                <button
-                  onClick={() => {
-                    // 什麼都不做，只關掉面板
-                    setGradientSettingsVisible(false);
-                    setEffectMenuVisible(false);
-                    setEffectType(null);
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+        <EffectMenu effects={effects} />
         <div className="timeline-controls">
           <button className="timeline-left" onClick={handleGoLeft}>
             <FontAwesomeIcon icon={faArrowLeft} size="lg" />

@@ -246,6 +246,19 @@ describe("效果選單與亮度階梯", () => {
     expect(menuItem("亮度階梯")).toBeTruthy();
   });
 
+  it("沒有選取色塊時點頻閃不會炸掉", () => {
+    // 選單這條路徑原本沒有守衛，直接解構 multiSelectedBlocks[0] 會 throw
+    //（只有鍵盤的 B 有檢查 length === 1）
+    globalThis.prompt.mockReturnValueOnce("100");
+    const store = createTestStore();
+    mount(store);
+    openEffectMenu();
+
+    const before = JSON.stringify(timelineOf(store));
+    fireEvent.click(menuItem("頻閃 (B)"));
+    expect(JSON.stringify(timelineOf(store))).toBe(before);
+  });
+
   it("點「亮度階梯」會打開設定面板", () => {
     mount();
     openEffectMenu();
