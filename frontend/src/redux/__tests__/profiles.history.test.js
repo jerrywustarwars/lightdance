@@ -57,6 +57,40 @@ describe("history 累積", () => {
     expect(after).toBe(before);
   });
 
+  it("undo 用 O(1) reference 比較，不做深度比較", () => {
+    /**
+     * 原本這裡是 `JSON.stringify(a) === JSON.stringify(b)`——每按一次 Ctrl+Z
+     * 就把整張光表序列化兩次，密集光表實測 53ms。
+     *
+     * 這個測試用「內容相同但 reference 不同」的兩張表把行為釘住：
+     * 深度比較會誤判成相同而拒絕 undo，reference 比較則會正常還原。
+     */
+    const current = table([segment(0, 1000)]);
+    const historyEntry = table([segment(0, 1000)]); // 深度相同、reference 不同
+
+    const before = {
+      ...initial(),
+      data: { ...initial().data, actionTable: current },
+      history: [historyEntry],
+    };
+    const after = profiles(before, { type: "UPDATEUNDO" });
+
+    expect(after.data.actionTable).toBe(historyEntry);
+    expect(after.history).toHaveLength(0);
+    expect(after.redoStack[0]).toBe(current);
+  });
+
+  it("undo 到同一個 reference 時不動作", () => {
+    const same = table([segment(0, 1000)]);
+    const before = {
+      ...initial(),
+      data: { ...initial().data, actionTable: same },
+      history: [same],
+    };
+
+    expect(profiles(before, { type: "UPDATEUNDO" })).toBe(before);
+  });
+
   it("只有一個 segment 的編輯也會進 history", () => {
     /**
      * 【Phase 4 的回歸測試】

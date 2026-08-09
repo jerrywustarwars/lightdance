@@ -61,7 +61,9 @@ export function toSegmentTableIncremental(
   prevSegmentTable,
   { duration } = {},
 ) {
-  return nextKeyframeTable.map((armor, armorIdx) =>
+  let changed = false;
+
+  const nextSegmentTable = nextKeyframeTable.map((armor, armorIdx) =>
     armor.map((timeline, partIdx) => {
       const prevTimeline = prevKeyframeTable?.[armorIdx]?.[partIdx];
       const prevSegments = prevSegmentTable?.[armorIdx]?.[partIdx];
@@ -70,7 +72,29 @@ export function toSegmentTableIncremental(
       // 連 id 都保住
       if (prevSegments && timeline === prevTimeline) return prevSegments;
 
+      changed = true;
       return keyframesToSegments(timeline, { duration });
     }),
   );
+
+  // 沒有任何部位變動就回傳**原本那張表**，而不是內容相同的新陣列。
+  //
+  // 這件事看起來只是省一次配置，其實決定了 undo 對不對：reducer 靠
+  // `newActionTable === state.data.actionTable` 這個 O(1) 比較判斷「這次
+  // dispatch 什麼都沒改」而跳過 history。外層每次都給新陣列的話，短路永遠
+  // 不成立——無效的剪下、對已經是黑的色塊按刪除、拖回原位，全都會佔掉一格
+  // undo，使用者會遇到「Ctrl+Z 按一次沒反應」。
+  //
+  // 形狀變了（部位數不同）也算變動，否則會把補齊 7×22 的結果吃掉。
+  if (!changed && sameShape(nextSegmentTable, prevSegmentTable)) {
+    return prevSegmentTable;
+  }
+
+  return nextSegmentTable;
+}
+
+/** 兩張表的舞者數與各自的部位數是否完全相同 */
+function sameShape(a, b) {
+  if (!Array.isArray(b) || a.length !== b.length) return false;
+  return a.every((armor, idx) => armor.length === b[idx]?.length);
 }

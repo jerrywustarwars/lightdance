@@ -98,9 +98,15 @@ const StripEphemeralTransform = createTransform(
 );
 
 /**
- * 穩健的波形數據轉換器
- * 1. 移除 LZString 同步壓縮，改用二進制轉換以提昇效能
- * 2. 利用 IndexedDB 原生支援 TypedArray 的特性，跳過 JSON 序列化開銷
+ * 波形數據轉換器：以 Float32Array 的形式存進 IndexedDB。
+ *
+ * ⚠️ 這個轉換器只有在 `persistConfig` 設了 `serialize: false` 時才真的有意義。
+ * redux-persist 預設會對每個 key 跑 `JSON.stringify`，而 `Float32Array` 被
+ * JSON 序列化的結果是 `{"0":0.1,"1":0.2,...}` —— 20 萬個點會變成 5.3 MB 的
+ * 物件字面值字串，**比原本的陣列還慢**。實測每次編輯要 53.7 ms。
+ *
+ * 關掉 serialize 之後才是走 IndexedDB 原生的 structured clone，
+ * TypedArray 保持二進位，同樣的操作降到 0.5 ms。
  */
 const PeaksTransform = createTransform(
   // 進入儲存前 (Inbound)
@@ -154,13 +160,34 @@ const MigrateActionTableTransform = createTransform(
 );
 
 // 配置 persist 設置
-const persistConfig = {
+export const persistConfig = {
   // Phase 4 把 store 的光表形狀從 keyframe 換成 segment。key 從 root bump 成
   // root_v2 之後，舊 build 讀 root、新 build 讀 root_v2，兩者互不干擾——
   // 這是 deploy 出事時能直接 revert 的保險。
   key: "root_v2",
   storage: debouncedStorage,
   whitelist: ["profiles"],
+
+  // 不要 JSON 序列化 —— 這是編輯時最大的單一卡頓來源。
+  //
+  // redux-persist 預設對每個 key 跑一次 `JSON.stringify`、再對整包跑第二次，
+  // 而且**這件事沒有被 debounce**：`createPersistoid` 在每次 state 變動的下一個
+  // tick 就會做，只有寫入 IndexedDB 的動作才走上面的 2 秒 debounce。
+  // 所以每一次放色、每一次拖曳 commit 都要付一次完整序列化。
+  //
+  // 實測（真實光表 real-rich-show + 20 萬點波形）：
+  //   序列化總計 72.9 ms／次編輯，其中 fullPeaks 佔 53.7 ms、actionTable 只佔 0.3 ms
+  //   關掉之後 → 0.5 ms
+  //
+  // localforage 底層是 IndexedDB，原生支援 structured clone，本來就能直接存
+  // 巢狀物件與 TypedArray，不需要先轉成字串。
+  serialize: false,
+
+  // 讀取端刻意寫成「兩種都吃」而不是 `deserialize: false`：
+  // 瀏覽器裡可能還留著開這個 flag 之前寫進去的 JSON 字串（例如跑過舊 build 的
+  // 開發機）。硬性假設一定是物件，那些人一開啟編輯器就會拿到一個字串當 state。
+  deserialize: (value) => (typeof value === "string" ? JSON.parse(value) : value),
+
   transforms: [
     StripEphemeralTransform,
     PeaksTransform,

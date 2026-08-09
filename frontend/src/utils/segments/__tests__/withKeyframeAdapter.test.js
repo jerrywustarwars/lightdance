@@ -95,22 +95,50 @@ describe("toSegmentTableIncremental", () => {
     expect(nextSegments[1][1][0].id).toBe(prevSegments[1][1][0].id);
   });
 
-  it("完全沒改動時每個部位都沿用原本的 reference", () => {
+  it("完全沒改動時連外層 table 都回傳原本的 reference", () => {
+    /**
+     * 這條守的是 undo 的正確性，不只是省一次配置。
+     *
+     * reducer 靠 `newActionTable === state.data.actionTable` 這個 O(1) 比較
+     * 判斷「這次 dispatch 什麼都沒改」而跳過 history。外層每次都給新陣列的話
+     * 短路永遠不成立——無效的剪下、對已經是黑的色塊按刪除、拖曳回原位，
+     * 全都會佔掉一格 undo。
+     */
     const prevSegments = makeSegmentTable();
     const prevKeyframes = toKeyframeTable(prevSegments, DURATION);
 
+    // immer 對「什麼都沒改」的 produce 回傳同一個 reference
+    const noop = produce(prevKeyframes, () => {});
+    expect(noop).toBe(prevKeyframes);
+
     const nextSegments = toSegmentTableIncremental(
-      prevKeyframes,
+      noop,
       prevKeyframes,
       prevSegments,
       { duration: DURATION },
     );
 
-    nextSegments.forEach((armor, a) =>
-      armor.forEach((segments, p) => {
-        expect(segments).toBe(prevSegments[a][p]);
-      }),
+    expect(nextSegments).toBe(prevSegments);
+  });
+
+  it("形狀改變（補齊部位）不會被誤判成沒變動", () => {
+    const prevSegments = makeSegmentTable();
+    const prevKeyframes = toKeyframeTable(prevSegments, DURATION);
+
+    // 多一個部位：內容雖然都沿用，但形狀不同，必須回傳新表
+    const widened = prevKeyframes.map((armor, a) =>
+      a === 0 ? [...armor, []] : armor,
     );
+
+    const nextSegments = toSegmentTableIncremental(
+      widened,
+      prevKeyframes,
+      prevSegments,
+      { duration: DURATION },
+    );
+
+    expect(nextSegments).not.toBe(prevSegments);
+    expect(nextSegments[0]).toHaveLength(prevSegments[0].length + 1);
   });
 
   it("keyframe → segment → keyframe 達到不動點（冪等）", () => {
