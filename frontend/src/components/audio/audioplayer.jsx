@@ -12,6 +12,11 @@ import "./audioplayer.css";
 import Waveform from "./waveform.jsx";
 import MusicSelector from "./MusicSelector.jsx";
 import PlayerControls from "./PlayerControls.jsx";
+import {
+  useTimeShift,
+  ShiftToolButton,
+  ShiftMarkers,
+} from "./ShiftTool.jsx";
 import { musicNames } from "./musicData.js";
 import Timeline from "./Timeline.jsx";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -23,9 +28,6 @@ import {
   faScissors,
   faCircleHalfStroke,
   faWandMagicSparkles,
-  faCheck,
-  faTimes,
-  faArrowsLeftRight,
 } from "@fortawesome/free-solid-svg-icons";
 import { produce } from "immer";
 import {
@@ -37,47 +39,11 @@ import {
 import { set } from "lodash";
 import { TICK_MS, LEGACY_BLACK_SENTINEL_MS } from "../../constants/time.js";
 import { insertColorKeyframes } from "../../utils/actionTable/insertColorKeyframes.js";
+import {
+  ensureBlackBefore,
+  removeDuplicateBlackBlocks,
+} from "../../utils/actionTable/blackSentinel.js";
 
-const ensureBlackBefore = (
-  timeline,
-  targetTime,
-  threshold = LEGACY_BLACK_SENTINEL_MS,
-) => {
-  const blackTime = targetTime - threshold;
-  if (blackTime <= 0) return;
-
-  // 尋找 blackTime 附近的點
-  const existingIdx = timeline.findIndex(
-    (p) => Math.abs(p.time - blackTime) < 5,
-  );
-
-  if (existingIdx !== -1) {
-    // 如果已經有黑點就不用動，但如果是有顏色的點，就把他變黑
-    const p = timeline[existingIdx];
-    if (p.color.R !== 0 || p.color.G !== 0 || p.color.B !== 0) {
-      p.color = { R: 0, G: 0, B: 0, A: 1 };
-      p.linear = 0;
-    }
-  } else {
-    // 檢查 blackTime 之前的最後一個點
-    const prevPoints = timeline.filter((p) => p.time < blackTime);
-    if (prevPoints.length > 0) {
-      const lastPoint = prevPoints[prevPoints.length - 1];
-      // 如果前一個點不是黑色的，則必須補一個黑點
-      if (
-        lastPoint.color.R !== 0 ||
-        lastPoint.color.G !== 0 ||
-        lastPoint.color.B !== 0
-      ) {
-        timeline.push({
-          time: blackTime,
-          color: { R: 0, G: 0, B: 0, A: 1 },
-          linear: 0,
-        });
-      }
-    }
-  }
-};
 function AudioPlayer({ setButtonState, timelineRef }) {
   const dispatch = useDispatch();
   const data = useSelector((state) => state.profiles.data);
@@ -116,8 +82,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   const [startBrightness, setStartBrightness] = useState(10);
   const [brightnessStep, setBrightnessStep] = useState(10);
   const [endBrightness, setEndBrightness] = useState(100);
-  const [shiftStep, setShiftStep] = useState(0); // 0: 關閉, 1: 選起始, 2: 選結束, 3: 選目標
-  const [shiftTimes, setShiftTimes] = useState({ start: 0, end: 0, target: 0 });
+  const shift = useTimeShift(); // 區間平移：按鈕與時間軸標記共用同一份狀態
   const [uniformAlphaVisible, setUniformAlphaVisible] = useState(false);
   const uniformAlphaRef = useRef(null);
 
@@ -798,33 +763,6 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     setEffectMenuVisible(false);
   };
 
-  const removeDuplicateBlackBlocks = (actionTable) => {
-    return produce(actionTable, (draft) => {
-      Object.values(draft).forEach((armor) => {
-        Object.keys(armor).forEach((partKey) => {
-          let timeline = armor[partKey];
-          if (!Array.isArray(timeline)) return;
-
-          armor[partKey] = timeline.filter((block, index) => {
-            const isBlack =
-              block.color.R === 0 && block.color.G === 0 && block.color.B === 0;
-            if (!isBlack) return true;
-
-            const prev = timeline[index - 1];
-            if (prev) {
-              const prevIsBlack =
-                prev.color.R === 0 && prev.color.G === 0 && prev.color.B === 0;
-              // 如果連續兩個黑點，或者是時間點重疊/太接近的黑點，刪除後者
-              if (prevIsBlack || Math.abs(block.time - prev.time) < 5)
-                return false;
-            }
-            return true;
-          });
-        });
-      });
-    });
-  };
-
   const ClickedColorChange = () => {
     console.log("Color Change clicked");
 
@@ -1230,135 +1168,6 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     return true;
   };
 
-  const handleShiftStep = () => {
-    const currentT = Math.floor(currentTime / 50) * 50; // 對齊 50ms 網格
-
-    if (shiftStep === 0) {
-      setShiftStep(1);
-    } else if (shiftStep === 1) {
-      setShiftTimes((prev) => ({ ...prev, start: currentT }));
-      setShiftStep(2);
-    } else if (shiftStep === 2) {
-      if (currentT <= shiftTimes.start) {
-        alert("結束時間必須大於起始時間！");
-        return;
-      }
-      setShiftTimes((prev) => ({ ...prev, end: currentT }));
-      setShiftStep(3);
-    } else if (shiftStep === 3) {
-      executeTimeShift(shiftTimes.start, shiftTimes.end, currentT);
-      resetShift();
-    }
-  };
-
-  const resetShift = () => {
-    setShiftStep(0);
-    setShiftTimes({ start: 0, end: 0, target: 0 });
-  };
-
-  // 3. 核心資料搬移邏輯
-  const executeTimeShift = (start, end, target) => {
-    const safeStart = Math.floor(start / 50) * 50;
-    const safeEnd = Math.floor(end / 50) * 50;
-    const safeTarget = Math.floor(target / 50) * 50;
-
-    if (safeEnd <= safeStart) {
-      alert("結束時間必須大於起始時間！");
-      return;
-    }
-
-    const selectedTimes = [];
-
-    Object.values(actionTable || {}).forEach((armor) => {
-      Object.values(armor || {}).forEach((timeline) => {
-        if (!Array.isArray(timeline)) return;
-
-        timeline.forEach((p) => {
-          if (
-            p &&
-            typeof p.time === "number" &&
-            p.time >= safeStart &&
-            p.time <= safeEnd
-          ) {
-            selectedTimes.push(p.time);
-          }
-        });
-      });
-    });
-
-    if (selectedTimes.length === 0) {
-      alert("選取區間內沒有任何光點可以平移！");
-      return;
-    }
-
-    const globalFirstTime = Math.min(...selectedTimes);
-    const offset = safeTarget - globalFirstTime;
-
-    const updatedActionTable = produce(actionTable, (draft) => {
-      Object.keys(draft).forEach((armorIdx) => {
-        Object.keys(draft[armorIdx]).forEach((partIdx) => {
-          const timeline = draft[armorIdx][partIdx];
-
-          if (!Array.isArray(timeline)) return;
-
-          const moveIndices = [];
-
-          timeline.forEach((p, idx) => {
-            if (p.time >= safeStart && p.time <= safeEnd) {
-              moveIndices.push(idx);
-            }
-          });
-
-          if (moveIndices.length === 0) return;
-
-          const movedPoints = moveIndices.map((idx) => ({
-            ...timeline[idx],
-            color: { ...timeline[idx].color },
-            time: timeline[idx].time + offset,
-          }));
-
-          const newStart = Math.min(...movedPoints.map((p) => p.time));
-          const newEnd = Math.max(...movedPoints.map((p) => p.time));
-
-          const toRemove = new Set(moveIndices);
-
-          timeline.forEach((p, idx) => {
-            if (p.time >= newStart && p.time <= newEnd) {
-              toRemove.add(idx);
-            }
-          });
-
-          let nextTimeline = timeline.filter((_, idx) => !toRemove.has(idx));
-
-          nextTimeline = [...nextTimeline, ...movedPoints].sort(
-            (a, b) => a.time - b.time,
-          );
-
-          const firstColorPoint = movedPoints.find(
-            (p) => p.color.R !== 0 || p.color.G !== 0 || p.color.B !== 0,
-          );
-
-          if (firstColorPoint) {
-            ensureBlackBefore(
-              nextTimeline,
-              firstColorPoint.time,
-              blackthreshold,
-            );
-          }
-
-          draft[armorIdx][partIdx] = nextTimeline.sort(
-            (a, b) => a.time - b.time,
-          );
-        });
-      });
-    });
-
-    const cleanedActionTable = removeDuplicateBlackBlocks(updatedActionTable);
-
-    dispatch(updateActionTable(cleanedActionTable));
-    dispatch(updateCurrentTime(safeTarget));
-  };
-
   const handleUniformAlphaButtonClick = (e) => {
     e?.stopPropagation();
 
@@ -1512,36 +1321,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
             </div>
           )}
         </div>
-        <div className="shift-tool-wrapper">
-          {shiftStep === 0 ? (
-            <button
-              className="shift-main-button"
-              onClick={() => setShiftStep(1)}
-            >
-              <FontAwesomeIcon icon={faArrowsLeftRight} size="lg" />
-              <span className="tooltip">
-                Shift all light dance data within the interval
-              </span>
-            </button>
-          ) : (
-            <div className="shift-guide-panel">
-              <span className="shift-message">
-                {shiftStep === 1 &&
-                  `[1/3] 設定「起始點」: ${Math.floor(currentTime / 50) * 50}ms`}
-                {shiftStep === 2 &&
-                  `[2/3] 起始: ${shiftTimes.start}ms -> 設定「結束點」`}
-                {shiftStep === 3 &&
-                  `[3/3] 區塊: ${shiftTimes.start}~${shiftTimes.end}ms -> 設定「目標位置」`}
-              </span>
-              <button className="shift-confirm-btn" onClick={handleShiftStep}>
-                <FontAwesomeIcon icon={faCheck} /> 確定
-              </button>
-              <button className="shift-cancel-btn" onClick={resetShift}>
-                <FontAwesomeIcon icon={faTimes} /> 取消
-              </button>
-            </div>
-          )}
-        </div>
+        <ShiftToolButton shift={shift} />
         <div className="effect-wrapper">
           <button className="effect-button" onClick={handleEffect}>
             <FontAwesomeIcon icon={faWandMagicSparkles} size="lg" />
@@ -1734,22 +1514,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
             width: `${100 * zoomLevel}%`, // 根据 zoomValue 动态调整容器宽度
           }}
         >
-          {shiftStep >= 2 && (
-            <div
-              className="shift-marker start-marker"
-              style={{ left: `${(shiftTimes.start / duration) * 100}%` }}
-            >
-              <span className="marker-label">Start</span>
-            </div>
-          )}
-          {shiftStep >= 3 && (
-            <div
-              className="shift-marker end-marker"
-              style={{ left: `${(shiftTimes.end / duration) * 100}%` }}
-            >
-              <span className="marker-label">End</span>
-            </div>
-          )}
+          <ShiftMarkers shift={shift} />
           <div
             className="timeline-container"
             ref={timelineRef}

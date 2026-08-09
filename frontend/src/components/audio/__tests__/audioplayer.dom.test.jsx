@@ -120,7 +120,9 @@ describe("播放控制列", () => {
     expect(document.querySelector(".current-time-box").textContent).toBe(
       "0:05:000",
     );
-    expect(document.querySelector(".duration-box").textContent).toBe("0:10:000");
+    expect(document.querySelector(".duration-box").textContent).toBe(
+      "0:10:000",
+    );
   });
 });
 
@@ -166,6 +168,62 @@ describe("Shift + 數字：插入最愛顏色", () => {
     const before = JSON.stringify(timelineOf(store));
     pressKey("!", { shiftKey: true, code: "Digit1" });
     expect(JSON.stringify(timelineOf(store))).toBe(before);
+  });
+});
+
+describe("區間平移工具", () => {
+  it("三步驟導引依序前進，標記跟著出現", () => {
+    const store = createTestStore({ currentTime: 1000 });
+    mount(store);
+
+    // 步驟 0：只有一顆按鈕
+    fireEvent.click(
+      document.querySelector(".shift-tool-wrapper .shift-main-button"),
+    );
+    expect(document.querySelector(".shift-message").textContent).toContain(
+      "[1/3]",
+    );
+
+    // 步驟 1 → 2：記下起始點，時間軸出現 Start 標記
+    fireEvent.click(document.querySelector(".shift-confirm-btn"));
+    expect(document.querySelector(".shift-message").textContent).toContain(
+      "[2/3]",
+    );
+    expect(document.querySelector(".shift-marker.start-marker")).toBeTruthy();
+  });
+
+  it("結束點不大於起始點時擋下並留在原步驟", () => {
+    const store = createTestStore({ currentTime: 1000 });
+    mount(store);
+
+    fireEvent.click(
+      document.querySelector(".shift-tool-wrapper .shift-main-button"),
+    );
+    fireEvent.click(document.querySelector(".shift-confirm-btn")); // start = 1000
+    // 播放位置沒有前進，結束點會等於起始點
+    fireEvent.click(document.querySelector(".shift-confirm-btn"));
+
+    expect(document.querySelector(".shift-message").textContent).toContain(
+      "[2/3]",
+    );
+    expect(globalThis.alert).toHaveBeenCalled();
+  });
+
+  it("取消會收回導引面板與標記", () => {
+    const store = createTestStore({ currentTime: 1000 });
+    mount(store);
+
+    fireEvent.click(
+      document.querySelector(".shift-tool-wrapper .shift-main-button"),
+    );
+    fireEvent.click(document.querySelector(".shift-confirm-btn"));
+    fireEvent.click(document.querySelector(".shift-cancel-btn"));
+
+    expect(document.querySelector(".shift-guide-panel")).toBeFalsy();
+    expect(document.querySelector(".shift-marker")).toBeFalsy();
+    expect(
+      document.querySelector(".shift-tool-wrapper .shift-main-button"),
+    ).toBeTruthy();
   });
 });
 

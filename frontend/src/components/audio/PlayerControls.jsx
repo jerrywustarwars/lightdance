@@ -1,6 +1,10 @@
 import { useDispatch, useSelector } from "react-redux";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faPlay, faPause, faVolumeHigh } from "@fortawesome/free-solid-svg-icons";
+import {
+  faPlay,
+  faPause,
+  faVolumeHigh,
+} from "@fortawesome/free-solid-svg-icons";
 
 import { updatePlaybackRate } from "../../redux/actions.js";
 
