@@ -170,14 +170,42 @@ duration，同樣是全程熄滅卻產生不同長度的時間軸。已統一為
 
 非漸變差異 **0**；容許值 16 足夠。
 
-### Phase 3 audioplayer 拆件 + 鍵盤統一（L / 中風險 / 可與 Phase 2 平行，內部逐元件 PR）
+### Phase 3 audioplayer 拆件 + 鍵盤統一 ✅ 已完成
 
-純搬移拆分（handler **原樣搬**，不改寫——Phase 5 才 segment 化）：
+**audioplayer.jsx：1,992 → 368 行（-82%）**，測試 93 → 125。
 
-- [ ] `MusicSelector.jsx`、`PlayerControls.jsx`、`EffectMenu.jsx`、`ShiftTool.jsx`、`TrackToolbar.jsx`（吸收亮度 + `handleUniformSameColorAlphaChange`）、`CopyPasteManager`（Context，`isCopying` 不進 redux）、外殼 `AudioPlayer.jsx` — 狀態歸屬沿用 4 月版的表格（仍有效）
-- [ ] **單一 `KeyboardManager`**：合併 **3 個** document keydown listener（audioplayer L385-556、ControlPanel L104 W/S/A/D、ControlPanel L430 Ctrl+Z/Y）為宣告式 keymap；動手前先做鍵位對照表（含更正 #2 的 M/P/B）；更新 `docs/shortcuts.md`
-- [ ] Timeline.jsx 與 waveform.jsx 內部不動（留 Phase 5）
-- **每 PR 驗收**：golden 測試 + 完整手動 checklist（見文末）。
+- [x] **3a 元件層冒煙測試**（`05c9996`）：jsdom project + 真 Redux store，拆件前的安全網
+- [x] **3b 死碼清除 + 接回兩個功能**（`7eb55ea`）
+  - 刪：`audioRef` / `prevTimeRef` / `isExternalSeekRef` + 其 effect / `handleAlphaChoose` /
+    Waveform 死 prop / ControlPanel 的 `act` import / waveform 的 `<audio>` 殘骸
+  - **修好亮度階梯 popup**：`effectType` 從無被設成 `"gradient"` 的路徑，整塊 popup
+    與 `applyGradientEffect` 不可達 → 效果選單加第三項接回
+  - **修好 Shift+1~8 插入最愛顏色**：`Shift+1` 的 `event.key` 是 `"!"` 不是 `"1"`，
+    條件永遠不成立 → 改用 `event.code`。接回後發現 `favoriteColor[0].length` 在顏色盤
+    未載入時會 throw，抽 `favoriteColorAt()` 統一守衛（平鍵 1~8 那條本來就走得到）
+- [x] **3c 逐元件搬移**（`25d1721`…`f095e20`，一元件一 commit）
+  - `MusicSelector` / `PlayerControls` / `ShiftTool` / `EffectMenu` / `TrackToolbar` /
+    `CopyPasteManager` + 外殼
+  - 模式：**有快捷鍵的動作 = `useXxx()` hook（邏輯）+ 元件（UI）**，外殼呼叫一次
+    hook，按鈕與鍵盤共用同一組函式
+  - `isCopying` 留在 hook 裡，沒進 redux（純 UI 狀態）
+  - `ensureBlackBefore` / `removeDuplicateBlackBlocks` 移到
+    `utils/actionTable/blackSentinel.js`（標 `@deprecated`，Phase 5 整檔刪除）
+  - 順手修：選單的頻閃沒有守衛會 crash、亮度選項的浮點誤差
+- [x] **3d 鍵盤統一**（`aa8df69`）：三個 listener → `hooks/useKeyboardShortcuts.js`
+  宣告式 keymap；移除 `.timeline-container` 重複的 `onKeyDown`
+- [x] Timeline.jsx 與 waveform.jsx 內部不動（留 Phase 5）
+
+#### ⚠️ 保留下來的既有鍵位衝突（已加測試鎖住，修它是獨立變更）
+
+| 鍵 | 同時觸發 | 實際結果 |
+|---|---|---|
+| `Shift+←/→` | ±50ms **和** 跳到上/下個關鍵格 | 後者覆蓋前者 |
+| `Ctrl+1~8` | 套用最愛色 N **和** 設定透明度 N/10 | 兩個 handler 從**同一份 actionTable 快照**各自 produce 再 dispatch，後跑的透明度整份蓋掉最愛色 → **套色被靜默丟棄** |
+
+第二項比原本預期的更嚴重（不是「兩件事都發生」而是「其中一件被吃掉」）。
+
+> 待辦：`docs/shortcuts.md` 需補上「亮度階梯」與「Shift+1~8」兩個接回來的功能。
 
 ### Phase 4 資料模型切換（M 規模 / **高風險** / 單一原子 PR，凍結其他合併）
 

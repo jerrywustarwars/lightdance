@@ -108,6 +108,24 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 - **`backend/main.py`**：FastAPI 後端主程式
 - **`mongo-init/`**：資料庫初始化腳本
 
+#### 編輯器元件（Phase 3 拆件後）
+
+`components/audio/audioplayer.jsx` 現在只是外殼（狀態容器 + 版面組合）。
+有快捷鍵的功能一律拆成 **hook（邏輯）+ 元件（UI）**，外殼呼叫一次 hook，
+按鈕與鍵盤共用同一組函式：
+
+| 檔案 | hook | 內容 |
+|---|---|---|
+| `MusicSelector.jsx` | — | 音樂清單與切歌（完全自持） |
+| `PlayerControls.jsx` | — | 速度 / 播放 / 時間 / 縮放 / 音量 |
+| `ShiftTool.jsx` | `useTimeShift` | 區間平移（按鈕 + 時間軸標記） |
+| `EffectMenu.jsx` | `useLightEffects` | 漸變 / 頻閃 / 亮度階梯 |
+| `TrackToolbar.jsx` | `useTrackActions` | 導航 / 剪下 / 刪除 / 亮度 / 改色 / 統一透明度 |
+| `CopyPasteManager.jsx` | `useCopyPaste` | 五種複製貼上 + 複製模式 |
+| `hooks/useKeyboardShortcuts.js` | — | 全站唯一的 keydown 註冊點（宣告式 keymap） |
+
+`Timeline.jsx` 與 `waveform.jsx` 內部尚未拆（留給 Phase 5）。
+
 ### 文件檔案
 - **`README.md`**：專案說明文件（已針對 C++ 開發者優化）
 - **`docs/technical-analysis.md`**：詳細技術分析報告（架構、API、安全問題、改進路線圖）
@@ -199,6 +217,7 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 
 ## 更新記錄
 
+- **2026-08-09**：`refract` 分支完成重構 Phase 0–3。測試從 0 建到 125；audioplayer.jsx 從 1,992 行拆到 368 行（`components/audio/` 下 6 個新元件 + `hooks/useKeyboardShortcuts.js`）；segment 轉換器與 Phase 4 閘門測試就位
 - **2026-05-06**：修復區塊剪下失敗與紅線視覺偏移（blockIndex 語意統一、currentTime 同步、stale closure 消除、duration 溢出防護），更新 `docs/frontend-rendering-optimization.md`
 - **2026-05-04**：前端效能優化（rAF 三層分離、React.memo、persist 剝離、middleware 禁用），新增 `docs/frontend-rendering-optimization.md`
 - **2026-05-03**：重整 docs/ 目錄，新增資料流管道與後端管理文檔，更新 CLAUDE.md 架構圖與引用
