@@ -162,6 +162,26 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 2. 增加適當的註解說明變更原因
 3. 確保重構後符合程式碼品質標準
 
+### 調整舞者人數或部位清單
+
+**只需要改 `frontend/src/constants/parts.js`**（該檔案開頭有完整說明）：
+
+- **改人數**：改 `PLAYER_COUNT` 一個數字。初始光表、`dancerVisibility`、
+  ControlPanel 的全選欄位、People 渲染幾套光衣全部由它推導。
+- **改部位**：在 `PARTS` 增刪一列（`{key, label, type}`）。`PART_COUNT` /
+  `PART_KEYS` / `PART_LABELS` / `BODY_PART_COUNT` 都會跟著變。
+
+有三件事**不會**自動跟上，`frontend/src/constants/__tests__/partsConfig.test.js`
+會在改壞時指出是哪一項：
+
+| 項目 | 為什麼要人工處理 |
+|---|---|
+| 韌體 ABI | `PART_KEYS` 的順序就是上傳每一列的欄位順序，韌體那端要同步改（`buildPlayers.golden.test.js` 會紅，那是提醒不是阻礙） |
+| 光衣 SVG | `Armor.jsx` 的圖形是手繪的，新增 `type: "body"` 的部位要自己畫 |
+| 飾品索引 | `config/accessoryConfig.js` 的 `indices` 會隨身體部位增減而位移，要重新對過 |
+
+改完跑 `cd frontend && npm test` 確認。
+
 ## Backend 管理
 
 ### MongoDB 備份系統
@@ -217,6 +237,12 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 
 ## 更新記錄
 
+- **2026-08-10**：**人數與部位數集中化**。`constants/parts.js` 成為唯一來源
+  （`PLAYER_INDICES` / `PART_INDICES` / `isAccessoryPart` / `createEmptyActionTable`），
+  取代散落 5 個檔案的 9 處 `Array.from({length: 7})` 與寫死的身體/飾品分界 `14`。
+  新增 `partsConfig.test.js` 當安全網（光衣 SVG 覆蓋率、飾品索引範圍、
+  `dancerVisibility` 形狀）。實測改成 9 人全綠、拿掉一個身體部位會被準確指出。
+  操作方式見上方「調整舞者人數或部位清單」。測試 183 passed
 - **2026-08-09（晚）**：**效能稽核與優化**。三項實測影響最大的問題：
   ① persist 每次編輯序列化 72.9ms（`serialize: false` 後 0.5ms，主因是
   `Float32Array` 被 JSON 化成 5.3MB）；② undo 用 `JSON.stringify` 深度比較
