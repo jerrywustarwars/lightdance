@@ -112,21 +112,20 @@ export function createColorSegment({
 /**
  * 在時間軸上放一個色塊 —— 取代舊模型的 `insertColorKeyframes`。
  *
- * 舊版要判斷前後鄰居是不是黑色、決定要補幾個黑點（5 個分支）；segment 模型
- * 只有兩種情況：
+ * 舊版要判斷前後鄰居是不是黑色、決定要補幾個黑點（5 個分支）。segment 模型
+ * 只做一件事：**在 `[start, start + length)` 放一個色塊**，撞到的舊色塊按
+ * trim 策略裁掉（必要時 split 成前後兩段）。
  *
- *   - 點在既有色塊上 → 換那一段的顏色（長度、漸變設定都不動）
- *   - 點在空隙 → 放一個新色塊，長度到下一段的開頭為止，最多 `length`
- *
- * 「最多到下一段開頭」是為了不要覆蓋既有的色塊。真的要覆蓋時，呼叫端可以
- * 傳 `collision: "trim"`，被蓋住的部分會被裁掉（必要時 split 成兩段）。
+ * 「放固定長度」是拍板的設計（`DEFAULT_SEGMENT_MS`，見 todo.md）。舊模型
+ * 沒有色塊長度的概念，放色會一路亮到下一個關鍵格，所以在空白處點一下可能
+ * 亮好幾十秒；segment 模型給的是可預期的 1 秒，要更長用拖曳邊緣調整。
  *
  * @param {Array} segments - 該部位的 segment 陣列（不會被修改）
  * @param {object} params
  *   time: 插入時間（會向下對齊網格）；color: 顏色；
  *   length: 新色塊的長度，預設 DEFAULT_SEGMENT_MS；
  *   duration: 表演總長，用來夾住不要超出結尾；
- *   collision: "keep"（預設，遇到既有色塊就縮短）或 "trim"（覆蓋並裁掉舊的）
+ *   collision: "trim"（預設，覆蓋並裁掉舊的）或 "keep"（撞到舊色塊就縮短）
  * @returns {Array} 新陣列；沒有任何改變時回傳原陣列（呼叫端可用 reference 判斷）
  */
 export function insertColorSegment(
@@ -137,36 +136,14 @@ export function insertColorSegment(
     length = DEFAULT_SEGMENT_MS,
     duration,
     tick = TICK_MS,
-    collision = "keep",
+    collision = "trim",
     makeId = createId,
   },
 ) {
   const list = segments ?? [];
   const start = floorToTick(time, tick);
 
-  // 點在既有色塊上：只換顏色，不動邊界。
-  // 使用者的心智模型是「幫這個色塊換色」，不是「在中間插一個新色塊」。
-  const existing = findSegmentAt(list, start);
-  if (existing) {
-    const nextColor = cloneColor(color);
-    if (sameColor(existing.colorStart, nextColor) && existing.linear !== 1) {
-      return list; // 顏色一樣，不佔 undo
-    }
-    return list.map((segment) =>
-      segment === existing
-        ? {
-            ...segment,
-            colorStart: nextColor,
-            // 換色時把漸變收掉：使用者按的是「放這個顏色」，
-            // 留著舊的漸變終點會讓色塊看起來不是他選的顏色
-            colorEnd: nextColor,
-            linear: 0,
-          }
-        : segment,
-    );
-  }
-
-  // 點在空隙：長度先取 length，再依邊界收斂。
+  // 長度先取 length，再依表演結尾收斂。
   // 不要在這裡用 `Math.max(..., start + tick)` 去保證非零長度——那會讓
   // 「點在表演結束之後」硬生出一個超出 duration 的色塊。放不下就是放不下。
   const limit =
@@ -184,8 +161,21 @@ export function insertColorSegment(
 
   if (end <= start) return list; // 沒有空間可放
 
-  // insertSegment 本身就是 trim 語意。"keep" 模式在上面已經先把 end 收到
-  // 下一段的開頭，所以走到這裡不會裁到任何東西——兩種模式共用同一條路徑。
+  // 同一個位置已經是同一個色塊了：原樣回傳，不佔一格 undo。
+  // 沒有這道判斷的話，在同一點連按兩次會產生內容相同但 reference 不同的
+  // 陣列，undo 需要多按一次才會回到使用者認得的狀態。
+  const nextColor = cloneColor(color);
+  const existing = findSegmentAt(list, start);
+  if (
+    existing &&
+    existing.start === start &&
+    existing.end === end &&
+    existing.linear !== 1 &&
+    sameColor(existing.colorStart, nextColor)
+  ) {
+    return list;
+  }
+
   return insertSegment(
     list,
     createColorSegment({ start, end, color, makeId }),

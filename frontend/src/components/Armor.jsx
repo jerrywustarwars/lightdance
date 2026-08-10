@@ -3,22 +3,19 @@ import { useDispatch, useSelector } from "react-redux";
 import "./Armor.css";
 import { PART_KEYS } from "../constants/parts.js";
 import { TICK_MS } from "../constants/time.js";
-import {
-  insertColorKeyframes,
-  binarySearchFirstGreater,
-} from "../utils/actionTable/insertColorKeyframes.js";
+import { getColorAt, insertColorSegment } from "../utils/segments/color.js";
 import {
   updateActionTable,
   updateCurrentTime,
   updateSelectedDancer,
 } from "../redux/actions";
-import { useKeyframeArmorTimelines } from "../hooks/useKeyframeActionTable.js";
+import { useSegmentArmorTimelines } from "../hooks/useSegmentActionTable.js";
 
 const Armor = (props) => {
   const dispatch = useDispatch();
-  // Phase 4 過渡橋：只訂閱**自己這位舞者**的 22 個部位。訂閱整張表的話，
+  // 只訂閱**自己這位舞者**的 22 個部位。訂閱整張表的話，
   // 任何舞者被編輯都會讓 7 個 Armor 全部重算 22 個顏色。
-  const { timelines, commitPart } = useKeyframeArmorTimelines(props.index);
+  const { armorSegments, commitPart } = useSegmentArmorTimelines(props.index);
   const time = useSelector((state) => state.profiles.currentTime);
   const duration = useSelector((state) => state.profiles.duration);
   const chosenColor = useSelector((state) => state.profiles.chosenColor);
@@ -30,43 +27,14 @@ const Armor = (props) => {
   // 新的部位名稱（對應 Home.jsx 的輸出映射）
   const partNames = PART_KEYS;
 
-  // 根據部位名稱和當前時間計算顏色
+  // 根據部位和當前時間計算顏色。
+  //
+  // 舊版在這裡自己走一遍「找前後關鍵格、判斷是不是漸變、插值」的邏輯
+  // （AccessoryPanel 還有一份幾乎相同的複本）。segment 模型把這件事收斂成
+  // `getColorAt`：空隙回傳黑色、漸變段內回傳插值，兩個元件共用同一份。
   const getColorForPart = (part) => {
-    const partData = timelines[part] || [];
-    const timeIndex = binarySearchFirstGreater(partData, time);
-    const prevData = partData?.[timeIndex - 1];
-    const nextData = partData?.[timeIndex];
-
-    if (prevData && prevData.linear === 1 && nextData) {
-      const afterNextData = partData?.[timeIndex + 1];
-
-      const startTime = prevData.time;
-      const endTime = nextData.time;
-      const currentTime = time;
-
-      const startColor = prevData.color;
-      const endColor = afterNextData?.color || { R: 0, G: 0, B: 0, A: 1 };
-
-      if (endTime > startTime) {
-        const ratio = (currentTime - startTime) / (endTime - startTime);
-        const r = Math.round(startColor.R * (1 - ratio) + endColor.R * ratio);
-        const g = Math.round(startColor.G * (1 - ratio) + endColor.G * ratio);
-        const b = Math.round(startColor.B * (1 - ratio) + endColor.B * ratio);
-        const startA = startColor.A ?? 1;
-        const endA = endColor.A ?? 1;
-        const a = startA * (1 - ratio) + endA * ratio;
-        return `rgba(${r}, ${g}, ${b}, ${a})`;
-      }
-    }
-
-    const colorData = prevData?.color || {
-      R: 0,
-      G: 0,
-      B: 0,
-      A: 1,
-    };
-
-    return `rgba(${colorData.R}, ${colorData.G}, ${colorData.B}, ${colorData.A})`;
+    const { R, G, B, A } = getColorAt(armorSegments[part], time);
+    return `rgba(${R}, ${G}, ${B}, ${A})`;
   };
 
   const colors = useMemo(
@@ -74,7 +42,7 @@ const Armor = (props) => {
       Object.fromEntries(
         partNames.map((name, index) => [name, getColorForPart(index)]),
       ),
-    [time, timelines, myId],
+    [time, armorSegments, myId],
   );
 
   function insertArray(part) {
@@ -83,7 +51,7 @@ const Armor = (props) => {
 
     commitPart(
       part,
-      insertColorKeyframes(timelines[part], {
+      insertColorSegment(armorSegments[part], {
         time: nowTime,
         color: chosenColor,
         duration,

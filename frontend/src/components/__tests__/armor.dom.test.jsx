@@ -6,6 +6,7 @@ import {
   renderWithStore,
   createTestStore,
   timelineOf,
+  segmentsOf,
 } from "../../test/renderEditor.jsx";
 
 /**
@@ -86,5 +87,95 @@ describe("Armor 放色", () => {
 
     expect(JSON.stringify(timelineOf(store, 1, 0))).toBe(otherBefore);
     expect(JSON.stringify(timelineOf(store, 0, 5))).toBe(samePlayerOtherPart);
+  });
+
+  it("沒被改到的部位維持同一個 reference（逐部位訂閱的前提）", () => {
+    const store = createTestStore({
+      currentTime: 5000,
+      chosenColor: { R: 10, G: 20, B: 30, A: 1 },
+    });
+    const otherPartBefore = segmentsOf(store, 0, 5);
+    const otherArmorBefore = segmentsOf(store, 1, 0);
+
+    const { container } = renderWithStore(<Armor index={0} />, { store });
+    clickPart(container, 0);
+
+    // 結構共享：只有被編輯的那條時間軸換掉 reference，
+    // 其餘 153 條的訂閱者完全不會被喚醒
+    expect(segmentsOf(store, 0, 5)).toBe(otherPartBefore);
+    expect(segmentsOf(store, 1, 0)).toBe(otherArmorBefore);
+  });
+});
+
+describe("Armor 放色的 segment 語意（Phase 5）", () => {
+  it("在空白處放色會放出一個預設 1 秒的色塊", () => {
+    // 部位 5 在測試光表裡是空的
+    const store = createTestStore({
+      currentTime: 3000,
+      chosenColor: { R: 10, G: 20, B: 30, A: 1 },
+    });
+    const { container } = renderWithStore(<Armor index={0} />, { store });
+
+    expect(segmentsOf(store, 0, 5)).toEqual([]);
+    clickPart(container, 5);
+
+    const segments = segmentsOf(store, 0, 5);
+    expect(segments).toHaveLength(1);
+    expect(segments[0]).toMatchObject({
+      start: 3000,
+      end: 4000,
+      colorStart: { R: 10, G: 20, B: 30, A: 1 },
+      linear: 0,
+    });
+  });
+
+  it("在既有色塊中間放色會把它切成三段", () => {
+    // 部位 0 在 2000~10000 是綠色（見 renderEditor.jsx）
+    const store = createTestStore({
+      currentTime: 5000,
+      chosenColor: { R: 10, G: 20, B: 30, A: 1 },
+    });
+    const { container } = renderWithStore(<Armor index={0} />, { store });
+
+    clickPart(container, 0);
+
+    const segments = segmentsOf(store, 0, 0);
+    const inserted = segments.find((s) => s.colorStart.R === 10);
+    expect(inserted).toMatchObject({ start: 5000, end: 6000 });
+
+    // 前後的綠色被裁短而不是消失
+    expect(segments.some((s) => s.start === 2000 && s.end === 5000)).toBe(true);
+    expect(segments.some((s) => s.start === 6000 && s.end === 10000)).toBe(
+      true,
+    );
+  });
+
+  it("同一點連按兩次同一個顏色，第二次不佔一格 undo", () => {
+    const store = createTestStore({
+      currentTime: 3000,
+      chosenColor: { R: 10, G: 20, B: 30, A: 1 },
+    });
+    const { container } = renderWithStore(<Armor index={0} />, { store });
+
+    clickPart(container, 5);
+    const afterFirst = store.getState().profiles;
+    const historyLength = afterFirst.history.length;
+
+    clickPart(container, 5);
+
+    expect(store.getState().profiles.history.length).toBe(historyLength);
+    expect(segmentsOf(store, 0, 5)).toBe(afterFirst.data.actionTable[0][5]);
+  });
+
+  it("每個 segment 都有自己的 id（供多選與 undo diff 使用）", () => {
+    const store = createTestStore({
+      currentTime: 3000,
+      chosenColor: { R: 10, G: 20, B: 30, A: 1 },
+    });
+    const { container } = renderWithStore(<Armor index={0} />, { store });
+
+    clickPart(container, 5);
+
+    expect(typeof segmentsOf(store, 0, 5)[0].id).toBe("string");
   });
 });

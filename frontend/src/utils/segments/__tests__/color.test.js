@@ -118,30 +118,30 @@ describe("insertColorSegment：放在空隙", () => {
     expect(inserted.start).toBe(1000);
   });
 
-  it("撞到下一個色塊時縮短，不覆蓋它", () => {
+  it("預設 trim：撞到舊色塊時覆蓋並把它裁短", () => {
     const existing = [segment(1500, 3000, BLUE)];
     const next = insertColorSegment(existing, {
       time: 1000,
       color: RED,
       duration: 10000,
-    });
-
-    expect(next[0]).toMatchObject({ start: 1000, end: 1500 });
-    expect(next[1]).toBe(existing[0]); // 舊色塊原封不動
-    expect(validateSegments(next)).toEqual([]);
-  });
-
-  it("collision:'trim' 會覆蓋並裁掉舊色塊", () => {
-    const existing = [segment(1500, 3000, BLUE)];
-    const next = insertColorSegment(existing, {
-      time: 1000,
-      color: RED,
-      duration: 10000,
-      collision: "trim",
     });
 
     expect(next[0]).toMatchObject({ start: 1000, end: 2000 });
     expect(next[1]).toMatchObject({ start: 2000, end: 3000 });
+    expect(validateSegments(next)).toEqual([]);
+  });
+
+  it("collision:'keep' 改為縮短自己、不動舊色塊", () => {
+    const existing = [segment(1500, 3000, BLUE)];
+    const next = insertColorSegment(existing, {
+      time: 1000,
+      color: RED,
+      duration: 10000,
+      collision: "keep",
+    });
+
+    expect(next[0]).toMatchObject({ start: 1000, end: 1500 });
+    expect(next[1]).toBe(existing[0]); // 舊色塊原封不動
     expect(validateSegments(next)).toEqual([]);
   });
 
@@ -166,51 +166,69 @@ describe("insertColorSegment：放在空隙", () => {
   });
 });
 
-describe("insertColorSegment：放在既有色塊上", () => {
-  it("只換顏色，長度不變", () => {
-    const existing = [segment(1000, 3000, BLUE)];
+describe("insertColorSegment：放在既有色塊中間", () => {
+  it("把舊色塊切成前後兩段，中間放新的", () => {
+    const existing = [segment(1000, 5000, BLUE)];
     const next = insertColorSegment(existing, {
       time: 2000,
       color: RED,
       duration: 10000,
     });
 
-    expect(next).toHaveLength(1);
-    expect(next[0]).toMatchObject({ start: 1000, end: 3000, colorStart: RED });
+    expect(next.map((s) => [s.start, s.end])).toEqual([
+      [1000, 2000],
+      [2000, 3000],
+      [3000, 5000],
+    ]);
+    expect(next[1].colorStart).toEqual(RED);
+    expect(next[0].colorStart).toEqual(BLUE);
+    expect(next[2].colorStart).toEqual(BLUE);
+    expect(validateSegments(next)).toEqual([]);
   });
 
-  it("換色會把漸變收掉", () => {
-    const existing = [segment(1000, 3000, BLUE, { colorEnd: RED, linear: 1 })];
-    const next = insertColorSegment(existing, {
+  it("同一點放同一個顏色第二次是 no-op（reference 相同，不佔 undo）", () => {
+    const first = insertColorSegment([], {
+      time: 2000,
+      color: RED,
+      duration: 10000,
+    });
+    const second = insertColorSegment(first, {
       time: 2000,
       color: RED,
       duration: 10000,
     });
 
-    expect(next[0].linear).toBe(0);
-    expect(next[0].colorEnd).toEqual(RED);
+    expect(second).toBe(first);
   });
 
-  it("放同一個顏色是 no-op（reference 相同，不佔 undo）", () => {
-    const existing = [segment(1000, 3000, RED)];
-    const next = insertColorSegment(existing, {
+  it("同一點換不同顏色會生效", () => {
+    const first = insertColorSegment([], {
       time: 2000,
       color: RED,
       duration: 10000,
     });
-    expect(next).toBe(existing);
+    const second = insertColorSegment(first, {
+      time: 2000,
+      color: BLUE,
+      duration: 10000,
+    });
+
+    expect(second).not.toBe(first);
+    expect(second).toHaveLength(1);
+    expect(second[0].colorStart).toEqual(BLUE);
   });
 
-  it("不會動到其他色塊的 reference", () => {
+  it("不會動到範圍外色塊的 reference", () => {
     const other = segment(5000, 6000, BLUE);
-    const existing = [segment(1000, 3000, BLUE), other];
+    const existing = [segment(1000, 1500, BLUE), other];
     const next = insertColorSegment(existing, {
       time: 2000,
       color: RED,
       duration: 10000,
     });
 
-    expect(next[1]).toBe(other);
+    expect(next[0]).toBe(existing[0]);
+    expect(next[2]).toBe(other);
   });
 });
 
