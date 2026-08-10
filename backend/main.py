@@ -147,7 +147,7 @@ async def read_root():
 # 使用方法：GET /api/timelist/，無需驗證
 # 使用場景：前端載入選單、顯示可用的光表資料列表
 @api_router.get("/timelist/")
-async def front_read_time():
+async def list_all_timestamps():
     # Only include user and update_time fields
     all_entries = list(collection_color.find({}, {"user": 1, "update_time": 1, "music_filename": 1}))
 
@@ -165,7 +165,7 @@ async def front_read_time():
 # 使用方法：GET /api/timelist/{username}，無需驗證
 # 使用場景：查看特定使用者的所有光表資料版本
 @api_router.get("/timelist/{username}")
-async def front_read_time(username: str):
+async def list_user_timestamps(username: str):
 	# Only include user and update_time fields
 	all_entries = list(collection_color.find({"user": username}, {"user": 1, "update_time": 1, "music_filename": 1}))
 
@@ -238,10 +238,12 @@ async def get_user_color_by_chunk (username: str, query_time: str, chunk: int, p
 # 使用方法：GET /api/raw/{username}/{query_time}，無需驗證
 # 使用場景：載入原始編輯資料、資料備份與還原
 @api_router.get("/raw/{username}/{query_time}")
-async def get_user_color (username: str, query_time: str):
+async def get_user_raw (username: str, query_time: str):
+    # 兩條分支都必須查 collection_raw。這裡原本 LATEST 分支查的是 collection_color，
+    # 回傳的是播放用的 32-bit 打包資料而不是編輯器原始 JSON，前端載入會拿到錯的東西。
     if query_time == "LATEST":
-        user_data = collection_color.find_one(
-            {"user": username}, 
+        user_data = collection_raw.find_one(
+            {"user": username},
             sort=[("update_time", -1)]  # Sort by update_time in descending order to get the latest entry
         )
     else:
@@ -434,7 +436,7 @@ async def upload_music(file: UploadFile = File(None), current_user: User = Depen
 # 使用方法：GET /api/get_music_list/{username}，無需驗證
 # 使用場景：瀏覽特定使用者的音樂檔案庫
 @api_router.get("/get_music_list/{username}")
-async def get_music(username: str):
+async def get_music_list(username: str):
 	file_path = f"{MUSIC_FILE_PATH}/{username}"
 	if not os.path.isdir(file_path):
 		return {"music_list": [], "message": f"no music directory for {username}"}
@@ -453,7 +455,7 @@ async def get_music(username: str):
 # 使用方法：GET /api/get_music/{username}/{filename}，無需驗證
 # 使用場景：播放或下載音樂檔案
 @api_router.get("/get_music/{username}/{filename}")
-async def get_music(username: str, filename: str):
+async def get_music_file(username: str, filename: str):
 	file_location = f'{MUSIC_FILE_PATH}/{username}/{filename}'
 	if not os.path.exists(file_location):
 		raise HTTPException(status_code=415, detail= f"file not found: {file_location}")
@@ -492,7 +494,7 @@ async def get_all_music_lists():
 # 使用方法：GET /api/get_rand_lightlist/cnt={cnt}/seed={seed}，無需驗證
 # 使用場景：測試光表效果、產生演示資料
 @api_router.get("/get_rand_lightlist/cnt={cnt}/seed={seed}")
-async def get_rand_lightlist(cnt : int,seed : int):
+async def get_rand_lightlist_seeded(cnt : int,seed : int):
     if not (1 <= cnt <= 1500):
         raise HTTPException(status_code=400, detail="cnt 必須介於 1 和 1500 之間")
     random.seed(seed)
@@ -562,7 +564,7 @@ async def get_rand_lightlist(cnt : int):
 # 使用方法：GET /api/get_rand_lightlist/json/cnt={cnt}，無需驗證
 # 使用場景：獲取原始 JSON 格式的隨機資料
 @api_router.get("/get_rand_lightlist/json/cnt={cnt}")
-async def get_rand_lightlist(cnt : int):
+async def get_rand_lightlist_json(cnt : int):
     if not (1 <= cnt <= 1500):
         raise HTTPException(status_code=400, detail="cnt 必須介於 1 和 1500 之間")
     
@@ -629,7 +631,7 @@ async def get_test_lightlist(cnt : int):
 # 使用方法：GET /api/get_test_lightlist/cnt={cnt}/chunk={chunk}，無需驗證
 # 使用場景：大量資料測試時分批載入
 @api_router.get("/get_test_lightlist/cnt={cnt}/chunk={chunk}")
-async def get_test_lightlist(cnt : int, chunk : int):
+async def get_test_lightlist_chunk(cnt : int, chunk : int):
 
     BLACK  = int("0x000000FF", 16) 
     RED    = int("0xFF0000FF", 16)

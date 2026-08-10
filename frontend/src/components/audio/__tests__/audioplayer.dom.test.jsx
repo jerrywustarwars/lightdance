@@ -194,6 +194,38 @@ describe("色塊工具列", () => {
     fireEvent.click(document.querySelector(".timeline-right"));
     expect(store.getState().profiles.currentTime).toBe(1000);
   });
+
+  it("剪刀在播放位置把色塊切成兩段", () => {
+    // 測試光表 index 1 是 1000~1990 的紅色塊，在 1500 切開
+    const store = createTestStore({
+      currentTime: 1500,
+      multiSelectedBlocks: selected(),
+    });
+    mount(store);
+
+    fireEvent.click(document.querySelector(".cut-button"));
+
+    const reds = timelineOf(store).filter((entry) => entry.color.R === 255);
+    expect(reds.map((entry) => entry.time)).toEqual([1000, 1500]);
+  });
+
+  it("剪刀讀的是畫面上這個 store 的播放位置", () => {
+    // 這則的重點不是切割本身，而是 cutSelected 從哪裡讀 currentTime。
+    // 它曾經 import 模組層的 store singleton，在測試裡會讀到另一個 store
+    // （currentTime 恆為 0），於是永遠切在色塊外面而靜默什麼都不做。
+    const store = createTestStore({
+      currentTime: 1800,
+      multiSelectedBlocks: selected(),
+    });
+    mount(store);
+
+    fireEvent.click(document.querySelector(".cut-button"));
+
+    expect(
+      timelineOf(store).some((entry) => entry.time === 1800),
+      "應該切在 1800，而不是別的 store 的 currentTime",
+    ).toBe(true);
+  });
 });
 
 describe("播放控制列", () => {

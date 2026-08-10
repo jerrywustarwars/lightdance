@@ -13,3 +13,15 @@ dependencies = [
 
 [tool.setuptools]
 py-modules = ["main", "models"]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+# main.py / models.py 在 backend/ 根目錄，測試在 backend/tests/，
+# 讓 pytest 把根目錄放進 sys.path
+pythonpath = ["."]
+testpaths = ["tests"]

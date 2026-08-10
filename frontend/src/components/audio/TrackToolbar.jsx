@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch, useSelector, useStore } from "react-redux";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faTrash,
@@ -11,7 +11,6 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import { produce } from "immer";
 
-import { store } from "../../redux/store.js";
 import {
   updateMultiSelectedBlocks,
   updateChosenColor,
@@ -52,6 +51,9 @@ const clampAlpha = (value) => Math.max(0, Math.min(1, Number(value)));
 
 export function useTrackActions() {
   const dispatch = useDispatch();
+  // 從 Provider 拿 store，不要 import 模組層的 singleton——singleton 在測試裡
+  // 會是另一個 store instance，讀到的 state 跟畫面上的無關。
+  const store = useStore();
   // Phase 4 過渡橋：store 存 segments，這裡取得 keyframe 視圖 + 寫回用的 commit
   const { actionTable, commit } = useKeyframeActionTable();
   const currentTime = useSelector((state) => state.profiles.currentTime);
