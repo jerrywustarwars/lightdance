@@ -1,3 +1,5 @@
+import { PLAYER_COUNT } from "../../constants/parts.js";
+
 const initialState = {
   user: null,
   fullPeaks: [],
@@ -25,7 +27,8 @@ const initialState = {
     { id: 3, armorIndex: 2, partIndex: 0, hidden: false },
   ],
   favoriteColor: [],
-  dancerVisibility: [true, true, true, true, true, true, true], // 初始全部顯示
+  // 由 PLAYER_COUNT 推導：改人數時不會忘了這裡
+  dancerVisibility: Array(PLAYER_COUNT).fill(true),
   clipboard: {
     type: null,              // 增加 type 區分複製類型
     data: null,

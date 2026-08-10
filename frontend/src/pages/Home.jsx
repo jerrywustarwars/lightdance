@@ -32,14 +32,7 @@ import {
   SCHEMA_VERSION,
   normalizeSegmentTable,
 } from "../utils/migration/loadProjectData.js";
-import { PLAYER_COUNT, PART_COUNT } from "../constants/parts.js";
-
-// segment 模型的「全部熄滅」就是每個部位一個空陣列——沒有段就是沒有光，
-// 不需要像 keyframe 模型那樣放一個 time 0 的黑點來表達
-const generateInitialTable = () =>
-  Array.from({ length: PLAYER_COUNT }, () =>
-    Array.from({ length: PART_COUNT }, () => []),
-  );
+import { createEmptyActionTable } from "../constants/parts.js";
 
 // const cleanActionTableByDuration = (currentTable, maxDuration) => {
 //   if (!currentTable || typeof currentTable !== "object" || maxDuration <= 0) return currentTable;
@@ -102,7 +95,7 @@ function Home({ rgba, setRgba, setButtonState }) {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [pendingMusic, setPendingMusic] = useState(null);
-  const initialTable = generateInitialTable();
+  const initialTable = createEmptyActionTable();
 
   // const sizeInMB = (JSON.stringify(data).length / 1024 / 1024).toFixed(2);
   // console.log(`目前資料大小: ${sizeInMB} MB`);

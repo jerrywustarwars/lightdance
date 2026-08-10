@@ -25,7 +25,11 @@ import {
   toggleMoveMode,
 } from "../redux/actions.js";
 import { isPartAllowed } from "../config/accessoryConfig.js";
-import { PART_LABELS } from "../constants/parts.js";
+import {
+  PART_LABELS,
+  PLAYER_INDICES,
+  PART_INDICES,
+} from "../constants/parts.js";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts.js";
 
 function ControlPanel({ setButtonState }) {
@@ -279,17 +283,16 @@ function ControlPanel({ setButtonState }) {
   };
   // 全选/取消全选某列（所有人物的某种部件）
   const toggleColumnSelect = (partIndex) => {
-    const isColumnFullySelected = Array.from({ length: 7 }).every(
-      (_, armorIndex) =>
-        selectedTimelines.some(
-          (item) =>
-            item.armorIndex === armorIndex && item.partIndex === partIndex,
-        ),
+    const isColumnFullySelected = PLAYER_INDICES.every((armorIndex) =>
+      selectedTimelines.some(
+        (item) =>
+          item.armorIndex === armorIndex && item.partIndex === partIndex,
+      ),
     );
 
     setSelectedTimelines((prev) => {
       const updated = [...prev];
-      Array.from({ length: 7 }).forEach((_, armorIndex) => {
+      PLAYER_INDICES.forEach((armorIndex) => {
         const exists = updated.some(
           (item) =>
             item.armorIndex === armorIndex && item.partIndex === partIndex,
@@ -310,17 +313,16 @@ function ControlPanel({ setButtonState }) {
 
   // 切换行全选/取消全选
   const toggleRowSelect = (armorIndex) => {
-    const isRowFullySelected = Array.from({ length: 22 }).every(
-      (_, partIndex) =>
-        selectedTimelines.some(
-          (item) =>
-            item.armorIndex === armorIndex && item.partIndex === partIndex,
-        ),
+    const isRowFullySelected = PART_INDICES.every((partIndex) =>
+      selectedTimelines.some(
+        (item) =>
+          item.armorIndex === armorIndex && item.partIndex === partIndex,
+      ),
     );
 
     setSelectedTimelines((prev) => {
       const updated = [...prev];
-      Array.from({ length: 22 }).forEach((_, partIndex) => {
+      PART_INDICES.forEach((partIndex) => {
         const exists = updated.some(
           (item) =>
             item.armorIndex === armorIndex && item.partIndex === partIndex,
@@ -463,11 +465,11 @@ function ControlPanel({ setButtonState }) {
                   <thead>
                     <tr>
                       <th>Armor</th>
-                      {Array.from({ length: 7 }).map((_, armorIndex) => (
+                      {PLAYER_INDICES.map((armorIndex) => (
                         <th key={armorIndex}>
                           <button
                             className={`allsel-button ${
-                              Array.from({ length: 22 }).every((_, partIndex) =>
+                              PART_INDICES.every((partIndex) =>
                                 selectedTimelines.some(
                                   (item) =>
                                     item.armorIndex === armorIndex &&
@@ -486,12 +488,12 @@ function ControlPanel({ setButtonState }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {Array.from({ length: 22 }).map((_, partIndex) => (
+                    {PART_INDICES.map((partIndex) => (
                       <tr key={partIndex}>
                         <td>
                           <button
                             className={`allsel-button ${
-                              Array.from({ length: 7 }).every((_, armorIndex) =>
+                              PLAYER_INDICES.every((armorIndex) =>
                                 selectedTimelines.some(
                                   (item) =>
                                     item.armorIndex === armorIndex &&
@@ -506,7 +508,7 @@ function ControlPanel({ setButtonState }) {
                             All
                           </button>
                         </td>
-                        {Array.from({ length: 7 }).map((_, armorIndex) => {
+                        {PLAYER_INDICES.map((armorIndex) => {
                           const allowed = isPartAllowed(armorIndex, partIndex);
                           const isSelected =
                             allowed &&
@@ -614,7 +616,7 @@ function ControlPanel({ setButtonState }) {
                       )
                     }
                   >
-                    {Array.from({ length: 7 }).map((_, i) => (
+                    {PLAYER_INDICES.map((i) => (
                       <option key={i} value={i}>
                         {i + 1}
                       </option>
@@ -634,7 +636,7 @@ function ControlPanel({ setButtonState }) {
                       )
                     }
                   >
-                    {Array.from({ length: 22 }).map((_, i) => {
+                    {PART_INDICES.map((i) => {
                       const allowed = isPartAllowed(setting.armorIndex, i);
                       return (
                         <option key={i} value={i} disabled={!allowed}>

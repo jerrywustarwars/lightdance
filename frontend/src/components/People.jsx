@@ -3,10 +3,9 @@ import Armor from "./Armor.jsx";
 import AccessoryPanel from "./AccessoryPanel.jsx";
 import { useDispatch, useSelector } from "react-redux";
 import { updateActionTable } from "../redux/actions.js";
-import { PLAYER_COUNT, PART_COUNT } from "../constants/parts.js";
+import { PLAYER_INDICES, createEmptyActionTable } from "../constants/parts.js";
 
 function People() {
-  const components = Array(7).fill(null);
   const actionTable = useSelector(
     (state) => state.profiles.data?.actionTable || [],
   );
@@ -19,9 +18,7 @@ function People() {
   // 沒有段就是沒有光，不需要放一個 time 0 的黑點。
   useEffect(() => {
     if (!actionTable || actionTable.length === 0) {
-      const initialData = Array.from({ length: PLAYER_COUNT }, () =>
-        Array.from({ length: PART_COUNT }, () => []),
-      );
+      const initialData = createEmptyActionTable();
 
       console.log("Initializing actionTable:", initialData);
       // skipHistory：這是初始化不是編輯，不該佔用一格 undo。
@@ -33,7 +30,7 @@ function People() {
 
   return (
     <>
-      {components.map((_, index) => {
+      {PLAYER_INDICES.map((index) => {
         if (!dancerVisibility[index]) {
           return null;
         }
