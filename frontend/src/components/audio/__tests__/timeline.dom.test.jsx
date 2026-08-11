@@ -77,14 +77,30 @@ describe("色塊渲染", () => {
     );
   });
 
-  it("相鄰的同色色塊會被合併成一塊", () => {
-    // 空白部位：整條都是黑的，應該只剩一塊
+  it("空白部位是一整條空隙", () => {
     const store = createTestStore();
     mount(store, { partIndex: 5 });
 
     const computed = store.getState().profiles.timelineBlocks[0][5];
     expect(computed).toHaveLength(1);
-    expect(computed[0].startTime).toBe(0);
+    expect(computed[0]).toMatchObject({ segmentId: null, startTime: 0 });
+  });
+
+  it("每個色塊都帶著自己的 segmentId，空隙是 null", () => {
+    const store = createTestStore();
+    mount(store);
+
+    const computed = store.getState().profiles.timelineBlocks[0][0];
+    const segments = store.getState().profiles.data.actionTable[0][0];
+
+    // 有色的 block 一一對應到 store 裡的 segment
+    const ids = computed.map((b) => b.segmentId).filter(Boolean);
+    expect(ids).toEqual(segments.map((s) => s.id));
+
+    // 空隙沒有 id
+    computed
+      .filter((b) => b.segmentId === null)
+      .forEach((gap) => expect(gap.color).toMatchObject({ R: 0, G: 0, B: 0 }));
   });
 
   it("hidden 時整條軌道透明且不吃滑鼠事件（色塊仍在 DOM 裡）", () => {
@@ -109,11 +125,25 @@ describe("選取", () => {
     expect(selected[0]).toMatchObject({ armorIndex: 0, partIndex: 0 });
   });
 
-  it("選到的 blockIndex 指向 actionTable 裡真正的那個關鍵格", () => {
+  it("選取帶著 segmentId，指向 store 裡真正的那一段", () => {
+    const store = createTestStore();
+    mount(store);
+
+    const colored = blocks().find((el) => bgOf(el).includes("0, 255, 0"));
+    fireEvent.mouseDown(colored);
+
+    const { segmentId } = store.getState().profiles.multiSelectedBlocks[0];
+    const segment = store
+      .getState()
+      .profiles.data.actionTable[0][0].find((s) => s.id === segmentId);
+
+    expect(segment.colorStart).toMatchObject({ R: 0, G: 255, B: 0 });
+  });
+
+  it("遷移期仍附上 blockIndex，指向 keyframe 視圖裡的同一格", () => {
     /**
-     * timelineBlocks 的 index 與 actionTable 的 index **不一定對齊**
-     *（相鄰同色會被合併），Timeline 內部用 startTime 反查真正的 index。
-     * 這條就是在守那個反查。
+     * `blockIndex` 是給還沒原生化的消費者用的相容欄位（見 utils/selection.js）。
+     * 最後一個消費者改讀 segmentId 之後，這則測試會和欄位一起刪掉。
      */
     const store = createTestStore();
     mount(store);
@@ -122,18 +152,68 @@ describe("選取", () => {
     fireEvent.mouseDown(colored);
 
     const { blockIndex } = store.getState().profiles.multiSelectedBlocks[0];
-    const entry = timelineOf(store)[blockIndex];
-    expect(entry.color).toMatchObject({ R: 0, G: 255, B: 0 });
+    expect(timelineOf(store)[blockIndex].color).toMatchObject({
+      R: 0,
+      G: 255,
+      B: 0,
+    });
   });
 
-  it("點擊黑色區塊不會選取（黑色不是色塊）", () => {
+  it("點擊空隙不會選取，而且會清空既有選取", () => {
     const store = createTestStore();
     mount(store);
 
-    const black = blocks().find((el) => bgOf(el).includes("0, 0, 0"));
-    fireEvent.mouseDown(black);
+    // 先選一個色塊
+    fireEvent.mouseDown(blocks().find((el) => bgOf(el).includes("255, 0, 0")));
+    expect(store.getState().profiles.multiSelectedBlocks).toHaveLength(1);
+
+    // 再點空隙
+    const gap = blocks().find((el) => bgOf(el).includes("0, 0, 0"));
+    fireEvent.mouseDown(gap);
 
     expect(store.getState().profiles.multiSelectedBlocks).toHaveLength(0);
+  });
+
+  it("Shift 點擊選取兩段之間的所有色塊", () => {
+    const store = createTestStore();
+    mount(store);
+
+    const red = blocks().find((el) => bgOf(el).includes("255, 0, 0"));
+    const green = blocks().find((el) => bgOf(el).includes("0, 255, 0"));
+
+    fireEvent.mouseDown(red);
+    fireEvent.mouseDown(green, { shiftKey: true });
+
+    const selected = store.getState().profiles.multiSelectedBlocks;
+    const segments = store.getState().profiles.data.actionTable[0][0];
+
+    expect(selected.map((s) => s.segmentId)).toEqual(segments.map((s) => s.id));
+  });
+
+  it("選取用的是 id，編輯掉前面的色塊也不會指到別人", () => {
+    /**
+     * 這就是換掉索引的理由。索引會位移而且不報錯——Phase 4 連續踩到三次。
+     */
+    const store = createTestStore();
+    mount(store);
+
+    fireEvent.mouseDown(blocks().find((el) => bgOf(el).includes("0, 255, 0")));
+    const { segmentId } = store.getState().profiles.multiSelectedBlocks[0];
+
+    // 直接把第一段拿掉，模擬「前面的色塊被刪除」
+    const table = store.getState().profiles.data.actionTable;
+    const trimmed = table.map((armor, a) =>
+      a === 0
+        ? armor.map((segs, p) => (p === 0 ? segs.slice(1) : segs))
+        : armor,
+    );
+    store.dispatch({ type: "UPDATEACTIONTABLE", payload: trimmed });
+
+    const after = store
+      .getState()
+      .profiles.data.actionTable[0][0].find((s) => s.id === segmentId);
+
+    expect(after.colorStart).toMatchObject({ R: 0, G: 255, B: 0 });
   });
 });
 

@@ -8,6 +8,13 @@ import {
   updateCurrentTime,
 } from "../../redux/actions";
 import { useKeyframePartTimeline } from "../../hooks/useKeyframeActionTable.js";
+import { useSegmentPartTimeline } from "../../hooks/useSegmentActionTable.js";
+import { buildTimelineBlocks } from "../../utils/segments/blocks.js";
+import {
+  keyframeIndexOfSegment,
+  makeSelection,
+  selectedIdsOnPart,
+} from "../../utils/selection.js";
 
 import { produce } from "immer";
 // cloneDeep 已移除：tempActionTable cascade 已合併，drag 復原時再加回
@@ -51,11 +58,19 @@ const Timeline = forwardRef(
     const timelineBlocks = useSelector(
       (state) => state.profiles.timelineBlocks?.[armorIndex]?.[partIndex] || [] // 當前時間軸的方塊數據
     );
-    // Phase 4 過渡橋：只訂閱**自己這一個部位**的 keyframe 時間軸。
-    // 訂閱整張表的話，任何地方的編輯都會換掉 reference，154 條 Timeline 全部
-    // 重算 blocks 並各自 dispatch 一次——現在只有真的被改到的那條會動。
-    const { timeline: partTimeline, commitPart } =
-      useKeyframePartTimeline(armorIndex, partIndex);
+    // 只訂閱**自己這一個部位**。訂閱整張表的話，任何地方的編輯都會換掉
+    // reference，154 條 Timeline 全部重算 blocks 並各自 dispatch 一次——
+    // 現在只有真的被改到的那條會動。
+    //
+    // 兩份視圖並存是**遷移期的暫時狀態**（見 utils/selection.js）：
+    //   - segments：渲染與選取用的目標形狀
+    //   - partTimeline：拖曳/resize commit 與尚未原生化的消費者還在用 keyframe
+    // 兩者來自同一個 store slice，keyframe 那份是逐部位快取的，成本可忽略。
+    const { segments } = useSegmentPartTimeline(armorIndex, partIndex);
+    const { timeline: partTimeline, commitPart } = useKeyframePartTimeline(
+      armorIndex,
+      partIndex,
+    );
     const duration = useSelector((state) => state.profiles.duration); // 總時長
     const multiSelectedBlocks = useSelector((state) => state.profiles.multiSelectedBlocks); // 全局多選中方塊
     const clipboard = useSelector((state) => state.profiles.clipboard);
@@ -335,67 +350,57 @@ const Timeline = forwardRef(
       }
     }, [canvasWidth]);
 
-    // 由這個部位的時間軸算出畫面上的色塊。
-    // 依賴只有 partTimeline —— 別的部位被編輯時這裡完全不會重跑。
+    // 由這個部位的 segments 算出畫面上的色塊。
+    // 依賴只有 segments —— 別的部位被編輯時這裡完全不會重跑。
+    //
+    // 排版規則（首尾相接、涵蓋 [0, duration)、空隙也是 block）都在
+    // `buildTimelineBlocks` 裡，那是純函式所以測得到；這裡只負責寫進 store。
     useEffect(() => {
-
-      if (!Array.isArray(partTimeline)) {
-        dispatch(
-          updateTimelineBlocks({
-            armorIndex,
-            partIndex,
-            value: [],
-          })
-        );
-        return;
-      }
-
-      // 過濾掉 time 超過 duration 的 entry，避免產生負的 durationTime，
-      // 導致 flex 佈局將所有區塊等比例壓縮，造成與紅線的視覺偏移
-      const validTimeline = partTimeline.filter(
-        (entry) => entry && typeof entry.time === "number" && entry.time < duration
-      );
-
-      const newBlocks = [];
-
-      validTimeline.forEach((entry, index) => {
-        if (!entry || typeof entry.time !== "number") return;
-
-        const startTime = entry.time;
-        const nextStartTime = validTimeline[index + 1]?.time ?? duration;
-
-        const { R = 0, G = 0, B = 0, A = 1 } = entry.color || {};
-
-        const newBlock = {
-          startTime,
-          durationTime: Math.max(0, nextStartTime - startTime),
-          color: { R, G, B, A },
-        };
-
-        const lastBlock = newBlocks[newBlocks.length - 1];
-
-        if (
-          lastBlock &&
-          lastBlock.startTime + lastBlock.durationTime === newBlock.startTime &&
-          lastBlock.color.R === newBlock.color.R &&
-          lastBlock.color.G === newBlock.color.G &&
-          lastBlock.color.B === newBlock.color.B &&
-          lastBlock.color.A === newBlock.color.A
-        ) {
-          lastBlock.durationTime += newBlock.durationTime;
-        } else {
-          newBlocks.push(newBlock);
-        }
-      });
-
       dispatch(
         updateTimelineBlocks({
           armorIndex,
           partIndex,
-          value: newBlocks,
+          value: buildTimelineBlocks(segments, duration),
         })
       );
-    }, [partTimeline, duration, armorIndex, partIndex, dispatch]);
+    }, [segments, duration, armorIndex, partIndex, dispatch]);
+
+    /**
+     * 由視覺 block 取得對應的 segment。空隙（`segmentId === null`）回傳 null。
+     *
+     * 舊版是拿 `block.startTime` 回頭去 keyframe 陣列 findIndex，還要排除
+     * 同時間的黑點；那段反查在這個檔案裡有 5 份複本。block 現在自己帶著 id。
+     */
+    const segmentOfBlock = (block) =>
+      block?.segmentId
+        ? (segments.find((s) => s.id === block.segmentId) ?? null)
+        : null;
+
+    /**
+     * 把一個 block 包成選取項目。
+     *
+     * `blockIndex` 是遷移期欄位，給還沒原生化的消費者用（TrackToolbar、
+     * EffectMenu、CopyPasteManager…）。等它們都改讀 `segmentId` 之後，
+     * 這裡連同 `keyframeIndexOfSegment` 一起刪掉。
+     */
+    const selectionForBlock = (block) => {
+      const segment = segmentOfBlock(block);
+      if (!segment) return null;
+
+      return makeSelection({
+        armorIndex,
+        partIndex,
+        segment,
+        blockIndex: keyframeIndexOfSegment(partTimeline, segment),
+      });
+    };
+
+    /** 目前這條時間軸上被選中的 segmentId（渲染時逐 block 判斷用） */
+    const selectedIds = selectedIdsOnPart(
+      multiSelectedBlocks,
+      armorIndex,
+      partIndex,
+    );
 
     // 處理鼠標按下事件
     const handleMouseDown = (e, index) => {
@@ -403,27 +408,27 @@ const Timeline = forwardRef(
       // Move Mode 時必須根據情況決定是否攔截，讓全域 mousedown 能夠觸發提交/退出。
 
       const block = timelineBlocks[index];
-      const isBlackBlock = block.color.R === 0 && block.color.G === 0 && block.color.B === 0;
+      // 「這個 block 是不是空隙」以前是問「顏色是不是純黑」——但使用者本來
+      // 就可以放一個很暗的色塊。現在直接看有沒有 segmentId。
+      const isGapBlock = !block?.segmentId;
 
       // Move Mode 邏輯：
-      // - 若已在追蹤中 或 點到黑塊：不攔截 → 全域 mousedown 提交/退出
-      // - 若尚未追蹤且點到有色 block：stopPropagation 開始追蹤（本次點擊是「選取」，不是「提交」）
+      // - 若已在追蹤中 或 點到空隙：不攔截 → 全域 mousedown 提交/退出
+      // - 若尚未追蹤且點到色塊：stopPropagation 開始追蹤（本次點擊是「選取」，不是「提交」）
       if (moveMode) {
         if (moveDraggedIdxRef.current !== null) return; // 已追蹤 → 讓全域 handler 提交
-        if (isBlackBlock) return;                        // 黑塊 → 讓全域 handler 退出
+        if (isGapBlock) return;                          // 空隙 → 讓全域 handler 退出
 
         // 本次點擊是「選取 block 開始追蹤」，攔截讓全域 handler 無法立刻觸發提交
         e.stopPropagation();
         e.preventDefault();
 
-        // Bug fix：timelineBlocks index ≠ actionTable index（刪除後相鄰黑塊合併導致偏移）
-        // 用 block.startTime 反查 actionTable 真正的 index
-        // 必須排除 black entry：當 black entry 與 colored entry 同時間（緊鄰 block），findIndex 若只比對時間會取到錯誤 index
         const partData = partTimeline;
-        const atIdx = partData.findIndex(entry => entry.time === block.startTime && !isBlackEntry(entry));
+        const selection = selectionForBlock(block);
+        const atIdx = selection?.blockIndex ?? -1;
         if (atIdx === -1) return;
 
-        dispatch(updateMultiSelectedBlocks([{ armorIndex, partIndex, blockIndex: atIdx }]));
+        dispatch(updateMultiSelectedBlocks([selection]));
 
         const rect = timelineRef.current?.getBoundingClientRect();
         if (!rect) return;
@@ -475,42 +480,36 @@ const Timeline = forwardRef(
       // 非 Move Mode：維持原本行為，攔截事件
       e.stopPropagation();
 
-      // 邊緣 resize 邏輯：已選中的有色 block 在邊緣按下時啟動 resize，不進入普通選取流程
-      {
-        // 查找 actionTable index 用於比較選中狀態
-        const partDataForResize = partTimeline;
-        const atIdxForResize = partDataForResize.findIndex(entry => entry.time === block.startTime && !isBlackEntry(entry));
-        const isSelected = atIdxForResize !== -1 && multiSelectedBlocks.some(b =>
-          b.armorIndex === armorIndex && b.partIndex === partIndex && b.blockIndex === atIdxForResize
-        );
-        if (isSelected && !isBlackBlock && hoverEdge?.index === index) {
-          e.preventDefault();
-          startBlockResize(e, index, hoverEdge.edge);
-          return;
-        }
+      // 邊緣 resize 邏輯：已選中的色塊在邊緣按下時啟動 resize，不進入普通選取流程
+      if (
+        !isGapBlock &&
+        selectedIds.has(block.segmentId) &&
+        hoverEdge?.index === index
+      ) {
+        e.preventDefault();
+        startBlockResize(e, index, hoverEdge.edge);
+        return;
       }
 
       if (isCopying) {
         // 關鍵：在尋找貼上目標時，僅更新單選(綠框目標)
-        if (!isBlackBlock) {
-          const partDataForCopy = partTimeline;
-          const atIdxForCopy = partDataForCopy.findIndex(entry => entry.time === block.startTime && !isBlackEntry(entry));
-          if (atIdxForCopy !== -1) {
-            dispatch(updateMultiSelectedBlocks([{ armorIndex, partIndex, blockIndex: atIdxForCopy }]));
-          }
+        const selection = selectionForBlock(block);
+        if (selection) {
+          dispatch(updateMultiSelectedBlocks([selection]));
         }
         return;
       }
-      // If a black block is clicked, clear all selections.
-      if (block.color.R === 0 && block.color.G === 0 && block.color.B === 0) {
+
+      // 點到空隙 = 取消所有選取
+      if (isGapBlock) {
         dispatch(updateMultiSelectedBlocks([]));
         return;
       }
 
-      // timelineBlocks index ≠ actionTable index
       const partData = partTimeline;
-      const atIdx = partData.findIndex(entry => entry.time === block.startTime && !isBlackEntry(entry));
-      if (atIdx === -1) return;
+      const selection = selectionForBlock(block);
+      const atIdx = selection?.blockIndex ?? -1;
+      if (!selection || atIdx === -1) return;
 
       // 點擊區塊時同步更新 currentTime，確保後續操作（如 Cut）能正確定位
       // 使用區塊自身的 bounding rect 計算區塊內點擊位置對應的時間，
@@ -523,31 +522,42 @@ const Timeline = forwardRef(
       //   dispatch(updateCurrentTime(Math.max(0, Math.min(clickTime, duration))));
       // }
 
-      // Shift-click multi-selection logic
+      // Shift-click 多選：選取錨點與這次點擊之間的所有色塊。
+      //
+      // 舊版是走 keyframe 索引區間、跳過黑點；現在直接走 segment 陣列，
+      // 「中間有幾個色塊」就是幾個，不必再判斷誰是哨兵。
       const anchorBlock = multiSelectedBlocks[0];
-      if (e.shiftKey && anchorBlock && anchorBlock.armorIndex === armorIndex && anchorBlock.partIndex === partIndex) {
-        const startIdx = anchorBlock.blockIndex;
-        const endIdx = atIdx;
+      const anchorSegmentIndex =
+        e.shiftKey && anchorBlock
+          ? segments.findIndex((s) => s.id === anchorBlock.segmentId)
+          : -1;
 
-        const selectionStart = Math.min(startIdx, endIdx);
-        const selectionEnd = Math.max(startIdx, endIdx);
+      if (anchorSegmentIndex !== -1) {
+        const clickedIndex = segments.findIndex(
+          (s) => s.id === block.segmentId,
+        );
+        const from = Math.min(anchorSegmentIndex, clickedIndex);
+        const to = Math.max(anchorSegmentIndex, clickedIndex);
 
-        const newMultiSelected = [];
-        for (let i = selectionStart; i <= selectionEnd; i++) {
-          const entry = partData[i];
-          if (entry && !isBlackEntry(entry)) {
-            newMultiSelected.push({ armorIndex, partIndex, blockIndex: i });
-          }
-        }
-        dispatch(updateMultiSelectedBlocks(newMultiSelected));
-
+        dispatch(
+          updateMultiSelectedBlocks(
+            segments.slice(from, to + 1).map((segment) =>
+              makeSelection({
+                armorIndex,
+                partIndex,
+                segment,
+                blockIndex: keyframeIndexOfSegment(partData, segment),
+              }),
+            ),
+          ),
+        );
       } else {
         // Single-select logic
         // [Drag 已停用] 啟用 drag 時需恢復以下三行，並同步恢復 state 宣告、handleMouseMove、handleMouseUp
         // setDragging(true);
         // setDraggedBlockIndex(index);
         // setDragStartpoint(e.clientX);
-        dispatch(updateMultiSelectedBlocks([{ armorIndex, partIndex, blockIndex: atIdx }]));
+        dispatch(updateMultiSelectedBlocks([selection]));
       }
     };
 
@@ -790,26 +800,19 @@ const Timeline = forwardRef(
         // onMouseUp={handleMouseUp}
       >
       {timelineBlocks.map((block, index) => {
-        // --- 0. 查找 actionTable 中的實際 index（timelineBlocks 與 actionTable 索引不對齊）---
-        const partData = partTimeline;
-        const atIdx = partData?.findIndex(entry => entry.time === block.startTime && !(entry?.color?.R === 0 && entry?.color?.G === 0 && entry?.color?.B === 0)) ?? -1;
-
         // --- 1. 定義狀態變數 ---
-        // 是否在目前這條 Timeline 的選中清單中
-        const isCurrentlyInMultiSelect = atIdx !== -1 && multiSelectedBlocks.some(b => 
-          b.armorIndex === armorIndex && 
-          b.partIndex === partIndex && 
-          b.blockIndex === atIdx
-        );
+        // block 自己帶著 segmentId，不必再回頭去 keyframe 陣列反查索引
+        const isCurrentlyInMultiSelect =
+          !!block.segmentId && selectedIds.has(block.segmentId);
 
         // A. 判斷是否為「貼上目標」(綠色)：在複製模式下且被點擊選中
         const isPasteTarget = isCopying && isCurrentlyInMultiSelect;
 
         // B. 判斷是否為「複製來源」(橘色)：從剪貼簿讀取當初 Ctrl+C 的位置
-        const isCopySource = isCopying && clipboard?.sourceBlocks?.some(b => 
-          b.armorIndex === armorIndex && 
-          b.partIndex === partIndex && 
-          b.blockIndex === atIdx
+        const isCopySource = isCopying && !!block.segmentId && clipboard?.sourceBlocks?.some(b =>
+          b.armorIndex === armorIndex &&
+          b.partIndex === partIndex &&
+          b.segmentId === block.segmentId
         );
 
         // C. 判斷是否為「普通選取」(橘色)：非複製模式下的正常選取
@@ -817,19 +820,13 @@ const Timeline = forwardRef(
 
         // --- 2. 顏色與樣式邏輯 ---
         const color = block.color || { R: 0, G: 0, B: 0, A: 1 };
-        const currentBlockData = atIdx !== -1 ? partData[atIdx] : undefined;
-        const isFade = currentBlockData?.linear === 1;
+        const isFade = block.linear === 1;
 
-        // 定義背景
+        // 定義背景。漸變的終點色記在 segment 自己身上（`colorEnd`），
+        // 舊版要去看後面一個、再後面一個關鍵格並判斷誰是黑哨兵才推得出來。
         let backgroundStyle;
         if (isFade) {
-          const partTimeline = partData;
-          const nextBlock = partTimeline?.[atIdx + 1];
-          const nextNextBlock = partTimeline?.[atIdx + 2];
-          const isBlack = (c) => c && c.R === 0 && c.G === 0 && c.B === 0;
-          let endColor = { R: 0, G: 0, B: 0, A: 1 };
-          if (nextBlock && !isBlack(nextBlock.color)) endColor = nextBlock.color;
-          else if (nextNextBlock) endColor = nextNextBlock.color;
+          const endColor = block.colorEnd || { R: 0, G: 0, B: 0, A: 1 };
           backgroundStyle = `linear-gradient(to right, rgba(${color.R},${color.G},${color.B},${color.A}), rgba(${endColor.R},${endColor.G},${endColor.B},${endColor.A}))`;
         } else {
           backgroundStyle = `rgba(${color.R}, ${color.G}, ${color.B}, ${color.A})`;
@@ -844,7 +841,8 @@ const Timeline = forwardRef(
           selectionBorderColor = "#00FFFF"; // 改為青色
         }
 
-          const isBlackBlock = color.R === 0 && color.G === 0 && color.B === 0;
+          // 空隙不能被選取、拖曳、resize（以前是用「顏色是不是純黑」判斷）
+          const isGapBlock = !block.segmentId;
 
           // 設定 blockStyle
           const blockStyle = {
@@ -884,7 +882,7 @@ const Timeline = forwardRef(
 
           const handleBlockMouseMove = (ev) => {
             // resizeDragStartRef 不為 null 代表正在 resize，跳過 state 更新避免觸發 React 重繪覆蓋直接設定的 DOM style
-            if (moveMode || isBlackBlock || !isNormalSelected || resizeDragStartRef.current !== null) return;
+            if (moveMode || isGapBlock || !isNormalSelected || resizeDragStartRef.current !== null) return;
             const r = ev.currentTarget.getBoundingClientRect();
             const offsetX = ev.clientX - r.left;
             if (offsetX <= EDGE_THRESHOLD) {
@@ -905,7 +903,7 @@ const Timeline = forwardRef(
           // 游標優先序：resize 邊緣 > move mode > 預設
           const blockCursor = (!moveMode && hoverEdge?.index === index)
             ? 'ew-resize'
-            : (moveMode && !isBlackBlock ? 'grab' : 'default');
+            : (moveMode && !isGapBlock ? 'grab' : 'default');
 
           return (
             <div
@@ -922,7 +920,7 @@ const Timeline = forwardRef(
               onMouseLeave={moveMode ? undefined : handleBlockMouseLeave}
               onMouseDown={(e) => handleMouseDown(e, index)}
             >
-              {currentBlockData?.linear === 1 && (
+              {block.linear === 1 && (
                 <FontAwesomeIcon
                   icon={faWandMagicSparkles}
                   size="xl"
