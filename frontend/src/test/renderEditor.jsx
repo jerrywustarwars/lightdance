@@ -6,6 +6,7 @@ import profiles from "../redux/reducers/profiles.js";
 import { normalizeActionTable } from "../utils/actionTable/normalizeActionTable.js";
 import { toSegmentTable } from "../utils/migration/loadProjectData.js";
 import { toKeyframeTable } from "../utils/segments/withKeyframeAdapter.js";
+import { keyframeIndexOfSegment, makeSelection } from "../utils/selection.js";
 
 /**
  * 元件測試的共用掛載工具。
@@ -84,5 +85,50 @@ export const timelineOf = (store, armor = 0, part = 0) => {
 /** 取得 store 裡真正的 segments，用來斷言 segment 層的行為 */
 export const segmentsOf = (store, armor = 0, part = 0) =>
   store.getState().profiles.data.actionTable[armor][part];
+
+/**
+ * 選取某個部位的第 N 個 segment。
+ *
+ * 選取項目要帶 `segmentId`，而 id 是建立 store 時才產生的（`createId()`），
+ * 測試沒辦法先寫死。所以選取一律**從 store 反查**，不要在測試裡手工組
+ * `{armorIndex, partIndex, blockIndex}` —— 那等於把實作細節抄進斷言裡。
+ *
+ * @param segmentIndex 依時間排序的第幾個色塊（0 起算）
+ */
+export const selectSegment = (store, armor = 0, part = 0, segmentIndex = 0) => {
+  const segment = segmentsOf(store, armor, part)[segmentIndex];
+  const selection = makeSelection({
+    armorIndex: armor,
+    partIndex: part,
+    segment,
+    blockIndex: keyframeIndexOfSegment(timelineOf(store, armor, part), segment),
+  });
+
+  store.dispatch({
+    type: "UPDATE_MULTI_SELECTED_BLOCKS",
+    payload: [selection],
+  });
+  return selection;
+};
+
+/** 同時選取多個 segment（Shift 多選的結果） */
+export const selectSegments = (store, armor, part, segmentIndexes) => {
+  const timeline = timelineOf(store, armor, part);
+  const selections = segmentIndexes.map((index) => {
+    const segment = segmentsOf(store, armor, part)[index];
+    return makeSelection({
+      armorIndex: armor,
+      partIndex: part,
+      segment,
+      blockIndex: keyframeIndexOfSegment(timeline, segment),
+    });
+  });
+
+  store.dispatch({
+    type: "UPDATE_MULTI_SELECTED_BLOCKS",
+    payload: selections,
+  });
+  return selections;
+};
 
 export { DURATION };

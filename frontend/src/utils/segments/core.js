@@ -71,6 +71,34 @@ export function findSegmentAt(segments, time) {
   return time < candidate.end ? candidate : null;
 }
 
+/**
+ * 找出涵蓋 `time` 的 segment；落在空隙時退而求其次找**最接近**的那一段。
+ *
+ * 跨軌導航（W/S）要的就是這個語意：「上一條軌道在同一個時間點的色塊」，
+ * 但那條軌道在該時刻可能是熄滅的，這時選最近的色塊比什麼都不選有用。
+ *
+ * 空陣列回傳 null。距離相同時取比較早的那一段。
+ */
+export function findNearestSegment(segments, time) {
+  if (!Array.isArray(segments) || segments.length === 0) return null;
+
+  const covering = findSegmentAt(segments, time);
+  if (covering) return covering;
+
+  let best = null;
+  let bestDistance = Infinity;
+
+  for (const segment of segments) {
+    const distance =
+      time < segment.start ? segment.start - time : time - segment.end;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = segment;
+    }
+  }
+  return best;
+}
+
 /** 找出與 `[start, end)` 有交集的所有 segment */
 export function findSegmentsInRange(segments, start, end) {
   return segments.filter(

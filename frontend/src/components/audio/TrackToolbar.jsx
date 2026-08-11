@@ -9,8 +9,6 @@ import {
   faScissors,
   faCircleHalfStroke,
 } from "@fortawesome/free-solid-svg-icons";
-import { produce } from "immer";
-
 import {
   updateMultiSelectedBlocks,
   updateChosenColor,
@@ -18,9 +16,14 @@ import {
   updateIsColorChangeActive,
   updateCurrentTime,
 } from "../../redux/actions.js";
-import { TICK_MS, LEGACY_BLACK_SENTINEL_MS } from "../../constants/time.js";
-import { removeDuplicateBlackBlocks } from "../../utils/actionTable/blackSentinel.js";
-import { useKeyframeActionTable } from "../../hooks/useKeyframeActionTable.js";
+import { TICK_MS } from "../../constants/time.js";
+import { useSegmentActionTable } from "../../hooks/useSegmentActionTable.js";
+import { splitSegmentAt } from "../../utils/segments/color.js";
+import {
+  findSegmentById,
+  makeSelection,
+  resolveSelections,
+} from "../../utils/selection.js";
 
 /**
  * 色塊工具列：前一/下一個時間點、切割、刪除、亮度、改色、統一同色透明度。
@@ -54,87 +57,83 @@ export function useTrackActions() {
   // 從 Provider 拿 store，不要 import 模組層的 singleton——singleton 在測試裡
   // 會是另一個 store instance，讀到的 state 跟畫面上的無關。
   const store = useStore();
-  // Phase 4 過渡橋：store 存 segments，這裡取得 keyframe 視圖 + 寫回用的 commit
-  const { actionTable, commit } = useKeyframeActionTable();
+  const { segmentTable, duration, commit, commitPart } =
+    useSegmentActionTable();
   const currentTime = useSelector((state) => state.profiles.currentTime);
-  const duration = useSelector((state) => state.profiles.duration);
   const multiSelectedBlocks = useSelector(
     (state) => state.profiles.multiSelectedBlocks,
   );
+
+  /** 選取所在的部位（所有動作都以第一筆選取為準） */
+  const activePart = multiSelectedBlocks[0] ?? null;
+
+  /** 該部位的 segments */
+  const activeSegments = activePart
+    ? (segmentTable?.[activePart.armorIndex]?.[activePart.partIndex] ?? [])
+    : [];
+
+  /** 選取解析成真正的 segment，並濾掉已經不存在的（例如剛被 undo 掉） */
+  const selectedSegments = resolveSelections(
+    multiSelectedBlocks,
+    activeSegments,
+  ).map((entry) => entry.segment);
+
+  /** 第一個選取的 segment，工具列的顏色/亮度都以它為準 */
+  const firstSegment = selectedSegments[0] ?? null;
 
   // 亮度下拉的顯示值，會跟著目前選取的色塊同步
   const [brightness, setBrightness] = useState(1);
 
   useEffect(() => {
-    if (multiSelectedBlocks.length > 0) {
-      const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
-      const block = actionTable?.[armorIndex]?.[partIndex]?.[blockIndex];
-      if (block?.color?.A !== undefined) {
-        setBrightness(block.color.A);
-      }
-    }
-  }, [multiSelectedBlocks, actionTable]);
+    const alpha = firstSegment?.colorStart?.A;
+    if (alpha !== undefined) setBrightness(alpha);
+  }, [firstSegment]);
 
-  /** 把整段選取塗黑（等同刪除色塊） */
+  /**
+   * 刪除選取的色塊。
+   *
+   * segment 模型不需要「塗黑」——把那幾段從資料裡拿掉就是熄滅。舊版要把
+   * 第一個關鍵格改成黑色、再把後面到選取結束之間的關鍵格 splice 掉，
+   * 最後還得跑 removeDuplicateBlackBlocks 收拾殘留的黑點。
+   */
   const deleteSelected = () => {
     if (multiSelectedBlocks.length === 0) return;
 
-    const groupedByPart = multiSelectedBlocks.reduce((acc, block) => {
-      const key = `${block.armorIndex}-${block.partIndex}`;
-      if (!acc[key]) {
-        acc[key] = [];
-      }
-      acc[key].push(block.blockIndex);
-      return acc;
-    }, {});
+    // 依部位分組：一次選取可能跨好幾條時間軸
+    const byPart = new Map();
+    for (const selection of multiSelectedBlocks) {
+      const key = `${selection.armorIndex}-${selection.partIndex}`;
+      if (!byPart.has(key)) byPart.set(key, []);
+      byPart.get(key).push(selection);
+    }
 
-    const updatedActionTable = produce(actionTable, (draft) => {
-      Object.keys(groupedByPart).forEach((key) => {
-        const [armorIndexStr, partIndexStr] = key.split("-");
-        const armorIndex = parseInt(armorIndexStr, 10);
-        const partIndex = parseInt(partIndexStr, 10);
-        const blockIndexes = groupedByPart[key];
+    let nextTable = segmentTable;
 
-        const minBlockIndex = Math.min(...blockIndexes);
-        const maxBlockIndex = Math.max(...blockIndexes);
+    for (const selections of byPart.values()) {
+      const { armorIndex, partIndex } = selections[0];
+      const segments = nextTable?.[armorIndex]?.[partIndex] ?? [];
+      const doomed = new Set(selections.map((s) => s.segmentId));
 
-        const timeline = draft[armorIndex]?.[partIndex];
+      const remaining = segments.filter((segment) => !doomed.has(segment.id));
+      if (remaining.length === segments.length) continue; // 這條沒東西被刪到
 
-        if (!timeline) return;
+      nextTable = nextTable.map((armor, a) =>
+        a === armorIndex
+          ? armor.map((segs, p) => (p === partIndex ? remaining : segs))
+          : armor,
+      );
+    }
 
-        const selectionStartTime = timeline[minBlockIndex]?.time;
-        const selectionEndTime = timeline[maxBlockIndex + 1]?.time ?? duration;
-
-        const startIndex = timeline.findIndex(
-          (entry) => entry.time === selectionStartTime,
-        );
-
-        if (startIndex === -1) return;
-
-        // 選取的第一個關鍵格塗黑，其後到選取結束之間的關鍵格全部移除
-        timeline[startIndex].color = { R: 0, G: 0, B: 0, A: 1 };
-        timeline[startIndex].linear = 0;
-
-        let deleteStartIndex = startIndex + 1;
-        let deleteCount = 0;
-        while (
-          deleteStartIndex + deleteCount < timeline.length &&
-          timeline[deleteStartIndex + deleteCount].time < selectionEndTime
-        ) {
-          deleteCount++;
-        }
-
-        if (deleteCount > 0) {
-          timeline.splice(deleteStartIndex, deleteCount);
-        }
-      });
-    });
-
-    commit(removeDuplicateBlackBlocks(updatedActionTable));
+    commit(nextTable);
     dispatch(updateMultiSelectedBlocks([]));
   };
 
-  /** 在播放位置把選取的色塊切成兩段 */
+  /**
+   * 在播放位置把選取的色塊切成兩段。
+   *
+   * 漸變的插值、id 分配、邊界檢查全在 `splitSegmentAt` 裡（有測試證明
+   * 切開前後逐格顏色一致）。這裡只負責讀播放位置、寫回、把選取移到後半段。
+   */
   const cutSelected = () => {
     if (multiSelectedBlocks.length !== 1) {
       console.warn(
@@ -145,165 +144,76 @@ export function useTrackActions() {
 
     // 直接從 Redux store 讀取最新 currentTime，繞過 closure stale 問題
     const curTime = store.getState().profiles.currentTime;
+    const { armorIndex, partIndex, segmentId } = multiSelectedBlocks[0];
+    const segments = segmentTable?.[armorIndex]?.[partIndex] ?? [];
 
-    const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
+    const target = findSegmentById(segments, segmentId);
+    if (!target || curTime <= target.start || curTime >= target.end) {
+      console.warn("Cut operation is not valid at the current time.");
+      return;
+    }
 
-    const updatedActionTable = produce(actionTable, (draft) => {
-      const timeline = draft[armorIndex]?.[partIndex];
-      const originalBlock = timeline?.[blockIndex];
-      const nextBlock = timeline?.[blockIndex + 1];
+    const nextSegments = splitSegmentAt(segments, curTime);
+    if (nextSegments === segments) return;
 
-      // 若為最後一個區塊，以 duration 作為隱含結束邊界
-      const blockEndTime = nextBlock?.time ?? duration;
+    commitPart(armorIndex, partIndex, nextSegments);
 
-      if (
-        !originalBlock ||
-        curTime <= originalBlock.time ||
-        curTime >= blockEndTime
-      ) {
-        console.warn("Cut operation is not valid at the current time.");
-        return;
-      }
-
-      let newBlockColor = originalBlock.color;
-      const isOriginalLinear = originalBlock.linear === 1;
-
-      // 漸變中的色塊要在切點取出當下的插值顏色，兩段才接得起來
-      if (isOriginalLinear) {
-        const gradientTargetBlock = timeline[blockIndex + 2];
-        const startColor = originalBlock.color;
-        const endColor = gradientTargetBlock?.color || {
-          R: 0,
-          G: 0,
-          B: 0,
-          A: 1,
-        };
-        const startTime = originalBlock.time;
-        const endTime = nextBlock?.time ?? duration;
-
-        if (endTime > startTime) {
-          const ratio = (curTime - startTime) / (endTime - startTime);
-          newBlockColor = {
-            R: Math.round(startColor.R * (1 - ratio) + endColor.R * ratio),
-            G: Math.round(startColor.G * (1 - ratio) + endColor.G * ratio),
-            B: Math.round(startColor.B * (1 - ratio) + endColor.B * ratio),
-            A: (startColor.A ?? 1) * (1 - ratio) + (endColor.A ?? 1) * ratio,
-          };
-        }
-        originalBlock.linear = 1;
-      }
-
-      const newBlackBlock = {
-        time: curTime - LEGACY_BLACK_SENTINEL_MS,
-        color: { R: 0, G: 0, B: 0, A: 1 },
-        linear: 0,
-      };
-
-      const newBlock = {
-        time: curTime,
-        color: newBlockColor,
-        linear: isOriginalLinear ? 1 : 0,
-      };
-
-      timeline.splice(blockIndex + 1, 0, newBlackBlock, newBlock);
-      timeline.sort((a, b) => a.time - b.time);
-    });
-
-    const nextTable = commit(updatedActionTable);
-
-    // 選取跟著移到切出來的後半段。
-    //
-    // 原本寫死 blockIndex + 2（黑哨兵 + 新色塊）。但寫入會經過 segment 的來回，
-    // 黑哨兵被吸收成邊界後索引會往前縮，寫死的偏移會選到隔壁的色塊。
-    // 改成從實際寫入結果裡用時間找回來，不管中間有沒有黑點都正確。
-    const newBlockIndex = nextTable[armorIndex][partIndex].findIndex(
-      (entry) => entry.time === curTime,
-    );
-
-    if (newBlockIndex !== -1) {
+    // 選取移到切出來的後半段（它拿到新的 id）
+    const back = nextSegments.find((segment) => segment.start === curTime);
+    if (back) {
       dispatch(
         updateMultiSelectedBlocks([
-          { armorIndex, partIndex, blockIndex: newBlockIndex },
+          makeSelection({ armorIndex, partIndex, segment: back }),
         ]),
       );
     }
   };
 
   /**
-   * 把播放位置移到選取部位的上/下一個關鍵格。
+   * 選取部位上所有色塊的邊界時間（起點與終點），由小到大且不重複。
    *
-   * 黑色哨兵和它守護的色塊只差 10ms，跳到黑點上對使用者沒有意義，
-   * 所以差距剛好是哨兵間距時要再跳一格。
+   * 這就是導航會停的點。舊版是走 keyframe 的 time 清單，因此會停在黑色哨兵上
+   * ——那個點只差色塊 10ms，對使用者沒有意義，所以還要額外判斷「差距剛好是
+   * 哨兵間距就再跳一格」。segment 世界沒有哨兵，邊界就是邊界。
    */
+  const boundaryTimes = () => {
+    if (!activePart) return [];
+    const times = new Set();
+    for (const segment of activeSegments) {
+      times.add(segment.start);
+      times.add(segment.end);
+    }
+    return [...times].sort((a, b) => a - b);
+  };
+
   const goToPreviousPoint = () => {
     if (multiSelectedBlocks.length === 0) return;
 
-    const { armorIndex, partIndex } = multiSelectedBlocks[0];
-    const timeline = actionTable[armorIndex]?.[partIndex];
+    const previous = boundaryTimes()
+      .filter((time) => time < currentTime)
+      .pop();
 
-    if (!timeline || timeline.length === 0) {
-      console.warn("No valid timeline found for the selected block.");
+    if (previous === undefined) {
+      console.warn("No previous time point found.");
       return;
     }
-
-    const filteredTimes = timeline
-      .map((block) => block.time)
-      .filter((time) => time < currentTime)
-      .sort((a, b) => b - a);
-
-    const previousTime = filteredTimes[0];
-    const secondPreviousTime = filteredTimes[1];
-
-    let selectedTime = previousTime;
-    if (
-      previousTime !== undefined &&
-      secondPreviousTime !== undefined &&
-      currentTime - previousTime === LEGACY_BLACK_SENTINEL_MS
-    ) {
-      selectedTime = secondPreviousTime;
-    }
-
-    if (selectedTime !== undefined) {
-      dispatch(updateCurrentTime(Math.round(selectedTime / TICK_MS) * TICK_MS));
-    } else {
-      console.warn("No previous time point found.");
-    }
+    dispatch(updateCurrentTime(Math.round(previous / TICK_MS) * TICK_MS));
   };
 
   const goToNextPoint = () => {
     if (multiSelectedBlocks.length === 0) return;
-    const { armorIndex, partIndex } = multiSelectedBlocks[0];
-    const timeline = actionTable[armorIndex]?.[partIndex];
 
-    if (!timeline || timeline.length === 0) {
-      console.warn("No valid timeline found for the selected block.");
-      return;
-    }
+    const next = boundaryTimes().find((time) => time > currentTime);
 
-    const filteredTimes = timeline
-      .map((block) => block.time)
-      .filter((time) => time > currentTime)
-      .sort((a, b) => a - b);
-
-    if (filteredTimes.length === 0) {
+    if (next === undefined) {
       console.warn("No next time point found.");
       return;
     }
-
-    const firstTime = filteredTimes[0];
-    const secondTime = filteredTimes[1];
-
-    let nextTime = firstTime;
-
-    if (
-      secondTime !== undefined &&
-      secondTime - firstTime === LEGACY_BLACK_SENTINEL_MS
-    ) {
-      nextTime = secondTime;
-    }
-
-    nextTime = Math.min(Math.round(nextTime / TICK_MS) * TICK_MS, duration);
-    dispatch(updateCurrentTime(nextTime));
+    dispatch(
+      updateCurrentTime(
+        Math.min(Math.round(next / TICK_MS) * TICK_MS, duration),
+      ),
+    );
   };
 
   /** 設定選取色塊的透明度 */
@@ -319,25 +229,25 @@ export function useTrackActions() {
     }
 
     const alphaValue = clampAlpha(newBrightness);
+    const doomed = new Set(multiSelectedBlocks.map((s) => s.segmentId));
 
-    const updatedActionTable = produce(actionTable, (draft) => {
-      multiSelectedBlocks.forEach(({ armorIndex, partIndex, blockIndex }) => {
-        const timeline = draft[armorIndex]?.[partIndex];
+    // 選取一定落在同一個部位上（Timeline 的多選不跨軌），所以只改那一條
+    const nextSegments = activeSegments.map((segment) =>
+      doomed.has(segment.id)
+        ? {
+            ...segment,
+            colorStart: { ...segment.colorStart, A: alphaValue },
+            colorEnd: { ...segment.colorEnd, A: alphaValue },
+          }
+        : segment,
+    );
 
-        if (timeline?.[blockIndex]?.color) {
-          timeline[blockIndex].color.A = alphaValue;
-        }
-      });
-    });
+    commitPart(activePart.armorIndex, activePart.partIndex, nextSegments);
 
-    commit(updatedActionTable);
-
-    const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
-    const firstBlockColor =
-      actionTable?.[armorIndex]?.[partIndex]?.[blockIndex]?.color;
-
-    if (firstBlockColor) {
-      dispatch(updateChosenColor({ ...firstBlockColor, A: alphaValue }));
+    if (firstSegment) {
+      dispatch(
+        updateChosenColor({ ...firstSegment.colorStart, A: alphaValue }),
+      );
     }
 
     setBrightness(alphaValue);
@@ -347,15 +257,12 @@ export function useTrackActions() {
   const openColorPicker = () => {
     if (multiSelectedBlocks.length === 0) return;
 
-    const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
-    const block = actionTable?.[armorIndex]?.[partIndex]?.[blockIndex];
-
-    if (!block || !block.color) {
+    if (!firstSegment) {
       console.warn("Selected block has no color information.");
       return;
     }
 
-    const blockColor = block.color;
+    const blockColor = firstSegment.colorStart;
     dispatch(updatePaletteColor(rgbaToHex(blockColor)));
     dispatch(updateChosenColor(blockColor));
     dispatch(updateIsColorChangeActive(true));
@@ -382,42 +289,50 @@ export function useTrackActions() {
 
     const alphaValue = clampAlpha(newAlpha);
 
-    const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
-    const selectedColor =
-      actionTable?.[armorIndex]?.[partIndex]?.[blockIndex]?.color;
-
-    if (!selectedColor) {
+    if (!firstSegment) {
       alert("找不到 selectedBlock 的顏色資料");
       return;
     }
 
-    const targetR = Number(selectedColor.R);
-    const targetG = Number(selectedColor.G);
-    const targetB = Number(selectedColor.B);
+    const selectedColor = firstSegment.colorStart;
+    const isTargetColor = (color) =>
+      Number(color?.R) === Number(selectedColor.R) &&
+      Number(color?.G) === Number(selectedColor.G) &&
+      Number(color?.B) === Number(selectedColor.B);
 
-    const updatedActionTable = produce(actionTable, (draft) => {
-      Object.values(draft || {}).forEach((armor) => {
-        Object.values(armor || {}).forEach((timeline) => {
-          if (!Array.isArray(timeline)) return;
+    // 全場掃一遍，但**逐層維持結構共享**：沒被改到的部位沿用原陣列、
+    // 沒被改到的舞者沿用整列、整張表都沒變就回傳原表（commit 會判斷成 no-op，
+    // 不佔一格 undo）。少做這件事的話，7 個 Armor 與 154 條 Timeline 會全部重繪。
+    let tableChanged = false;
 
-          timeline.forEach((block) => {
-            const color = block?.color;
-            if (!color) return;
+    const nextTable = segmentTable.map((armor) => {
+      let armorChanged = false;
 
-            const sameColor =
-              Number(color.R) === targetR &&
-              Number(color.G) === targetG &&
-              Number(color.B) === targetB;
+      const nextArmor = armor.map((segments) => {
+        let partChanged = false;
 
-            if (sameColor) {
-              color.A = alphaValue;
-            }
-          });
+        const nextSegments = segments.map((segment) => {
+          if (!isTargetColor(segment.colorStart)) return segment;
+          if (segment.colorStart.A === alphaValue) return segment;
+          partChanged = true;
+          return {
+            ...segment,
+            colorStart: { ...segment.colorStart, A: alphaValue },
+            colorEnd: { ...segment.colorEnd, A: alphaValue },
+          };
         });
+
+        if (!partChanged) return segments;
+        armorChanged = true;
+        return nextSegments;
       });
+
+      if (!armorChanged) return armor;
+      tableChanged = true;
+      return nextArmor;
     });
 
-    commit(updatedActionTable);
+    commit(tableChanged ? nextTable : segmentTable);
     dispatch(updateChosenColor({ ...selectedColor, A: alphaValue }));
     setBrightness(alphaValue);
   };
@@ -429,10 +344,7 @@ export function useTrackActions() {
       return false;
     }
 
-    const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
-    const selectedBlock = actionTable?.[armorIndex]?.[partIndex]?.[blockIndex];
-
-    if (!selectedBlock?.color) {
+    if (!firstSegment) {
       alert("找不到 selectedBlock 的顏色資料");
       return false;
     }

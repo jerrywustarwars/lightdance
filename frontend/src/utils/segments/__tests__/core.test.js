@@ -6,6 +6,7 @@ import {
   floorToTick,
   findSegmentAt,
   findSegmentIndexAt,
+  findNearestSegment,
   findSegmentsInRange,
   validateSegments,
   clearRange,
@@ -157,5 +158,34 @@ describe("insertSegment", () => {
     const result = insertSegment(segments, seg("new", 1500, 2000), { makeId });
 
     expect(result.map((s) => s.id)).toEqual(["a", "new", "b"]);
+  });
+});
+
+describe("findNearestSegment", () => {
+  const segments = [seg("a", 1000, 2000), seg("b", 5000, 6000)];
+
+  it("落在段內就回傳那一段", () => {
+    expect(findNearestSegment(segments, 1500)).toBe(segments[0]);
+  });
+
+  it("落在空隙時回傳最接近的那一段", () => {
+    // 2000~5000 是空隙：靠近前面選 a、靠近後面選 b
+    expect(findNearestSegment(segments, 2400)).toBe(segments[0]);
+    expect(findNearestSegment(segments, 4600)).toBe(segments[1]);
+  });
+
+  it("在所有段之前/之後也找得到最近的", () => {
+    expect(findNearestSegment(segments, 0)).toBe(segments[0]);
+    expect(findNearestSegment(segments, 99999)).toBe(segments[1]);
+  });
+
+  it("距離相同時取比較早的那一段", () => {
+    // 3500 距離 a 的尾端與 b 的開頭都是 1500
+    expect(findNearestSegment(segments, 3500)).toBe(segments[0]);
+  });
+
+  it("沒有任何段時回傳 null", () => {
+    expect(findNearestSegment([], 1000)).toBe(null);
+    expect(findNearestSegment(undefined, 1000)).toBe(null);
   });
 });

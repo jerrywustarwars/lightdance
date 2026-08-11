@@ -7,6 +7,8 @@ import {
   renderWithStore,
   createTestStore,
   timelineOf,
+  segmentsOf,
+  selectSegment,
 } from "../../../test/renderEditor.jsx";
 
 /**
@@ -147,43 +149,46 @@ describe("複製貼上", () => {
 });
 
 describe("色塊工具列", () => {
-  const selected = (blockIndex = 1) => [
-    { armorIndex: 0, partIndex: 0, blockIndex },
-  ];
+  /**
+   * 測試光表的部位 0 有兩個色塊：紅 1000~2000、綠 2000~10000
+   * （見 renderEditor.jsx）。選取一律用 selectSegment 從 store 反查，
+   * 不要手工組 `{armorIndex, partIndex, blockIndex}`——segmentId 是
+   * 建 store 時才產生的，寫死等於把實作細節抄進斷言。
+   */
+  const RED_BLOCK = 0;
 
-  it("刪除鍵把選取的色塊塗黑並清空選取", () => {
-    const store = createTestStore({ multiSelectedBlocks: selected() });
+  it("刪除鍵移除選取的色塊並清空選取", () => {
+    const store = createTestStore();
+    selectSegment(store, 0, 0, RED_BLOCK);
     mount(store);
 
-    // 測試光表 index 1 是 1000ms 的紅色塊（見 renderEditor.jsx）
-    expect(timelineOf(store).some((e) => e.color.R === 255)).toBe(true);
+    expect(segmentsOf(store).some((s) => s.colorStart.R === 255)).toBe(true);
     fireEvent.click(document.querySelector(".delete-button"));
 
-    // 塗黑後和前後的黑點合併，紅色塊整個消失
-    expect(timelineOf(store).some((e) => e.color.R === 255)).toBe(false);
+    // segment 模型不需要塗黑——把那一段拿掉就是熄滅
+    expect(segmentsOf(store).some((s) => s.colorStart.R === 255)).toBe(false);
     expect(store.getState().profiles.multiSelectedBlocks).toEqual([]);
   });
 
   it("亮度下拉改變選取色塊的透明度", () => {
-    const store = createTestStore({ multiSelectedBlocks: selected() });
+    const store = createTestStore();
+    selectSegment(store, 0, 0, RED_BLOCK);
     mount(store);
 
     fireEvent.change(document.querySelector("#brightness-select"), {
       target: { value: "0.3" },
     });
-    expect(timelineOf(store)[1].color.A).toBeCloseTo(0.3);
+    expect(segmentsOf(store)[RED_BLOCK].colorStart.A).toBeCloseTo(0.3);
   });
 
-  it("下一個時間點會跳過黑色哨兵", () => {
-    // 測試光表：1000（紅）、1990（黑哨兵）、2000（綠）
-    const store = createTestStore({
-      currentTime: 1000,
-      multiSelectedBlocks: selected(),
-    });
+  it("下一個時間點跳到色塊邊界", () => {
+    const store = createTestStore({ currentTime: 1000 });
+    selectSegment(store, 0, 0, RED_BLOCK);
     mount(store);
 
     fireEvent.click(document.querySelector(".timeline-right"));
-    // 1990 和 2000 只差 10ms，停在黑點上沒有意義，所以直接跳到 2000
+    // 紅色塊 1000~2000 的下一個邊界就是 2000。
+    // 舊模型這裡會停在 1990 的黑哨兵上，所以要額外判斷「差 10ms 就再跳一格」。
     expect(store.getState().profiles.currentTime).toBe(2000);
   });
 
@@ -196,33 +201,94 @@ describe("色塊工具列", () => {
   });
 
   it("剪刀在播放位置把色塊切成兩段", () => {
-    // 測試光表 index 1 是 1000~1990 的紅色塊，在 1500 切開
-    const store = createTestStore({
-      currentTime: 1500,
-      multiSelectedBlocks: selected(),
-    });
+    // 紅色塊 1000~2000，在 1500 切開
+    const store = createTestStore({ currentTime: 1500 });
+    selectSegment(store, 0, 0, RED_BLOCK);
     mount(store);
 
     fireEvent.click(document.querySelector(".cut-button"));
 
-    const reds = timelineOf(store).filter((entry) => entry.color.R === 255);
-    expect(reds.map((entry) => entry.time)).toEqual([1000, 1500]);
+    const reds = segmentsOf(store).filter((s) => s.colorStart.R === 255);
+    expect(reds.map((s) => [s.start, s.end])).toEqual([
+      [1000, 1500],
+      [1500, 2000],
+    ]);
+  });
+
+  it("剪完之後選取移到後半段", () => {
+    const store = createTestStore({ currentTime: 1500 });
+    selectSegment(store, 0, 0, RED_BLOCK);
+    mount(store);
+
+    fireEvent.click(document.querySelector(".cut-button"));
+
+    const { segmentId } = store.getState().profiles.multiSelectedBlocks[0];
+    const selected = segmentsOf(store).find((s) => s.id === segmentId);
+    expect(selected).toMatchObject({ start: 1500, end: 2000 });
+  });
+
+  it("統一同色透明度會改到全場同色的色塊", () => {
+    const store = createTestStore();
+    selectSegment(store, 0, 0, RED_BLOCK);
+    mount(store);
+
+    // 另一位舞者也放一個一樣的紅色塊
+    const table = store.getState().profiles.data.actionTable;
+    const red = segmentsOf(store)[RED_BLOCK];
+    store.dispatch({
+      type: "UPDATEACTIONTABLE",
+      payload: table.map((armor, a) =>
+        a === 3
+          ? armor.map((segs, p) =>
+              p === 2 ? [{ ...red, id: "other-red" }] : segs,
+            )
+          : armor,
+      ),
+      meta: { skipHistory: true },
+    });
+
+    fireEvent.click(document.querySelector(".uniform-alpha-button"));
+    fireEvent.click(
+      [...document.querySelectorAll(".uniform-alpha-option")].find(
+        (el) => el.textContent === "30%",
+      ),
+    );
+
+    expect(segmentsOf(store, 0, 0)[RED_BLOCK].colorStart.A).toBeCloseTo(0.3);
+    expect(segmentsOf(store, 3, 2)[0].colorStart.A).toBeCloseTo(0.3);
+  });
+
+  it("統一同色透明度不會動到別的顏色，也維持沒改到的部位 reference", () => {
+    const store = createTestStore();
+    selectSegment(store, 0, 0, RED_BLOCK);
+    mount(store);
+
+    const greenBefore = segmentsOf(store)[1];
+    const untouchedPart = segmentsOf(store, 4, 7);
+
+    fireEvent.click(document.querySelector(".uniform-alpha-button"));
+    fireEvent.click(
+      [...document.querySelectorAll(".uniform-alpha-option")].find(
+        (el) => el.textContent === "30%",
+      ),
+    );
+
+    expect(segmentsOf(store)[1]).toBe(greenBefore);
+    expect(segmentsOf(store, 4, 7)).toBe(untouchedPart);
   });
 
   it("剪刀讀的是畫面上這個 store 的播放位置", () => {
     // 這則的重點不是切割本身，而是 cutSelected 從哪裡讀 currentTime。
     // 它曾經 import 模組層的 store singleton，在測試裡會讀到另一個 store
     // （currentTime 恆為 0），於是永遠切在色塊外面而靜默什麼都不做。
-    const store = createTestStore({
-      currentTime: 1800,
-      multiSelectedBlocks: selected(),
-    });
+    const store = createTestStore({ currentTime: 1800 });
+    selectSegment(store, 0, 0, RED_BLOCK);
     mount(store);
 
     fireEvent.click(document.querySelector(".cut-button"));
 
     expect(
-      timelineOf(store).some((entry) => entry.time === 1800),
+      segmentsOf(store).some((s) => s.start === 1800),
       "應該切在 1800，而不是別的 store 的 currentTime",
     ).toBe(true);
   });
@@ -455,12 +521,15 @@ describe("效果選單與亮度階梯", () => {
 });
 
 describe("透明度快捷鍵", () => {
-  const withPalette = (overrides = {}) =>
-    createTestStore({
+  /** 建好 store 之後才選色塊：segmentId 是建 store 時才產生的 */
+  const withPalette = (overrides = {}) => {
+    const store = createTestStore({
       favoriteColor: [[{ R: 11, G: 22, B: 33, A: 1 }]],
-      multiSelectedBlocks: [{ armorIndex: 0, partIndex: 0, blockIndex: 1 }],
       ...overrides,
     });
+    selectSegment(store, 0, 0, 0);
+    return store;
+  };
 
   it("Ctrl+1 只設透明度，不套最愛色，且只進一筆 history", () => {
     // 「1~8 套最愛色」那條沒有 ctrl 守衛時，Ctrl+1 會同時打中兩條綁定：
@@ -472,9 +541,9 @@ describe("透明度快捷鍵", () => {
     const historyBefore = store.getState().profiles.history.length;
     pressKey("1", { ctrlKey: true });
 
-    const block = timelineOf(store)[1];
-    expect(block.color.R).toBe(255); // 顏色不動（還是測試光表的紅色）
-    expect(block.color.A).toBeCloseTo(0.1);
+    const block = segmentsOf(store)[0];
+    expect(block.colorStart.R).toBe(255); // 顏色不動（還是測試光表的紅色）
+    expect(block.colorStart.A).toBeCloseTo(0.1);
     expect(store.getState().profiles.history.length).toBe(historyBefore + 1);
   });
 
@@ -483,7 +552,7 @@ describe("透明度快捷鍵", () => {
     mount(store);
 
     pressKey("0", { ctrlKey: true });
-    expect(timelineOf(store)[1].color.A).toBeCloseTo(1);
+    expect(segmentsOf(store)[0].colorStart.A).toBeCloseTo(1);
   });
 
   it("不按 Ctrl 的 1~8 才是套最愛色", () => {

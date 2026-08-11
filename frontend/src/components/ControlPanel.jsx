@@ -25,6 +25,8 @@ import {
   toggleMoveMode,
 } from "../redux/actions.js";
 import { isPartAllowed } from "../config/accessoryConfig.js";
+import { findNearestSegment } from "../utils/segments/core.js";
+import { makeSelection } from "../utils/selection.js";
 import {
   PART_LABELS,
   PLAYER_INDICES,
@@ -43,7 +45,7 @@ function ControlPanel({ setButtonState }) {
     (state) => state.profiles.multiSelectedBlocks,
   );
   const moveMode = useSelector((state) => state.profiles.moveMode);
-  const actionTable = useSelector(
+  const segmentTable = useSelector(
     (state) => state.profiles.data?.actionTable || [],
   );
   const currentTime = useSelector((state) => state.profiles.currentTime);
@@ -72,203 +74,75 @@ function ControlPanel({ setButtonState }) {
     { key: "s", handler: () => moveSelectedBlockDown() },
   ]);
 
-  const moveSelectedBlockUp = () => {
-    console.log("moveSelectedBlockUp");
-    if (multiSelectedBlocks.length === 0) return;
+  /**
+   * 跨軌導航（W/S）與同軌導航（A/D）。
+   *
+   * 舊版是在 keyframe 陣列上做索引加減，再判斷「選到的是不是黑色、
+   * 要往左還往右閃」——四個函式各一份，約 200 行。segment 世界裡
+   * 「色塊」本來就是一級物件，導航就是在 segments 陣列上走一格。
+   */
 
-    const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
-    const currentTime =
-      actionTable?.[armorIndex]?.[partIndex]?.[blockIndex]?.time;
+  /** 目前選取的部位與 segment（找不到時回傳 null） */
+  const currentSelection = () => {
+    const selection = multiSelectedBlocks[0];
+    if (!selection) return null;
 
-    if (currentTime === undefined) return;
+    const { armorIndex, partIndex } = selection;
+    const segments = segmentTable?.[armorIndex]?.[partIndex] ?? [];
+    const index = segments.findIndex((s) => s.id === selection.segmentId);
+    if (index === -1) return null;
 
-    // 找到 showPart 裡目前選擇的 timeline 的索引
+    return { armorIndex, partIndex, segments, index };
+  };
+
+  const selectSegmentAt = (armorIndex, partIndex, segment) => {
+    if (!segment) return;
+    dispatch(
+      updateMultiSelectedBlocks([
+        makeSelection({ armorIndex, partIndex, segment }),
+      ]),
+    );
+  };
+
+  /** 移到 showPart 順序上相鄰的那一條軌道，選同一個時間點附近的色塊 */
+  const moveToNeighbourTrack = (offset) => {
+    const current = currentSelection();
+    if (!current) return;
+
     const currentIndex = showPart.findIndex(
-      (p) => p.armorIndex === armorIndex && p.partIndex === partIndex,
+      (p) =>
+        p.armorIndex === current.armorIndex &&
+        p.partIndex === current.partIndex,
     );
+    const target = showPart[currentIndex + offset];
+    if (currentIndex === -1 || !target) return;
 
-    if (currentIndex <= 0) return; // 如果已經是第一個 timeline，就不往上
-
-    // 找到前一個 timeline
-    const previousTimeline = showPart[currentIndex - 1];
-    const { armorIndex: prevArmor, partIndex: prevPart } = previousTimeline;
-
-    if (!actionTable?.[prevArmor]?.[prevPart]) return;
-
-    // 在新 timeline 找到時間 <= `currentTime` 的最大 `blockIndex`
-    let newBlockIndex = -1;
-    actionTable[prevArmor][prevPart].forEach((block, index) => {
-      if (block.time <= currentTime) {
-        newBlockIndex = index;
-      }
-    });
-
-    if (newBlockIndex === -1) return; // 沒找到合適的 block，則不改變 selectedBlock
-
-    // 如果選到的 block 是黑色，嘗試往左移動，如果左邊無效則往右移動
-    const selectedBlockColor =
-      actionTable[prevArmor][prevPart][newBlockIndex]?.color;
-    if (
-      selectedBlockColor?.R === 0 &&
-      selectedBlockColor?.G === 0 &&
-      selectedBlockColor?.B === 0
-    ) {
-      if (newBlockIndex > 0) {
-        newBlockIndex -= 1; // 往左選一格
-      } else if (newBlockIndex < actionTable[prevArmor][prevPart].length - 1) {
-        newBlockIndex += 1; // 往右選一格
-      } else {
-        return; // 如果左右都無效，直接 return
-      }
-    }
-
-    dispatch(
-      updateMultiSelectedBlocks([
-        {
-          armorIndex: prevArmor,
-          partIndex: prevPart,
-          blockIndex: newBlockIndex,
-        },
-      ]),
-    );
-  };
-  const moveSelectedBlockDown = () => {
-    console.log("moveSelectedBlockDown");
-    if (multiSelectedBlocks.length === 0) return;
-
-    const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
-    const currentTime =
-      actionTable?.[armorIndex]?.[partIndex]?.[blockIndex]?.time;
-
-    if (currentTime === undefined) return;
-
-    // 找到 showPart 裡目前選擇的 timeline 的索引
-    const currentIndex = showPart.findIndex(
-      (p) => p.armorIndex === armorIndex && p.partIndex === partIndex,
-    );
-
-    if (currentIndex === -1 || currentIndex >= showPart.length - 1) return; // 如果已經是最後一個 timeline，就不往下
-
-    // 找到下一個 timeline
-    const nextTimeline = showPart[currentIndex + 1];
-    const { armorIndex: nextArmor, partIndex: nextPart } = nextTimeline;
-
-    if (!actionTable?.[nextArmor]?.[nextPart]) return;
-
-    // 在新 timeline 找到時間 <= `currentTime` 的最大 `blockIndex`
-    let newBlockIndex = -1;
-    actionTable[nextArmor][nextPart].forEach((block, index) => {
-      if (block.time <= currentTime) {
-        newBlockIndex = index;
-      }
-    });
-
-    if (newBlockIndex === -1) return; // 沒找到合適的 block，則不改變 selectedBlock
-
-    // 如果選到的 block 是黑色，嘗試往左移動，如果左邊無效則往右移動
-    const selectedBlockColor =
-      actionTable[nextArmor][nextPart][newBlockIndex]?.color;
-    if (
-      selectedBlockColor?.R === 0 &&
-      selectedBlockColor?.G === 0 &&
-      selectedBlockColor?.B === 0
-    ) {
-      if (newBlockIndex > 0) {
-        newBlockIndex -= 1; // 往左選一格
-      } else if (newBlockIndex < actionTable[nextArmor][nextPart].length - 1) {
-        newBlockIndex += 1; // 往右選一格
-      } else {
-        return; // 如果左右都無效，直接 return
-      }
-    }
-
-    dispatch(
-      updateMultiSelectedBlocks([
-        {
-          armorIndex: nextArmor,
-          partIndex: nextPart,
-          blockIndex: newBlockIndex,
-        },
-      ]),
-    );
-  };
-  const moveSelectedBlockLeft = () => {
-    console.log("moveSelectedBlockLeft");
-    if (multiSelectedBlocks.length === 0) return;
-
-    const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
-    if (
-      !actionTable?.[armorIndex]?.[partIndex] ||
-      !actionTable[armorIndex][partIndex][blockIndex]
-    ) {
-      return;
-    }
-    let newBlockIndex = blockIndex;
-    if (blockIndex > 0) {
-      newBlockIndex = blockIndex - 1; // 預設向左移動 1 格
-      // 如果 blockIndex - 1 的顏色是黑色，且與當前區塊時間差 10ms，則跳過
-      const previousBlock = actionTable[armorIndex][partIndex][newBlockIndex];
-      if (
-        previousBlock?.color?.R === 0 &&
-        previousBlock?.color?.G === 0 &&
-        previousBlock?.color?.B === 0
-      ) {
-        if (blockIndex > 1) {
-          newBlockIndex = blockIndex - 2; // 跳過黑色區塊
-        }
-        if (blockIndex === 1) {
-          newBlockIndex = 1; // 如果黑色區塊是第一個，則直接跳過
-        }
-      }
-    }
-    dispatch(
-      updateMultiSelectedBlocks([
-        {
-          armorIndex,
-          partIndex,
-          blockIndex: newBlockIndex,
-        },
-      ]),
+    const segments =
+      segmentTable?.[target.armorIndex]?.[target.partIndex] ?? [];
+    selectSegmentAt(
+      target.armorIndex,
+      target.partIndex,
+      findNearestSegment(segments, current.segments[current.index].start),
     );
   };
 
-  const moveSelectedBlockRight = () => {
-    console.log("moveSelectedBlockRight");
-    if (multiSelectedBlocks.length === 0) return;
+  const moveSelectedBlockUp = () => moveToNeighbourTrack(-1);
+  const moveSelectedBlockDown = () => moveToNeighbourTrack(1);
 
-    const { armorIndex, partIndex, blockIndex } = multiSelectedBlocks[0];
-    if (
-      !actionTable?.[armorIndex]?.[partIndex] ||
-      !actionTable[armorIndex][partIndex][blockIndex]
-    ) {
-      return;
-    }
-    let newBlockIndex = blockIndex + 1; // 預設向右移動 1 格
+  /** 在同一條軌道上移到前/後一個色塊 */
+  const moveWithinTrack = (offset) => {
+    const current = currentSelection();
+    if (!current) return;
 
-    const nextBlock = actionTable[armorIndex][partIndex][newBlockIndex];
-    const nextNextBlock = actionTable[armorIndex][partIndex][newBlockIndex + 1];
+    const next = current.segments[current.index + offset];
+    if (!next) return; // 已經在頭/尾，維持原選取
 
-    if (
-      nextBlock?.color?.R === 0 &&
-      nextBlock?.color?.G === 0 &&
-      nextBlock?.color?.B === 0
-    ) {
-      if (nextNextBlock) {
-        newBlockIndex = blockIndex + 2;
-      } else {
-        newBlockIndex = blockIndex;
-      }
-    }
-    dispatch(
-      updateMultiSelectedBlocks([
-        {
-          armorIndex,
-          partIndex,
-          blockIndex: newBlockIndex,
-        },
-      ]),
-    );
+    selectSegmentAt(current.armorIndex, current.partIndex, next);
   };
+
+  const moveSelectedBlockLeft = () => moveWithinTrack(-1);
+  const moveSelectedBlockRight = () => moveWithinTrack(1);
+
   // 处理复选框选择变化
   const handleCheckboxChange = (armorIndex, partIndex, isChecked) => {
     const selection = { armorIndex, partIndex };
