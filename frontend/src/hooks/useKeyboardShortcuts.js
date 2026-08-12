@@ -30,6 +30,17 @@ import { useEffect, useRef } from "react";
  * 產生的 key repeat**。每次呼叫這個 hook 都有自己獨立的 latch，所以需要
  * 連發的快捷鍵（例如 Ctrl+Z 連續復原）要另外呼叫一次並傳 `debounceMs: 0`。
  */
+/**
+ * 修飾鍵**自己**的 keydown。
+ *
+ * 按 Ctrl+3 會產生兩個 keydown：先 `Control`、再 `3`。修飾鍵那一下不可能
+ * 對應到任何綁定（每條綁定都指定了 key 或 code），但它會吃掉防彈跳的 latch，
+ * 於是 100ms 內的 `3` 被當成連發而丟棄——實測 Ctrl+0~9（亮度）與
+ * Shift+1~8（插入最愛色）在瀏覽器上完全按不動，只有 undo/redo 因為
+ * 註冊時傳了 `debounceMs: 0` 才倖免。
+ */
+const MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta"]);
+
 export function useKeyboardShortcuts(bindings, options = {}) {
   const { debounceMs = 100 } = options;
 
@@ -41,6 +52,9 @@ export function useKeyboardShortcuts(bindings, options = {}) {
 
   useEffect(() => {
     const handleKeyDown = (event) => {
+      // 修飾鍵自己不算一次按鍵，也不該佔用防彈跳的名額（見上方說明）
+      if (MODIFIER_KEYS.has(event.key)) return;
+
       if (debounceMs > 0) {
         if (latched.current) return;
         latched.current = true;

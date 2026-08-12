@@ -143,3 +143,42 @@ describe("防彈跳", () => {
     expect(handler).toHaveBeenCalledTimes(3);
   });
 });
+
+describe("修飾鍵不佔用防彈跳名額（瀏覽器實測抓到的 bug）", () => {
+  /**
+   * 真實按下 Ctrl+3 會依序產生兩個 keydown：`Control` 然後 `3`。
+   *
+   * 修修正前，`Control` 那一下會把 latch 鎖住 100ms，於是緊接著的 `3` 被
+   * 當成連發丟掉——瀏覽器實測 Ctrl+0~9（亮度）與 Shift+1~8（插入最愛色）
+   * 完全按不動。undo/redo 沒事只是因為它們註冊時傳了 `debounceMs: 0`。
+   *
+   * 元件測試抓不到是因為測試都直接送最終那一下按鍵，不會先送修飾鍵。
+   */
+  it("先送 Control 再送數字，數字仍然會觸發", () => {
+    const handler = vi.fn();
+    mount([{ key: "3", ctrl: true, handler }]);
+
+    press("Control", { ctrlKey: true }); // 修飾鍵自己
+    press("3", { ctrlKey: true });
+
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it("先送 Shift 再送數字鍵，一樣會觸發", () => {
+    const handler = vi.fn();
+    mount([{ code: /^Digit[1-8]$/, shift: true, handler }]);
+
+    press("Shift", { shiftKey: true });
+    press("!", { shiftKey: true, code: "Digit1" });
+
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it("修飾鍵自己不會觸發任何綁定", () => {
+    const handler = vi.fn();
+    mount([{ ctrl: true, handler }]); // 沒指定 key，理論上什麼都符合
+
+    press("Control", { ctrlKey: true });
+    expect(handler).not.toHaveBeenCalled();
+  });
+});
