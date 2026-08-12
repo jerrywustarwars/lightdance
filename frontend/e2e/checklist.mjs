@@ -143,7 +143,7 @@ const clickArmorPart = (page, armor, part) =>
     .nth(armor)
     .locator("svg [fill]:not([fill='none'])")
     .nth(part)
-    .click({ force: true });
+    .click();
 
 /**
  * 開啟編輯器，必要時重試。
@@ -158,12 +158,12 @@ const openEditor = async (page, attempts = 4) => {
     try {
       await page.waitForSelector(".timeline-container", { timeout: 12000 });
       await page.waitForTimeout(3000); // 等音檔 decode 出 duration
-      return true;
+      return i + 1; // 試了幾次才成功
     } catch {
       /* 被彈回 "/"，再試一次 */
     }
   }
-  return false;
+  return 0;
 };
 
 const run = async () => {
@@ -196,9 +196,15 @@ const run = async () => {
   await page.waitForURL("**/dashboard", { timeout: 15000 });
   record("登入", true);
 
-  const opened = await openEditor(page);
-  record("進入編輯器", opened);
-  if (!opened) throw new Error("編輯器一直載入不了");
+  // 一次就要成功。登入後 token 有沒有立刻落地就看這條——persist 有 2 秒
+  // debounce，沒有 flushPersist() 的話整頁載入 /home 會讀不到 token 而彈回首頁。
+  const tries = await openEditor(page);
+  record(
+    "登入後直接開 /home 一次就進得去",
+    tries === 1,
+    tries === 0 ? "一直被彈回首頁" : `試了 ${tries} 次`,
+  );
+  if (!tries) throw new Error("編輯器一直載入不了");
 
   const header = await page.locator(".controls").first().innerText();
   record("音檔載入出 duration", /0:30|0:29/.test(header));
@@ -240,7 +246,7 @@ const run = async () => {
   const blockEls = page.locator(".timeline-block");
 
   // ── 選取 ──────────────────────────────────────────────
-  await blockEls.nth(await findBlockIndex(page, false)).click({ force: true });
+  await blockEls.nth(await findBlockIndex(page, false)).click();
   await page.waitForTimeout(300);
   const selected = (await blocksOf(page, 0)).filter((b) => b.selected).length;
   record("點色塊 → 出現選取框", selected === 1, `${selected} 塊被選`);
@@ -285,10 +291,10 @@ const run = async () => {
   await shot(page, "undo-redo");
 
   // ── 刪除 ──────────────────────────────────────────────
-  await blockEls.nth(await findBlockIndex(page, false)).click({ force: true });
+  await blockEls.nth(await findBlockIndex(page, false)).click();
   await page.waitForTimeout(300);
   const beforeDel = (await coloredBlocks(page, 0)).length;
-  await page.click(".delete-button", { force: true });
+  await page.click(".delete-button");
   await page.waitForTimeout(500);
   const afterDel = (await coloredBlocks(page, 0)).length;
   record(
@@ -299,9 +305,9 @@ const run = async () => {
   await shot(page, "delete");
 
   // ── 點空隙取消選取（segment 模型的新語意）──────────────
-  await blockEls.nth(await findBlockIndex(page, false)).click({ force: true });
+  await blockEls.nth(await findBlockIndex(page, false)).click();
   await page.waitForTimeout(200);
-  await blockEls.nth(await findBlockIndex(page, true)).click({ force: true });
+  await blockEls.nth(await findBlockIndex(page, true)).click();
   await page.waitForTimeout(300);
   record(
     "點空隙 → 取消選取",
@@ -311,8 +317,7 @@ const run = async () => {
   // ── Effect 選單 ───────────────────────────────────────
   const effectBtn = page.locator("button.effect-button");
   if (await effectBtn.count()) {
-    // 用 DOM click：按鈕被上層 SVG 蓋住，座標點擊會打到別人
-    await effectBtn.first().evaluate((el) => el.click());
+    await effectBtn.first().click();
     await page.waitForTimeout(400);
     const options = await page.locator(".effect-menu-item").count();
     record("Effect 選單展開", options >= 3, `${options} 個選項`);
@@ -324,7 +329,8 @@ const run = async () => {
   // ── 重新整理後 persist 復原（風險最高的一項）────────────
   const beforeReload = await coloredBlocks(page, 0);
   await page.waitForTimeout(3000); // redux-persist 有 2 秒 debounce
-  await openEditor(page);
+  const reloadTries = await openEditor(page);
+  record("重新整理後仍在編輯器裡（沒被彈回首頁）", reloadTries === 1);
   const afterReload = await coloredBlocks(page, 0);
   record(
     "重新整理後光表復原（serialize:false 路徑）",
@@ -336,7 +342,7 @@ const run = async () => {
   // ── Output ────────────────────────────────────────────
   const outputBtn = page.locator("button.output-button");
   if (await outputBtn.count()) {
-    await outputBtn.first().evaluate((el) => el.click());
+    await outputBtn.first().click();
     await page.waitForTimeout(2000);
     record("Output 觸發上傳", uploads.length > 0, `${uploads.length} 次請求`);
     await shot(page, "output");

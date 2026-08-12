@@ -45,6 +45,19 @@
   left: 0px;
   display: flex;
   justify-content: center;
+
+  /*
+   * 自成一個 stacking context。
+   *
+   * 沒有這一行的話，裡面 .people-container 的 z-index: 100 會「逃出去」和
+   * 同層的 .control-panel（z-index: 0）比大小——因為 panel 原本是
+   * position: absolute + z-index: auto，不建立 stacking context。
+   *
+   * 結果：光衣 SVG 的元素框（480px 高，比畫出來的圖形高很多）整片蓋在下方
+   * 工具列上，Effect / 剪刀 / 刪除 / 亮度 / 導航按鈕的中心點全部點不到。
+   * 瀏覽器實測 document.elementFromPoint() 在每個按鈕的中心都回傳光衣的 svg。
+   */
+  z-index: 0;
 }
 
 .output-button {
@@ -268,10 +281,28 @@
   background: rgb(75, 74, 74);
   height: 85%;
   width: 87.5%;
-  z-index: 100;
   display: flex;
   justify-content: space-around;
   padding-right: 200px;
+
+  /*
+   * 只需要疊在 panel 的背景上，不需要壓過 panel 上排的按鈕。
+   *
+   * 原本是 100 —— 那個數字沒有對應到任何真實的層級需求，卻讓光衣 SVG
+   * 蓋住 Output / Shortcuts（實測 Output 按鈕的中心點不到，畫面上也看得到
+   * 舞者的頭壓在按鈕文字上）。改成 0 之後，下面那條規則讓按鈕排在光衣之上。
+   */
+  z-index: 0;
+}
+
+/*
+ * panel 上排的按鈕永遠在光衣之上。
+ *
+ * 光衣 SVG 的元素框比畫出來的圖形高，空白部分照樣攔截點擊；按鈕在 DOM 上
+ * 又排在 .people-container 前面，同層時會輸給它。這裡明確拉高一層。
+ */
+.panel > *:not(.people-container) {
+  z-index: 1;
 }
 
 .background-botton {

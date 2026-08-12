@@ -6,10 +6,14 @@
 }
 
 .personBackGround {
-  display: inline-block;
   /* align-self: center; */
-  margin: 15px;
+  margin: 0 15px;
   z-index: 10;
+
+  /* 撐滿 people-container 的高度，讓底下的 SVG 有可以縮放的依據（見下方） */
+  display: flex;
+  align-items: center;
+  height: 100%;
 }
 
 /* 舞者容器 */
@@ -19,6 +23,29 @@
   flex-direction: column;
   align-items: center;
   cursor: pointer;
+  height: 100%;
+}
+
+/*
+ * 光衣縮放到容器內。
+ *
+ * `Armor.jsx` 的 <svg> 寫死 height="480"，但 .people-container 只有
+ * 面板高度的 85%（1600×950 視窗下是 283px）。480 塞進 283 的結果是
+ * **上下各溢出約 99px**：
+ *
+ *   - 往上蓋住標題列與 Output / Shortcuts 按鈕
+ *   - 往下蓋住整條工具列（Effect / 剪刀 / 刪除 / 亮度 / 導航）
+ *
+ * 而且 SVG 的元素框比畫出來的圖形大，溢出的空白區照樣攔截點擊——瀏覽器
+ * 實測 `document.elementFromPoint()` 在每個工具列按鈕的中心都回傳光衣的 svg。
+ *
+ * viewBox 已經定義好比例，交給瀏覽器等比縮放即可。
+ */
+.armor-container svg {
+  display: block;
+  height: 100%;
+  width: auto;
+  max-width: 100%;
 }
 
 /* 舞者編號標籤 */

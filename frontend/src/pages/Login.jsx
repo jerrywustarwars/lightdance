@@ -2,7 +2,7 @@ import Button from "react-bootstrap/Button";
 import Form from "react-bootstrap/Form";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { persistor } from "../redux/store.js"; // Assuming you have a persistor configured
+import { persistor, flushPersist } from "../redux/store.js";
 import { useDispatch, useSelector } from "react-redux";
 import {
   updateAccessToken,
@@ -56,6 +56,12 @@ const Login = () => {
         dispatch(updateUser(idNumber));
         dispatch(updateUserName(idNumber));
         dispatch(updateAutoRefresh(2));
+
+        // 登入狀態要立刻落地再導頁。persist 的寫入有 2 秒 debounce，不等它
+        // 的話，使用者在這 2 秒內重新整理或直接開 /home，會因為讀不到 token
+        // 而被彈回首頁——看起來就像剛剛那次登入沒生效。
+        await flushPersist();
+
         // navigate("/home"); // Redirect to /home if login is successful
         navigate("/dashboard");
       } else {

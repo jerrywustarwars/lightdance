@@ -37,6 +37,29 @@ const debouncedStorage = {
 };
 
 /**
+ * 立刻把還在等的那次寫入落地，不等 debounce。
+ *
+ * debounce 對「連續編輯」是必要的（播放時 rAF 每秒 25 次 dispatch），但有些
+ * 時刻**不能等**：
+ *
+ * - **登入後**：token 沒落地就重新整理／直接開 `/home`，會被判定成未登入而
+ *   彈回首頁。實測在瀏覽器上幾乎必現——登入到導頁只要幾十毫秒，離 2 秒差很遠。
+ * - **關閉分頁前**：`setItem` 立刻回傳 resolved promise，redux-persist 以為
+ *   寫好了，但實際上還在計時器裡；這 2 秒內關掉分頁，那次編輯就沒了。
+ *
+ * @returns {Promise} 寫入完成的 promise（沒有待寫入時立即完成）
+ */
+export function flushPersist() {
+  if (_persistTimer != null) {
+    clearTimeout(_persistTimer);
+    _persistTimer = null;
+  }
+  const pending = _persistPending;
+  _persistPending = null;
+  return pending ? _baseSetItem(pending.key, pending.value) : Promise.resolve();
+}
+
+/**
  * 剝離不需要持久化的大型/暫態欄位，大幅減少 IndexedDB 寫入的資料量。
  * history（最多 50 份 actionTable 快照）是序列化效能的最大瓶頸。
  */

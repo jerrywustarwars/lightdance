@@ -10,7 +10,7 @@ import { useEffect, useState } from "react";
 import { FaSignOutAlt } from "react-icons/fa";
 import { useDispatch, useSelector } from "react-redux";
 import { updateActionTable, updateMusicFilename } from "../redux/actions";
-import { persistor } from "../redux/store.js";
+import { persistor, flushPersist } from "../redux/store.js";
 import Dropdown from "../components/LoadData.jsx";
 import "bootstrap/dist/js/bootstrap.bundle.min.js";
 import "bootstrap/dist/css/bootstrap.min.css";
@@ -123,6 +123,11 @@ function Home({ rgba, setRgba, setButtonState }) {
 
   useEffect(() => {
     const handleBeforeUnload = (e) => {
+      // persist 的寫入有 2 秒 debounce，而 debouncedStorage.setItem 會立刻
+      // 回傳 resolved promise——redux-persist 以為寫好了，其實還在計時器裡。
+      // 關分頁前補一次寫入，否則最後 2 秒的編輯會靜默消失。
+      flushPersist();
+
       if (isDirty) {
         e.preventDefault();
         e.returnValue = ""; // 有些瀏覽器需要設定空字串才會彈出提示
