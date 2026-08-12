@@ -19,6 +19,7 @@ import {
   UniformAlphaMenu,
 } from "./TrackToolbar.jsx";
 import Timeline from "./Timeline.jsx";
+import TimeRuler from "./TimeRuler.jsx";
 import { produce } from "immer";
 import { updateChosenColor, updateCurrentTime } from "../../redux/actions.js";
 import { TICK_MS, LEGACY_BLACK_SENTINEL_MS } from "../../constants/time.js";
@@ -352,6 +353,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
             width: `${100 * zoomLevel}%`, // 根据 zoomValue 动态调整容器宽度
           }}
         >
+          <TimeRuler />
           <ShiftMarkers shift={shift} />
           {/* 快捷鍵統一由 useKeyboardShortcuts 掛在 document 上，
               這裡不再重複註冊 onKeyDown（原本同一個 handler 綁了兩次） */}
