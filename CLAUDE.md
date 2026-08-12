@@ -136,6 +136,7 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 - **`docs/shortcuts.md`**：鍵盤快速鍵速查表，前端 Home 頁面可透過 Shortcuts 按鈕查看
 - **`docs/troubleshooting-login-500.md`**：MongoDB 連線 500 錯誤 SOP
 - **`docs/frontend-rendering-optimization.md`**：前端渲染邏輯與效能優化詳解（元件樹、播放管線、Redux 配置、memo 策略、區塊索引語意、duration 溢出防護）
+- **`docs/ui-design-plan.md`**：UI 設計系統的診斷、六項拍板決策與施工回顧（token 層、無彩色原則、按鈕階層、時間刻度尺）
 
 ### 後端管理腳本
 - **`backend/mongo-backup.sh`**：MongoDB 自動備份主腳本
