@@ -8,7 +8,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgb(0, 0, 0);
+  background: var(--bg-canvas);
   z-index: 0;
 }
 
@@ -17,7 +17,7 @@
   display: flex;
   width: 100%;
   height: 95%;
-  border-top: 1px solid rgb(49, 47, 47);
+  border-top: 1px solid var(--bg-control);
 }
 .lefttool-container {
   position: absolute;
@@ -26,7 +26,7 @@
   display: flex;
   height: 100%;
   width: 15%;
-  background-color: rgb(21, 21, 21); /* 灰色背景 */
+  background-color: var(--bg-panel); /* 灰色背景 */
 }
 /*
  * 左側五顆工具鈕（選軌 / 復原 / 重做 / 新增軌 / Move Mode）。
@@ -52,8 +52,8 @@
 .redo,
 .add-timeline,
 .move-mode-button {
-  background-color: rgb(49, 47, 47);
-  color: rgb(150, 146, 146);
+  background-color: var(--bg-control);
+  color: var(--text-muted);
   border: none;
   border-radius: 5px;
   cursor: pointer;
@@ -74,7 +74,7 @@
 .redo:hover,
 .add-timeline:hover,
 .move-mode-button:hover {
-  color: white; /* 懸停時改變文字顏色 */
+  color: var(--text-primary); /* 懸停時改變文字顏色 */
 }
 /* move mode啟用時高亮 */
 .move-mode-button.active {
@@ -87,8 +87,8 @@
   visibility: hidden; /* 默認隱藏 */
   opacity: 0; /* 默認透明 */
   position: absolute;
-  background-color: rgb(49, 47, 47); /* 和按鈕一致的背景色 */
-  color: rgb(255, 255, 255); /* 和按鈕一致的文字顏色 */
+  background-color: var(--bg-control); /* 和按鈕一致的背景色 */
+  color: var(--text-primary); /* 和按鈕一致的文字顏色 */
   text-align: center;
   align-items: center; /* 垂直置中對齊 */
   border-radius: 5px;
@@ -128,10 +128,10 @@
 .timeline-setting-container {
   width: 100%;
   overflow-y: scroll; /* 允許垂直滾動 */
-  background-color: rgb(21, 21, 21); /* 灰色背景 */
-  color: white;
+  background-color: var(--bg-panel); /* 灰色背景 */
+  color: var(--text-primary);
   position: relative;
-  border-top: 4px solid rgb(49, 47, 47);
+  border-top: 4px solid var(--bg-control);
   display: flex;
   flex-direction: column;
 }
@@ -150,8 +150,8 @@
 .move-timeline-down-button,
 .move-timeline-up-button,
 .toggle-timeline-visibility-button {
-  background-color: rgb(49, 47, 47);
-  color: rgb(150, 146, 146);
+  background-color: var(--bg-control);
+  color: var(--text-muted);
   height: 28px;
   width: 28px;
   border: none;
@@ -166,7 +166,7 @@
 
 .timeline-settings-block {
   box-sizing: border-box; /* 確保邊框不影響高度計算 */
-  border: 1px solid rgb(63, 63, 63);
+  border: 1px solid var(--border-strong);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -182,8 +182,8 @@
 /* 下拉式选单容器 */
 .timeline-settings-block label select {
   appearance: none; /* 移除浏览器默认样式 */
-  background-color: rgb(49, 47, 47); /* 預設背景色 */
-  color: rgb(150, 146, 146);
+  background-color: var(--bg-control); /* 預設背景色 */
+  color: var(--text-muted);
   height: 30px;
   width: 50px;
   border: 5px solid transparent;
@@ -194,7 +194,7 @@
 
 /* 鼠标悬停时 */
 .timeline-settings-block label select:hover {
-  color: rgb(255, 255, 255); /* 懸停時暫停圖標顏色 */
+  color: var(--text-primary); /* 懸停時暫停圖標顏色 */
 }
 .modal-overlay {
   position: fixed;
@@ -203,17 +203,17 @@
   top: 35%;
   left: 50%;
   transform: translateX(-50%);
-  color: rgb(165, 165, 165);
+  color: var(--text-secondary);
   width: 24%;
   max-height: 65vh;
   overflow: hidden;
   border-radius: 10px;
-  background-color: rgba(0, 0, 0, 0.9);
+  background-color: var(--overlay-strong);
   z-index: 999;
 }
 
 .modal-content {
-  background-color: white;
+  background-color: var(--bg-inverse);
   width: 100%;
   padding: 20px;
   border-radius: 10px;
@@ -226,13 +226,13 @@
   margin-bottom: 10px;
   border: none;
   border-radius: 5px;
-  background-color: rgb(49, 47, 47); /* 預設背景色 */
-  color: rgb(150, 146, 146);
+  background-color: var(--bg-control); /* 預設背景色 */
+  color: var(--text-muted);
   cursor: pointer;
 }
 
 .allsel-button:hover {
-  color: #ffffff; /* 悬停背景色 */
+  color: var(--text-primary); /* 悬停背景色 */
 }
 
 .modal-table-scroll {
@@ -244,7 +244,7 @@
 .modal-table-scroll thead th {
   position: sticky;
   top: 0;
-  background-color: rgba(0, 0, 0, 0.95);
+  background-color: var(--overlay-strong);
   z-index: 1;
 }
 
@@ -258,28 +258,28 @@
   display: flex;
   justify-content: space-between;
   margin-top: 20px;
-  background-color: rgba(0, 0, 0, 0.9);
+  background-color: var(--overlay-strong);
 }
 
 .modal-buttons button {
   padding: 10px 20px;
   border: none;
   border-radius: 5px;
-  background-color: rgb(49, 47, 47); /* 預設背景色 */
-  color: rgb(150, 146, 146);
+  background-color: var(--bg-control); /* 預設背景色 */
+  color: var(--text-muted);
   cursor: pointer;
 }
 
 .modal-buttons button:hover {
-  color: #ffffff; /* 悬停背景色 */
+  color: var(--text-primary); /* 悬停背景色 */
 }
 .checkbox-button {
   width: 80px;
   height: 30px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--bg-inverse);
   border-radius: 5px;
-  background-color: white;
-  color: black;
+  background-color: var(--bg-inverse);
+  color: var(--text-inverse);
   font-size: 16px;
   cursor: pointer;
   text-align: center;
@@ -287,6 +287,6 @@
 
 .checkbox-button.selected {
   background-color: rgb(68, 143, 100);
-  color: white;
+  color: var(--text-primary);
   border-color: rgb(68, 143, 100);
 }

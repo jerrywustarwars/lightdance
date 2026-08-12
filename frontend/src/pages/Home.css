@@ -9,7 +9,7 @@
   left: 0px;
   display: flex;
   justify-content: center;
-  background: rgb(0, 0, 0);
+  background: var(--bg-canvas);
   gap: 0px;
   z-index: 0;
   overflow: hidden;
@@ -28,7 +28,7 @@
   font-weight: 900;
   font-style: italic;
   letter-spacing: 2px;
-  color: rgb(255, 255, 255);
+  color: var(--text-primary);
   font-size: 29px;
   white-space: nowrap;
   animation: fadeIn 1s ease-in-out;
@@ -89,13 +89,13 @@
   font-family: "Kanit", sans-serif;
   font-weight: 400;
   font-size: 15px;
-  color: rgb(237, 237, 237);
+  color: var(--text-primary);
   letter-spacing: 0.5px;
   height: 34px;
   width: 90px;
-  border: solid, 2.5px, rgb(237, 237, 237);
+  border: solid, 2.5px, var(--bg-inverse);
   border-radius: 5.7px;
-  background: black;
+  background: var(--bg-canvas);
   cursor: pointer;
   transition: all 0.2s ease-in-out;
   line-height: 1.5;
@@ -105,7 +105,7 @@
   padding: 0.5px;
 }
 .output-button:hover {
-  background: rgb(99, 97, 97);
+  background: var(--bg-control-active);
   border-radius: 10px;
 }
 .output-button:active {
@@ -123,13 +123,13 @@
   font-family: "Kanit", sans-serif;
   font-weight: 400;
   font-size: 15px;
-  color: rgb(237, 237, 237);
+  color: var(--text-primary);
   letter-spacing: 0.5px;
   height: 34px;
   width: 110px;
-  border: solid, 2.5px, rgb(237, 237, 237);
+  border: solid, 2.5px, var(--bg-inverse);
   border-radius: 5.7px;
-  background: black;
+  background: var(--bg-canvas);
   cursor: pointer;
   transition: all 0.2s ease-in-out;
   line-height: 1.5;
@@ -139,7 +139,7 @@
   padding: 0.5px;
 }
 .shortcut-button:hover {
-  background: rgb(99, 97, 97);
+  background: var(--bg-control-active);
   border-radius: 10px;
 }
 .shortcut-button:active {
@@ -154,7 +154,7 @@
 }
 .alert-warning {
   background: rgb(255, 162, 0);
-  color: rgb(237, 237, 237);
+  color: var(--text-primary);
   height: 34px;
   font-size: 18px;
   font-family: "Kanit", sans-serif;
@@ -171,20 +171,20 @@
   font-family: "Kanit", sans-serif;
   font-weight: 400;
   font-size: 15px;
-  color: rgb(237, 237, 237);
+  color: var(--text-primary);
   letter-spacing: 0.5px;
   /*top: 100px;*/
   height: 34px;
   width: 90px;
-  border: solid, 3px, rgb(237, 237, 237);
+  border: solid, 3px, var(--bg-inverse);
   border-radius: 5.7px;
-  background: black;
+  background: var(--bg-canvas);
   cursor: pointer;
   transition: all 0.2s ease-in-out;
   line-height: 1.5;
 }
 .load-button:hover {
-  background: rgb(99, 97, 97);
+  background: var(--bg-control-active);
   border-radius: 10px;
 }
 .load-button:active {
@@ -201,21 +201,21 @@
   font-family: "Kanit", sans-serif;
   font-weight: 400;
   font-size: 15px;
-  color: rgb(237, 237, 237);
+  color: var(--text-primary);
   letter-spacing: 0.5px;
   /*top: 175px;*/
   height: 34px;
   width: 90px;
-  border: solid, 3px, rgb(237, 237, 237);
+  border: solid, 3px, var(--bg-inverse);
   border-radius: 5.7px;
-  background: black;
+  background: var(--bg-canvas);
   cursor: pointer;
   transition: all 0.2s ease-in-out;
   line-height: 1.5;
 }
 .device-info-button:hover,
 .edit-button:hover {
-  background: rgb(99, 97, 97);
+  background: var(--bg-control-active);
   border-radius: 10px;
 }
 .edit-button:active {
@@ -232,14 +232,14 @@
   font-family: "Kanit", sans-serif;
   font-weight: 400;
   font-size: 15px;
-  color: rgb(237, 237, 237);
+  color: var(--text-primary);
   letter-spacing: 0.5px;
   /*top: 175px;*/
   width: 90px;
   height: 34px;
-  border: solid, 3px, rgb(237, 237, 237);
+  border: solid, 3px, var(--bg-inverse);
   border-radius: 5.7px;
-  background: black;
+  background: var(--bg-canvas);
   cursor: pointer;
   transition: all 0.2s ease-in-out;
   line-height: 1.5;
@@ -248,20 +248,20 @@
   font-family: "Kanit", sans-serif;
   font-weight: 400;
   font-size: 15px;
-  color: rgb(237, 237, 237);
+  color: var(--text-primary);
   letter-spacing: 0.5px;
   /*top: 100px;*/
   height: 34px;
   width: 90px;
-  border: solid, 3px, rgb(237, 237, 237);
+  border: solid, 3px, var(--bg-inverse);
   border-radius: 5.7px;
-  background: black;
+  background: var(--bg-canvas);
   cursor: pointer;
   transition: all 0.2s ease-in-out;
   line-height: 1.5;
 }
 .logout-button:hover {
-  background: rgb(99, 97, 97);
+  background: var(--bg-control-active);
   border-radius: 10px;
 }
 .logout-button:active {
@@ -288,9 +288,9 @@
   left: 25px;
   align-content: center;
   border-radius: 1.5%;
-  border: solid, 3px, rgb(156, 156, 156);
+  border: solid, 3px, var(--text-muted);
   border-radius: 7px;
-  background: rgb(75, 74, 74);
+  background: var(--bg-panel);
   width: 87.5%;
   display: flex;
   flex-direction: column;
@@ -401,7 +401,7 @@
 /* 展開後的寬度（可以根據音樂名字長度調整，或設為 auto） */
 .home-creation-bar.expanded {
   background-color: #244d30;
-  box-shadow: -5px 0 15px rgba(0, 0, 0, 0.3);
+  box-shadow: -5px 0 15px var(--overlay-soft);
 }
 
 /* 主要按鈕部分 */
@@ -409,7 +409,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: white;
+  color: var(--text-primary);
   font-family: "Kanit", sans-serif;
   font-weight: 400;
   font-size: 15px;
@@ -435,7 +435,7 @@
 
 .divider-icon {
   margin: 0 8px;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--text-disabled);
   font-size: 1rem;
 }
 
@@ -456,7 +456,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #f0f0f0;
+  color: var(--text-primary);
   font-size: 0.9rem;
   padding: 4px 8px;
   border-radius: 4px;
@@ -464,7 +464,7 @@
 }
 
 .home-music-item:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--border-strong);
 }
 
 /* Modal 遮罩層 */
@@ -474,7 +474,7 @@
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: rgba(0, 0, 0, 0.7); /* 半透明黑 */
+  background: var(--overlay-scrim); /* 半透明黑 */
   display: flex;
   justify-content: center;
   align-items: center;
@@ -483,14 +483,14 @@
 
 /* Modal 內容主體 */
 .custom-modal-content {
-  background: #1e1e1e; /* 深色背景 */
+  background: var(--bg-control); /* 深色背景 */
   padding: 25px;
   border-radius: 12px;
   border: 1px solid #2d5a3c; /* 暗綠邊框 */
   width: 400px;
   text-align: center;
-  color: #ededed;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  color: var(--text-primary);
+  box-shadow: 0 10px 30px var(--overlay-soft);
 }
 
 .modal-title {
@@ -521,9 +521,9 @@
   transition: opacity 0.2s;
 }
 
-.btn-save { background-color: #28a745; color: white; }
-.btn-discard { background-color: #dc3545; color: white; } /* 紅色警告 */
-.btn-cancel { background-color: #444; color: white; }
+.btn-save { background-color: #28a745; color: var(--text-primary); }
+.btn-discard { background-color: #dc3545; color: var(--text-primary); } /* 紅色警告 */
+.btn-cancel { background-color: var(--bg-control-active); color: var(--text-primary); }
 
 .modal-footer-buttons button:hover {
   opacity: 0.8;

@@ -39,7 +39,7 @@
   width: 200px;
   height: 50px;
   font-size: 25px;
-  background-color: rgb(255, 255, 255);
+  background-color: var(--bg-inverse);
   border-radius: 10rem;
   border: 0;
   transition: all 0.2s ease-in-out;
@@ -68,7 +68,7 @@ Form {
   width: 300px;
   font-size: 17px;
   position: absolute;
-  color: white;
+  color: var(--text-primary);
 }
 .form-control {
   height: 35px;
@@ -83,11 +83,11 @@ Form {
 
 .brand:hover {
   cursor: pointer;
-  color: rgb(214, 214, 214);
+  color: var(--text-primary);
 }
 
 .form {
-  color: black;
+  color: var(--text-inverse);
   position: relative;
   width: 80%;
   margin: auto;
@@ -101,7 +101,7 @@ Form {
 }
 
 .modify_password_form {
-  color: black;
+  color: var(--text-inverse);
   position: relative;
   margin: auto;
   width: 300px;
@@ -115,7 +115,7 @@ Form {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(black, rgb(10, 10, 51));
+  background: linear-gradient(var(--bg-canvas), rgb(10, 10, 51));
 }
 
 .link-text {

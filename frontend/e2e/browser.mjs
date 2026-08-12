@@ -49,3 +49,34 @@ export const launchOptions = () => ({
   executablePath: resolveChromiumPath(),
   args: ["--no-sandbox", "--disable-dev-shm-usage"],
 });
+
+/**
+ * 暖機：先讓 vite 把 /home 的模組圖轉譯過一次。
+ *
+ * 開發伺服器剛啟動時，第一次載入 /home 要現場轉譯幾百個模組，很容易超過
+ * 腳本裡等待選擇器的時限——結果就是「編輯器載入不了」，但那是建置慢，
+ * 不是程式壞掉（同一份程式碼第二次跑就全過）。
+ *
+ * ⚠️ 一定要開**獨立的 context**，不能借用等一下要驗的那個。
+ * 暖機時還沒登入，`/home` 會把使用者踢回首頁，而那個過程會把「沒有 token」
+ * 的狀態寫進 redux-persist（IndexedDB 是跟著 context 走的）。借用同一個
+ * context 的話，後面登入完再開 /home 會讀到那份殘留而被彈回首頁——
+ * 本來要繞過的問題反而被暖機自己製造出來。
+ *
+ * @param {import("playwright").Browser} browser 用它另開一個乾淨的 context
+ */
+export const warmUp = async (browser, base) => {
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await page.goto(`${base}/home`, {
+      waitUntil: "domcontentloaded",
+      timeout: 90000,
+    });
+    await page.waitForTimeout(2000);
+  } catch {
+    /* 暖機失敗不影響後續判斷，真正的檢查會自己重試 */
+  } finally {
+    await context.close(); // 連同 IndexedDB / localStorage 一起丟掉
+  }
+};

@@ -4,7 +4,7 @@
   align-items: center;
   justify-content: center;
   height: 100vh;
-  background-color: #f8f9fa; /* Light background */
+  background-color: var(--bg-inverse); /* Light background */
   padding: 20px;
 }
 
@@ -14,10 +14,10 @@
   height: 50px;
   margin-bottom: 20px;
   align-content: center;
-  background: #ffffff;
+  background: var(--bg-inverse);
   padding: 15px;
   border-radius: 8px;
-  box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.1);
+  box-shadow: 0px 2px 5px var(--overlay-soft);
 }
 
 .history-buttons {
@@ -34,14 +34,14 @@
 
 .back-button {
   background-color: #007bff;
-  color: white;
+  color: var(--text-primary);
   padding: 10px 15px;
   border: none;
   border-radius: 5px;
   cursor: pointer;
   margin-bottom: 15px;
   transition: all 0.3s ease;
-  box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.2);
+  box-shadow: 0px 2px 5px var(--overlay-soft);
 }
 
 .back-button:hover {
@@ -62,16 +62,16 @@
   overflow-x: auto; /* 允許水平滾動 */
   max-height: 65vh; /* 限制表格的最大高度 */
   overflow-y: auto; /* 允許垂直滾動 */
-  background: #ffffff;
+  background: var(--bg-inverse);
   border-radius: 10px;
-  box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+  box-shadow: 0px 4px 10px var(--overlay-soft);
   padding: 15px;
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
-  background: #fff;
+  background: var(--bg-inverse);
   border-radius: 8px;
 }
 
@@ -79,11 +79,11 @@ th,
 td {
   padding: 12px;
   text-align: center;
-  border: 1px solid #ddd;
+  border: 1px solid var(--bg-inverse);
 }
 th {
   background: #007bff;
-  color: white;
+  color: var(--text-primary);
 }
 
 /* 讓表格置中 */
@@ -101,13 +101,13 @@ th {
 /* 按鈕樣式 */
 button {
   background-color: #28a745;
-  color: white;
+  color: var(--text-primary);
   border: none;
   padding: 10px 15px;
   border-radius: 5px;
   cursor: pointer;
   transition: all 0.3s ease;
-  box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.2);
+  box-shadow: 0px 2px 5px var(--overlay-soft);
 }
 
 button:hover {

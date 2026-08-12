@@ -2,7 +2,7 @@
   display: inline-block; /* Make the div act like an inline element */
   padding: 10px 20px; /* Space inside the button */
   background-color: #28a745; /* Green background color */
-  color: white; /* White text color */
+  color: var(--text-primary); /* White text color */
   font-size: 16px; /* Font size */
   font-weight: bold; /* Bold text */
   text-align: center; /* Center the text */

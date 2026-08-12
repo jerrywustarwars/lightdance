@@ -30,7 +30,7 @@ import { chromium } from "playwright";
 import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { launchOptions } from "./browser.mjs";
+import { launchOptions, warmUp } from "./browser.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = join(HERE, "shots");
@@ -202,11 +202,21 @@ const stubApi = (context) =>
   });
 
 const run = async () => {
-  const browser = await chromium.launch(launchOptions());
+  // 先暖機：開發伺服器剛啟動時第一次載入 /home 要現場轉譯幾百個模組，
+  // 會超過下面等待選擇器的時限。用獨立 browser 跑，不留任何狀態。
+  {
+    const warmBrowser = await chromium.launch(launchOptions());
+    await warmUp(warmBrowser, BASE);
+    await warmBrowser.close();
+  }
 
   let failed = 0;
 
+  // 每個視窗尺寸開一個全新的 browser。共用同一個 browser 時第二個 context
+  // 會載入不了——兩個 context 各自解碼 30 秒 WAV、各開一個 AudioContext，
+  // 在容器的記憶體限制下第二個就卡住。這跟版面無關，純粹是量測環境的問題。
   for (const vp of VIEWPORTS) {
+    const browser = await chromium.launch(launchOptions());
     const context = await browser.newContext({
       viewport: { width: vp.width, height: vp.height },
     });
@@ -232,7 +242,7 @@ const run = async () => {
     if (!opened) {
       console.log(`[${vp.name}] 編輯器載入不了`);
       failed++;
-      await context.close();
+      await browser.close();
       continue;
     }
     await page.waitForTimeout(2500);
@@ -256,10 +266,9 @@ const run = async () => {
     failed += unclickable.length + overflow.length;
 
     await page.screenshot({ path: join(OUT, `layout-${vp.name}.png`) });
-    await context.close();
+    await browser.close();
   }
 
-  await browser.close();
   return failed;
 };
 

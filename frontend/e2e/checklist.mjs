@@ -27,7 +27,7 @@ import { chromium } from "playwright";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { launchOptions } from "./browser.mjs";
+import { launchOptions, warmUp } from "./browser.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = join(HERE, "shots");
@@ -168,6 +168,16 @@ const openEditor = async (page, attempts = 4) => {
 };
 
 const run = async () => {
+  // 先暖機：開發伺服器剛啟動時第一次載入 /home 要現場轉譯幾百個模組，
+  // 會超過 openEditor 等待選擇器的時限。用獨立 browser 跑完就關掉——
+  // 同一個 browser 裡開第二個 context 會載入不了（各自解碼 30 秒 WAV、
+  // 各開一個 AudioContext，容器的記憶體吃不消）。
+  {
+    const warmBrowser = await chromium.launch(launchOptions());
+    await warmUp(warmBrowser, BASE);
+    await warmBrowser.close();
+  }
+
   const browser = await chromium.launch(launchOptions());
   const context = await browser.newContext({
     viewport: { width: 1600, height: 950 },

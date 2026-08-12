@@ -4,8 +4,8 @@
   top: 0;
   width: 200px;
   height: 100%;
-  background: #1a1a1a;
-  border-left: 1px solid #2a2a2a;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border-subtle);
   border-radius: 0 7px 7px 0;
   display: flex;
   flex-direction: column;
@@ -23,8 +23,8 @@
   padding: 14px 14px 10px;
   font-size: 16px;
   font-weight: bold;
-  color: #e0e0e0;
-  border-bottom: 1px solid #2a2a2a;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-subtle);
   letter-spacing: 0.5px;
   min-height: 44px;
   display: flex;
@@ -35,7 +35,7 @@
 }
 
 .sidebar-header:hover {
-  background: #222;
+  background: var(--bg-control);
 }
 
 .sidebar-title-text {
@@ -46,7 +46,7 @@
 
 .sidebar-toggle-icon {
   font-size: 11px;
-  color: #666;
+  color: var(--text-disabled);
   flex-shrink: 0;
   margin-left: 6px;
 }
@@ -54,7 +54,7 @@
 .sidebar-hint {
   padding: 20px 14px;
   font-size: 14px;
-  color: #555;
+  color: var(--text-disabled);
   text-align: center;
 }
 
@@ -80,7 +80,7 @@
 
 .sidebar-group-label {
   font-size: 17px;
-  color: #ccc;
+  color: var(--text-secondary);
   font-weight: bold;
   letter-spacing: 0.5px;
 }
@@ -96,17 +96,17 @@
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  border: 1px solid #444;
+  border: 1px solid var(--border-strong);
   cursor: pointer;
   transition: transform 0.12s, box-shadow 0.12s;
 }
 
 .sidebar-dot:hover {
   transform: scale(1.2);
-  box-shadow: 0 0 6px rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 6px var(--text-disabled);
 }
 
 .sidebar-dot.selected {
-  border: 2px solid #fff;
-  box-shadow: 0 0 6px #fff;
+  border: 2px solid var(--bg-inverse);
+  box-shadow: 0 0 6px var(--bg-inverse);
 }

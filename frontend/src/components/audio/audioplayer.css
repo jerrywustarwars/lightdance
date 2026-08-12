@@ -8,7 +8,7 @@
 
 .audio-player-container {
   position: absolute;
-  background-color: rgb(21, 21, 21); /* 灰色背景 */
+  background-color: var(--bg-panel); /* 灰色背景 */
   display: flex;
   flex-direction: column;
   right: 0.3%;
@@ -25,7 +25,7 @@
   overflow-x: auto;
   overflow-y: hidden;
   flex-direction: column;
-  border-top: 4px solid rgb(49, 47, 47);
+  border-top: 4px solid var(--bg-control);
 }
 
 .main-controlPanel {
@@ -39,7 +39,7 @@
 .timeline-container {
   width: 100%;
   height: 80%;
-  background-color: rgb(0, 0, 0);
+  background-color: var(--bg-canvas);
   overflow-y: scroll;
   border-radius: 10px;
   padding-bottom: 10px;
@@ -52,12 +52,12 @@
 }
 
 .timeline-container::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.5);
+  background-color: var(--text-disabled);
   border-radius: 5px; /* 圓角效果 */
 }
 
 .timeline-container::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--overlay-light);
 }
 
 .waveform-container {
@@ -78,7 +78,7 @@
 
 .scroll-container::-webkit-scrollbar-thumb,
 .waveform-container::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.5);
+  background-color: var(--text-disabled);
   border-radius: 5px;
 }
 
@@ -87,7 +87,7 @@
 }
 
 .waveform-container::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--overlay-light);
 }
 
 .progress-flag {
@@ -95,7 +95,7 @@
   bottom: 0;
   width: 3px;
   height: 10px;
-  background-color: red;
+  background-color: var(--state-danger);
   pointer-events: none;
 }
 
@@ -134,8 +134,8 @@
 .delete-button,
 .brightness-button,
 .color-button {
-  background-color: rgb(49, 47, 47);
-  color: rgb(150, 146, 146);
+  background-color: var(--bg-control);
+  color: var(--text-muted);
   border: none;
   border-radius: 5px;
   z-index: 10; /* 提高层级 */
@@ -151,12 +151,12 @@
 .magnet-button:hover,
 .delete-button:hover,
 .color-button:hover {
-  color: white;
+  color: var(--text-primary);
 }
 .tooltip {
   position: absolute;
-  background-color: rgb(49, 47, 47); /* 和按鈕一致的背景色 */
-  color: rgb(255, 255, 255); /* 和按鈕一致的文字顏色 */
+  background-color: var(--bg-control); /* 和按鈕一致的背景色 */
+  color: var(--text-primary); /* 和按鈕一致的文字顏色 */
   text-align: center;
   border-radius: 5px;
   font-size: 20px;
@@ -192,8 +192,8 @@
   left: 78%;
 }
 .brightness-control {
-  background-color: rgb(49, 47, 47);
-  color: rgb(150, 146, 146);
+  background-color: var(--bg-control);
+  color: var(--text-muted);
   border: none;
   border-radius: 5px;
   padding: 0px 10px;
@@ -223,8 +223,8 @@
 .dropdown-select,
 .dropdown-select {
   appearance: none; /* 移除默认样式 */
-  background-color: rgb(49, 47, 47); /* 預設背景色 */
-  color: rgb(150, 146, 146);
+  background-color: var(--bg-control); /* 預設背景色 */
+  color: var(--text-muted);
   width: 60px; /* 下拉框寬度 */
   height: 100%; /* 下拉框高度 */
   border-radius: 5px; /* 圆角 */
@@ -233,14 +233,14 @@
 }
 .dropdown-select:hover,
 .dropdown-select:hover {
-  color: rgb(255, 255, 255); /* 懸停時暫停圖標顏色 */
+  color: var(--text-primary); /* 懸停時暫停圖標顏色 */
 }
 
 .play-button {
   width: 45px;
   height: 45px;
-  background-color: rgb(49, 47, 47); /* 預設背景色 */
-  color: rgb(150, 146, 146);
+  background-color: var(--bg-control); /* 預設背景色 */
+  color: var(--text-muted);
   border: none;
   border-radius: 50%; /* 圓形按鈕 */
   display: flex;
@@ -250,11 +250,11 @@
 }
 
 .play-button:hover {
-  color: white;
+  color: var(--text-primary);
 }
 
 .time-display {
-  color: white;
+  color: var(--text-primary);
   /* font-size: 16px;
   margin-right: 20px; */
   display: flex;
@@ -263,19 +263,19 @@
 }
 
 .current-time-box {
-  color: white;
+  color: var(--text-primary);
   width: 80px;      /* 根據你的格式固定寬度 */
   text-align: right; /* 靠右對齊，這樣左邊增加位數時不會推擠到右邊 */
 }
 
 .duration-box {
-  color: white;
+  color: var(--text-primary);
   width: 80px;
   text-align: left;  /* 總長度靠左對齊 */
 }
 
 .time-separator {
-  color: white;
+  color: var(--text-primary);
   width: 10px;
   text-align: center;
 }
@@ -292,7 +292,7 @@
   appearance: none;
   width: 15px; /* 滑塊大小 */
   height: 15px;
-  background-color: rgb(49, 47, 47); /* 灰色背景 */
+  background-color: var(--bg-control); /* 灰色背景 */
   border-radius: 50%; /* 圓形 */
   cursor: pointer;
 }
@@ -301,7 +301,7 @@
   appearance: none;
   width: 100px; /* 滑桿寬度 */
   height: 5px; /* 滑桿高度 */
-  background-color: rgb(49, 47, 47); /* 灰色背景 */
+  background-color: var(--bg-control); /* 灰色背景 */
   outline: none; /* 移除外框 */
 }
 
@@ -315,10 +315,10 @@
   appearance: none;
   width: 15px; /* 滑塊大小 */
   height: 15px;
-  background-color: rgb(150, 146, 146);
+  background-color: var(--bg-control-active);
   border-radius: 50%; /* 圓形 */
   cursor: pointer;
-  box-shadow: 0 0 2px rgba(0, 0, 0, 0.5); /* 陰影效果 */
+  box-shadow: 0 0 2px var(--overlay-soft); /* 陰影效果 */
 }
 
 .zoom-slider:focus::-webkit-slider-runnable-track {
@@ -327,8 +327,8 @@
 
 .zoom-controls button {
   all: unset; /* 重置所有默認樣式 */
-  background-color: rgb(49, 47, 47); /* 預設灰色背景 */
-  color: rgb(150, 146, 146);
+  background-color: var(--bg-control); /* 預設灰色背景 */
+  color: var(--text-muted);
   border: none;
   width: 30px; /* 按鈕寬度 */
   height: 30px; /* 按鈕高度 */
@@ -346,7 +346,7 @@
 }
 
 .zoom-controls button:hover {
-  color: white; /* 懸停時改變文字顏色 */
+  color: var(--text-primary); /* 懸停時改變文字顏色 */
 }
 
 .zoom-controls button:disabled {
@@ -374,33 +374,33 @@
   top: 100%;
   left: 0;
   margin-bottom: 8px;
-  background-color: rgb(49, 47, 47); /* 與按鈕一致的實色背景 */
-  border: 1px solid rgb(70, 70, 70); /* 加入微細邊框增加層次感 */
+  background-color: var(--bg-control); /* 與按鈕一致的實色背景 */
+  border: 1px solid var(--border-strong); /* 加入微細邊框增加層次感 */
   border-radius: 5px;
   padding: 4px 0;
   z-index: 1000;
   display: flex;
   flex-direction: column;
   min-width: 110px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 4px 12px var(--overlay-soft);
 }
 
 .effect-menu-item {
   padding: 0px 15px;
   cursor: pointer;
-  color: rgb(150, 146, 146); /* 未選取時的一致灰色 */
+  color: var(--text-muted); /* 未選取時的一致灰色 */
   font-size: 14px;
   white-space: nowrap;
   position: relative;
   transition: background-color 0.2s, color 0.2s;
-  background-color: rgb(49, 47, 47); /* 預設與背景同色 */
+  background-color: var(--bg-control); /* 預設與背景同色 */
 }
 
 /* 選取/懸停時的樣式：顏色變白，背景加亮 */
 .effect-menu-item:hover, 
 .effect-menu-item.active {
-  background-color: rgb(70, 70, 70) !important; 
-  color: white !important;
+  background-color: var(--bg-control-active) !important; 
+  color: var(--text-primary) !important;
 }
 
 /* 子選單容器：向右平移 */
@@ -409,13 +409,13 @@
   left: 100%; /* 從父項目右邊緣開始 */
   top: -4px; /* 稍微向上校準對齊父項目頂部 */
   margin-left: 2px; /* 子選單與母選單的小間隙 */
-  background-color: rgb(49, 47, 47); /* 顏色完全一致 */
-  border: 1px solid rgb(70, 70, 70);
+  background-color: var(--bg-control); /* 顏色完全一致 */
+  border: 1px solid var(--border-strong);
   border-radius: 5px;
   padding: 4px 0;
   display: flex;
   flex-direction: column;
-  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.5);
+  box-shadow: 4px 0 12px var(--overlay-soft);
 }
 
 /* 確保子選單內的項目寬度與間距一致 */
@@ -433,10 +433,10 @@
   margin-top: 40px;
   /* top: 80px;
   right: 20px; */
-  background: #222;
+  background: var(--bg-control);
   padding: 12px;
   border-radius: 8px;
-  color: #fff;
+  color: var(--text-primary);
   z-index: 1001;
   white-space: nowrap; /* 單行不換行 */
 }
@@ -454,20 +454,20 @@
   display: flex;
   justify-content: space-between;
   margin-top: 20px;
-  background-color: rgba(0, 0, 0, 0.9);
+  background-color: var(--overlay-strong);
 }
 
 .gradient-settings-actions button {
   padding: 10px 20px;
   border: none;
   border-radius: 5px;
-  background-color: rgb(49, 47, 47); /* 預設背景色 */
-  color: rgb(150, 146, 146);
+  background-color: var(--bg-control); /* 預設背景色 */
+  color: var(--text-muted);
   cursor: pointer;
 }
 
 .gradient-settings-actions button:hover {
-  color: #ffffff; /* 悬停背景色 */
+  color: var(--text-primary); /* 悬停背景色 */
 }
 
 /* 平移功能外層 */
@@ -478,8 +478,8 @@
 
 /* 主按鈕樣式 - 繼承自原本的 .cut-button 等 */
 .shift-main-button {
-  background-color: rgb(49, 47, 47);
-  color: rgb(150, 146, 146);
+  background-color: var(--bg-control);
+  color: var(--text-muted);
   border: none;
   border-radius: 5px;
   padding: 5px 10px;
@@ -489,7 +489,7 @@
 }
 
 .shift-main-button:hover {
-  color: white;
+  color: var(--text-primary);
 }
 
 /* 懸停 Tooltip (與原本 logic 相同) */
@@ -502,7 +502,7 @@
 .shift-guide-panel {
   display: flex;
   align-items: center;
-  background: rgb(30, 30, 30);
+  background: var(--bg-control);
   border: 1px solid #0dcaf0;
   border-radius: 5px;
   padding: 4px 12px;
@@ -520,8 +520,8 @@
 
 /* 面板內的確定/取消按鈕 */
 .shift-confirm-btn, .shift-cancel-btn {
-  background-color: rgb(49, 47, 47);
-  color: white;
+  background-color: var(--bg-control);
+  color: var(--text-primary);
   border: none;
   border-radius: 4px;
   padding: 2px 8px;
@@ -531,7 +531,7 @@
 
 .shift-confirm-btn:hover {
   background-color: #0dcaf0;
-  color: black;
+  color: var(--text-inverse);
 }
 
 .shift-cancel-btn:hover {
@@ -567,7 +567,7 @@
   font-size: 10px;
   padding: 2px 4px;
   border-radius: 3px;
-  color: white;
+  color: var(--text-primary);
   white-space: nowrap;
 }
 
@@ -603,13 +603,13 @@
   left: 50%;
   transform: translateX(-50%);
   background: rgba(46, 204, 113, 0.9);
-  color: white;
+  color: var(--text-primary);
   padding: 8px 20px;
   border-radius: 20px;
   z-index: 1000;
   font-weight: bold;
   pointer-events: none;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+  box-shadow: 0 4px 15px var(--overlay-soft);
 }
 
 /* 確保多選框與目標框有明顯區別 */
@@ -623,10 +623,10 @@
   left: 50%;
   transform: translateX(-50%);
   background: #27ae60;
-  color: white;
+  color: var(--text-primary);
   padding: 10px 20px;
   border-radius: 30px;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+  box-shadow: 0 4px 15px var(--overlay-soft);
   z-index: 2000;
   display: flex;
   flex-direction: column;
@@ -652,20 +652,20 @@
   bottom: 100%; /* 位於按鈕上方 */
   left: 0;
   margin-bottom: 5px; /* 與按鈕保持一點距離 */
-  background-color: rgb(49, 47, 47); /* 使用與按鈕一致的顏色 */
+  background-color: var(--bg-control); /* 使用與按鈕一致的顏色 */
   border-radius: 5px;
   padding: 5px 0;
   z-index: 1000;
   display: flex;
   flex-direction: column;
   min-width: 100px;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 4px 8px var(--overlay-soft);
 }
 
 .effect-menu-item {
   padding: 8px 15px;
   cursor: pointer;
-  color: rgb(150, 146, 146);
+  color: var(--text-muted);
   font-size: 14px;
   white-space: nowrap;
   position: relative; /* 為了讓 submenu 定位 */
@@ -674,8 +674,8 @@
 
 .effect-menu-item:hover, 
 .effect-menu-item.active {
-  background-color: rgb(70, 70, 70); /* Hover 時稍微變亮 */
-  color: white;
+  background-color: var(--bg-control-active); /* Hover 時稍微變亮 */
+  color: var(--text-primary);
 }
 
 /* 向右延伸的子選單樣式 */
@@ -684,12 +684,12 @@
   left: 100%; /* 正好在父項目的右邊 */
   top: 0;
   margin-left: 2px; /* 稍微空出一點縫隙，避免視覺太擠 */
-  background-color: rgb(49, 47, 47); /* 顏色與原本一致 */
+  background-color: var(--bg-control); /* 顏色與原本一致 */
   border-radius: 5px;
   padding: 5px 0;
   display: flex;
   flex-direction: column;
-  box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.5);
+  box-shadow: 4px 4px 8px var(--overlay-soft);
 }
 
 /* 讓子選單中的項目也具備一樣的 Hover 效果 */
@@ -723,7 +723,7 @@
   width: 100%;
   padding: 5px 10px;
   background: transparent;
-  color: white;
+  color: var(--text-primary);
   border: none;
   border-radius: 4px;
   text-align: left;

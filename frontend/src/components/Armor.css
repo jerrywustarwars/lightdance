@@ -68,7 +68,7 @@
 
   /* 視覺樣式 */
   background: linear-gradient(135deg, #4a9eff 0%, #3a8eef 100%);
-  color: white;
+  color: var(--text-primary);
   padding: 4px 10px;
   border-radius: 20px;
   font-size: 13px;
@@ -78,7 +78,7 @@
 
   /* 陰影與深度 */
   box-shadow: 0 4px 8px rgba(74, 158, 255, 0.3),
-              0 2px 4px rgba(0, 0, 0, 0.2);
+              0 2px 4px var(--overlay-soft);
 
   /* 動畫過渡 */
   transition: all 0.3s ease;
@@ -94,6 +94,6 @@
 .armor-container:hover .dancer-label {
   transform: translateX(-50%) scale(1.1);
   box-shadow: 0 6px 12px rgba(74, 158, 255, 0.4),
-              0 3px 6px rgba(0, 0, 0, 0.3);
+              0 3px 6px var(--overlay-soft);
 }
 

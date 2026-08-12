@@ -12,7 +12,7 @@
   display: flex;
   position: absolute;
   flex-direction: column;
-  background: rgb(26, 26, 26);
+  background: var(--bg-panel);
   justify-content: start;
   /*left: 400px;*/
   height: 100%;
@@ -28,10 +28,10 @@
   height: 0px;
   margin-top: 10px;
   border-radius: 10px;
-  /* background-color: rgba(0, 0, 0, 1); 主要顏色示例 */
+  /* background-color: var(--bg-canvas); 主要顏色示例 */
   z-index: 10;
   position: absolute;
-  border: solid #a1aaae;
+  border: solid var(--text-muted);
 }
 
 .color_example_background {
@@ -39,13 +39,13 @@
   height: 75px;
 
   border-radius: 10px;
-  background-color: rgba(255, 255, 255, 1); /* 背景色 */
+  background-color: var(--bg-inverse); /* 背景色 */
   z-index: 1;
   position: relative;
   /* justify-content: center; 水平居中 */
   /* justify-self: center; */
   /* align-items: center; 垂直居中 */
-  border: solid #a1aaae;
+  border: solid var(--text-muted);
 }
 
 .favorite_color_sample {
@@ -53,8 +53,8 @@
   width: 40px;
   height: 40px;
   border-radius: 10px;
-  border: solid #a1aaae;
-  background-color: rgba(0, 0, 0, 1); /* 默認顏色示例 */
+  border: solid var(--text-muted);
+  background-color: var(--bg-canvas); /* 默認顏色示例 */
 }
 
 /*
@@ -93,10 +93,10 @@
 input[type="range"]::-moz-range-thumb {
   width: 10px; 長方形寬度 
   height: 20px;  長方形高度 
-  background: #ffffff; /* 滑塊背景色 
+  background: var(--bg-inverse); /* 滑塊背景色 
   border-radius: 5px; /* 圓角設置 
   cursor: pointer; /* 滑鼠指標樣式 
-  border: 1px solid #ccc; /* 滑塊邊框 
+  border: 1px solid var(--bg-inverse); /* 滑塊邊框 
 }
 
 /* WebKit 瀏覽器（Chrome、Safari）的滑塊樣式 
@@ -104,20 +104,20 @@ input[type="range"]::-webkit-slider-thumb {
   appearance: none; /* 移除預設樣式 
   width: 10px; /* 長方形寬度 
   height: 20px; /* 長方形高度 
-  background: #ffffff; /* 滑塊背景色 
+  background: var(--bg-inverse); /* 滑塊背景色 
   border-radius: 5px; /* 圓角設置 
   cursor: pointer; /* 滑鼠指標樣式 
-  border: 1px solid #ccc; /* 滑塊邊框 
+  border: 1px solid var(--bg-inverse); /* 滑塊邊框 
 }
 
 /* Edge 瀏覽器的滑塊樣式 
 input[type="range"]::-ms-thumb {
   width: 10px; /* 長方形寬度 
   height: 20px; /* 長方形高度 
-  background: #ffffff; /* 滑塊背景色 
+  background: var(--bg-inverse); /* 滑塊背景色 
   border-radius: 5px; /* 圓角設置 
   cursor: pointer; /* 滑鼠指標樣式 
-  border: 1px solid #ccc; /* 滑塊邊框 
+  border: 1px solid var(--bg-inverse); /* 滑塊邊框 
 }*/
 
 .color-status {
@@ -141,7 +141,7 @@ input[type="range"]::-ms-thumb {
   left: 2px;*/
   cursor: pointer;
   appearance: none; /* 移除瀏覽器預設樣式 */
-  background: linear-gradient(to right, #adadad, #4f4f4f);
+  background: linear-gradient(to right, var(--bg-inverse), var(--bg-control-active));
   border-radius: 5px;
 }
 
@@ -149,26 +149,26 @@ input[type="range"]::-ms-thumb {
   appearance: none; /* 移除預設樣式 */
   width: 10px; /* 長方形寬度 */
   height: 20px; /* 長方形高度 */
-  background: #ffffff; /* 滑塊背景色 */
+  background: var(--bg-inverse); /* 滑塊背景色 */
   border-radius: 5px; /* 圓角設置 */
   cursor: pointer; /* 滑鼠指標樣式 */
-  border: 1px solid #ccc; /* 滑塊邊框 */
+  border: 1px solid var(--bg-inverse); /* 滑塊邊框 */
 }
 
 .color-slider::-moz-range-thumb {
   width: 15px;
   height: 15px;
-  background: #ffffff; /* 滑塊顏色 */
+  background: var(--bg-inverse); /* 滑塊顏色 */
   border-radius: 50%;
   cursor: pointer;
 }
 .color-slider::-ms-thumb {
   width: 10px; /* 長方形寬度 */
   height: 20px; /* 長方形高度 */
-  background: #ffffff; /* 滑塊背景色 */
+  background: var(--bg-inverse); /* 滑塊背景色 */
   border-radius: 5px; /* 圓角設置 */
   cursor: pointer; /* 滑鼠指標樣式 */
-  border: 1px solid #ccc; /* 滑塊邊框 */
+  border: 1px solid var(--bg-inverse); /* 滑塊邊框 */
 }
 
 .color-status span {
@@ -179,6 +179,6 @@ input[type="range"]::-ms-thumb {
   display: flex;
   font-weight: bold;
   font-size: 13px;
-  color: white;
+  color: var(--text-primary);
   z-index: 20;
 }
