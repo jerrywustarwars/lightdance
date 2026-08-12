@@ -1,9 +1,9 @@
 #colorWell {
-  width: 100px;
-  height: 100px;
-  margin-top: 5%;
+  width: 72px;
+  height: 72px;
   position: relative;
   z-index: 10;
+  flex-shrink: 0;
 }
 .palette {
   right: 0.3%;
@@ -17,6 +17,11 @@
   /*left: 400px;*/
   height: 100%;
   align-items: center;
+
+  /* 由 flex 依序往下排，不要靠各自的 margin/absolute 硬喬位置 */
+  gap: 8px;
+  padding: 8px 0;
+  overflow: hidden;
 }
 .color_example {
   width: 0px;
@@ -52,15 +57,27 @@
   background-color: rgba(0, 0, 0, 1); /* 默認顏色示例 */
 }
 
+/*
+ * 最愛顏色區。
+ *
+ * 原本是 `position: absolute; bottom: 5%`——脫離了 .palette 的 flex 流，
+ * 於是直接疊在調色器（#colorWell）與透明度控制（.box）上面。實測 1280 寬時
+ * 這一區把 #colorWell 整個蓋住，根本點不開調色盤；1600 寬時則蓋住色票，
+ * 讓最愛顏色點不到。改成一般的 flex 項目，由容器負責排版。
+ *
+ * 色票會隨使用者收藏而變多，所以**由這一區吃掉剩餘高度並自己捲動**，
+ * 上面的調色器與透明度控制則固定不動（flex-shrink: 0）。這樣不管收藏幾排
+ * 都不會把上面的控制項擠出可視範圍。
+ */
 .favorite_color_background {
   display: flex;
-  bottom: 5%;
-  position: absolute;
-  justify-self: center;
   align-items: center;
   flex-direction: column;
   gap: 10px;
-  /* margin-top: 10px; */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  width: 100%;
 }
 
 .favorite_color_line {
@@ -104,13 +121,16 @@ input[type="range"]::-ms-thumb {
 }*/
 
 .color-status {
-  width: 170px;
+  flex-shrink: 0;
+  width: 100%;
   display: flex; /* 使用 Flexbox 進行水平排列 */
   align-items: center; /* 讓子元素垂直置中 */
-  justify-content: space-between; /* 子元素在容器內平均分布 */
-  gap: 10px; /* 設定子元素之間的水平間距 */
-  position: relative; /* 如果需要調整容器位置可保留 */
-  top: 8px; /* 容器的垂直位置 */
+  justify-content: center;
+  /* 調色盤欄位窄的時候（10% 寬，1280 視窗下只有 128px）擠不下
+     「填色 + 滑桿 + 取色」一行，允許換行而不是把「取色」推出面板外 */
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 4px;
 }
 .color-slider {
   z-index: 20;

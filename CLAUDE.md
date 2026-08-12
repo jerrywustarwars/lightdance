@@ -157,6 +157,27 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 2. 查閱 README.md 中的故障排除章節
 3. 如果是安全性相關問題，參考 `docs/technical-analysis.md` 第五章節
 
+### 前端驗收（瀏覽器，不需要後端）
+
+單元測試（`npm test`）跑在 jsdom 上，測不到真實瀏覽器的鍵盤事件序列與版面
+重疊。前端有兩支 Playwright 腳本補這一段，`/api/**` 全部攔截回假資料，
+所以**後端不用跑**：
+
+```bash
+cd frontend
+npm run dev            # 另一個終端機
+npm run e2e            # 功能驗收：放色 / 選取 / 剪下 / undo / 快捷鍵 / 重新整理 / Output
+npm run audit:layout   # 版面稽核：有沒有控制項被蓋住、有沒有元素溢出容器
+```
+
+兩支都會把截圖存在 `frontend/e2e/shots/`。動過 CSS、版面或快捷鍵之後請跑一次
+——它們抓到過 jsdom 測試全綠但實際完全不能用的問題（Ctrl+數字被防彈跳吃掉、
+Edit/Logout 被橫幅蓋住、舞者開關蓋掉 12 個光衣部位）。
+
+⚠️ 若出現 `編輯器一直載入不了` / `一直被彈回首頁`，**先重開 `npm run dev` 再判斷**。
+連續改一堆 CSS 之後 vite 的 HMR 狀態會累積到 `/home` 載不起來，這是開發伺服器的
+問題不是程式碼的問題（重開後同一份程式碼就 17/17 全過）。
+
 ### 程式碼重構
 1. 保持向後相容性
 2. 增加適當的註解說明變更原因
@@ -237,6 +258,14 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 
 ## 更新記錄
 
+- **2026-08-12**：**UI 版面修正**。用瀏覽器實測稽核（`npm run audit:layout`）
+  抓到 9 處控制項被蓋住：Edit/Logout 被「尚未儲存」橫幅整個蓋住、音樂選單被
+  擠到畫面外 x=−16 蓋住左側工具列、舞者開關浮在光衣上蓋掉 12 個部位、光衣 SVG
+  （寫死 480px）溢出容器蓋住整條工具列、調色盤各區互疊。根因都是
+  `position: absolute` + 寫死像素座標，改成 flex 排版後 1600×950 與 1280×800
+  兩種尺寸都是 0 問題。另修好登入後立刻重新整理會被彈回首頁（persist 有 2 秒
+  debounce，新增 `flushPersist()`）與 Ctrl/Shift+數字快捷鍵被防彈跳吃掉。
+  新增 `npm run e2e`（17 項功能驗收）與 `npm run audit:layout`
 - **2026-08-10**：**人數與部位數集中化**。`constants/parts.js` 成為唯一來源
   （`PLAYER_INDICES` / `PART_INDICES` / `isAccessoryPart` / `createEmptyActionTable`），
   取代散落 5 個檔案的 9 處 `Array.from({length: 7})` 與寫死的身體/飾品分界 `14`。

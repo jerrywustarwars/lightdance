@@ -28,12 +28,9 @@
   font-weight: 900;
   font-style: italic;
   letter-spacing: 2px;
-  left: 25px;
-  position: absolute;
   color: rgb(255, 255, 255);
   font-size: 29px;
-  margin-top: 21.5px;
-  transform: translateY(-30%);
+  white-space: nowrap;
   animation: fadeIn 1s ease-in-out;
 }
 
@@ -60,15 +57,40 @@
   z-index: 0;
 }
 
+/*
+ * 頂部工具列：一排 flex，不再由每個按鈕自己 position: absolute + 寫死 left。
+ *
+ * 舊寫法的座標（370 / 584 / 681 / 778…）是照著某一個視窗寬度量出來的，
+ * 換一個寬度就互相重疊。實測 1600×950 下「有尚未儲存的變更」橫幅
+ * （x 660..940）把 Edit（681..771）與 Logout（778..868）整個蓋住，
+ * 兩顆按鈕完全點不到；1280 寬時連 Shortcuts 與 Load 也一起被蓋。
+ *
+ * right 留 175px 給右側的調色盤（.palette 是絕對定位、寬約 165px）。
+ */
+.panel-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 175px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  z-index: 1;
+}
+
+/* 右半邊（新專案 / 裝置）靠右對齊，中間自動留白 */
+.panel-header .home-creation-bar {
+  margin-left: auto;
+}
+
 .output-button {
   font-family: "Kanit", sans-serif;
   font-weight: 400;
   font-size: 15px;
   color: rgb(237, 237, 237);
   letter-spacing: 0.5px;
-  position: absolute;
-  margin-top: 15px;
-  left: 370px;
   height: 34px;
   width: 90px;
   border: solid, 2.5px, rgb(237, 237, 237);
@@ -103,9 +125,6 @@
   font-size: 15px;
   color: rgb(237, 237, 237);
   letter-spacing: 0.5px;
-  position: absolute;
-  margin-top: 15px;
-  left: 467px;
   height: 34px;
   width: 110px;
   border: solid, 2.5px, rgb(237, 237, 237);
@@ -135,14 +154,17 @@
 }
 .alert-warning {
   background: rgb(255, 162, 0);
-  position: absolute;
   color: rgb(237, 237, 237);
-  top: 20px;
-  height: 39px;
-  width: 280px;
-  font-size: 25px;
+  height: 34px;
+  font-size: 18px;
   font-family: "Kanit", sans-serif;
   font-weight: 700;
+  border-radius: 5.7px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .load-button {
@@ -151,10 +173,7 @@
   font-size: 15px;
   color: rgb(237, 237, 237);
   letter-spacing: 0.5px;
-  position: absolute;
   /*top: 100px;*/
-  margin-top: 15px;
-  left: 584px;
   height: 34px;
   width: 90px;
   border: solid, 3px, rgb(237, 237, 237);
@@ -184,10 +203,7 @@
   font-size: 15px;
   color: rgb(237, 237, 237);
   letter-spacing: 0.5px;
-  position: absolute;
   /*top: 175px;*/
-  margin-top: 15px;
-  left: 681px;
   height: 34px;
   width: 90px;
   border: solid, 3px, rgb(237, 237, 237);
@@ -218,10 +234,7 @@
   font-size: 15px;
   color: rgb(237, 237, 237);
   letter-spacing: 0.5px;
-  position: absolute;
   /*top: 175px;*/
-  margin-top: 15px;
-  right: 11.7%;
   width: 90px;
   height: 34px;
   border: solid, 3px, rgb(237, 237, 237);
@@ -237,10 +250,7 @@
   font-size: 15px;
   color: rgb(237, 237, 237);
   letter-spacing: 0.5px;
-  position: absolute;
   /*top: 100px;*/
-  margin-top: 15px;
-  left: 778px;
   height: 34px;
   width: 90px;
   border: solid, 3px, rgb(237, 237, 237);
@@ -272,6 +282,8 @@
 .people-container {
   position: absolute;
   align-items: center;
+  /* 從 header（56px）下方開始，兩者不重疊 */
+  top: 60px;
   bottom: 0;
   left: 25px;
   align-content: center;
@@ -279,10 +291,10 @@
   border: solid, 3px, rgb(156, 156, 156);
   border-radius: 7px;
   background: rgb(75, 74, 74);
-  height: 85%;
   width: 87.5%;
   display: flex;
-  justify-content: space-around;
+  flex-direction: column;
+  justify-content: flex-start;
   padding-right: 200px;
 
   /*
@@ -382,10 +394,7 @@
   padding: 0 12px;
   white-space: nowrap;
 
-  /* 定位：放在 device-info-button (right: 11.7%) 的左邊 */
-  position: absolute;
-  margin-top: 15px;
-  right: calc(11.7% + 100px); 
+  /* 定位：放在 device-info-button (right: 11.7%) 的左邊 */ 
   z-index: 101;
 }
 

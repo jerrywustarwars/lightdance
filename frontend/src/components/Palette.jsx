@@ -179,33 +179,39 @@ function Palette({ rgba, setRgba }) {
             ))}
           </div>
         ))}
-        <div className="color-status">
-          <span
-            style={{
-              color: toggleState ? "#808080" : "#FFFFFF",
-              transition: "color 0.5 ease",
-            }}
-          >
-            <RiSketching /> 填色
-          </span>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="1"
-            value={toggleState ? 1 : 0} // 根據 toggleState 控制滑桿位置
-            onChange={handleToggleChange}
-            className="color-slider" // 使用外部 CSS 樣式
-          />
-          <span
-            style={{
-              color: toggleState ? "#FFFFFF" : "#808080", // toggleState=0時，取色變灰色
-              transition: "color 0.5 ease",
-            }}
-          >
-            <FaEyeDropper /> 取色
-          </span>
-        </div>
+      </div>
+
+      {/*
+        填色 / 取色 是模式切換，不屬於「最愛顏色」清單。原本被放在
+        .favorite_color_background 裡面，色票一多就跟著捲出可視範圍
+        （實測整排被推到面板外 130px，完全點不到）。移到清單外面固定住。
+      */}
+      <div className="color-status">
+        <span
+          style={{
+            color: toggleState ? "#808080" : "#FFFFFF",
+            transition: "color 0.5 ease",
+          }}
+        >
+          <RiSketching /> 填色
+        </span>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="1"
+          value={toggleState ? 1 : 0} // 根據 toggleState 控制滑桿位置
+          onChange={handleToggleChange}
+          className="color-slider" // 使用外部 CSS 樣式
+        />
+        <span
+          style={{
+            color: toggleState ? "#FFFFFF" : "#808080", // toggleState=0時，取色變灰色
+            transition: "color 0.5 ease",
+          }}
+        >
+          <FaEyeDropper /> 取色
+        </span>
       </div>
     </div>
   );

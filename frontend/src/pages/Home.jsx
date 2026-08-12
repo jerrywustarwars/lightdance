@@ -353,6 +353,23 @@ function Home({ rgba, setRgba, setButtonState }) {
     <div>
       <div className="homepage">
         <div className="panel">
+          {/*
+           * 頂部工具列。
+           *
+           * 這一排原本是「每個按鈕各自 position: absolute + 寫死 left: 370px /
+           * 584px / 681px…」，於是視窗一換寬度就互相重疊——實測 Edit 與 Logout
+           * 被「有尚未儲存的變更」橫幅整個蓋住，完全點不到。改成 flex 之後
+           * 由瀏覽器排版，不再有魔術座標。
+           */}
+          <div className="panel-header">
+          <button
+            type="button"
+            className="title"
+            onClick={handleLogout}
+            style={{ backgroundColor: "black", color: "white" }}
+          >
+            NYCUEE Light Dance
+          </button>
           <button className="output-button" onClick={handleOutput}>
             Output <MdOutput className="output-icon" />
           </button>
@@ -427,14 +444,7 @@ function Home({ rgba, setRgba, setButtonState }) {
           <button className="device-info-button">
             <FontAwesomeIcon icon={faRobot} size="lg" />
           </button>
-          <button
-            type="button"
-            className="title"
-            onClick={handleLogout}
-            style={{ backgroundColor: "black", color: "white" }}
-          >
-            NYCUEE Light Dance
-          </button>
+          </div>
           {listitem}
           <div className="people-container">
             <People />

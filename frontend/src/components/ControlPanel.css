@@ -28,10 +28,24 @@
   width: 15%;
   background-color: rgb(21, 21, 21); /* 灰色背景 */
 }
+/*
+ * 左側五顆工具鈕（選軌 / 復原 / 重做 / 新增軌 / Move Mode）。
+ *
+ * 原本沒有 display:flex，按鈕靠 inline 排版加上 margin 20px 換行，在 240px
+ * 寬的欄位裡會擠成兩排並溢出 `height: 10%` 的框，往下壓到音樂選單與時間軸
+ * 設定區——實測 Add-Timeline 與 Move Mode 完全點不到。
+ *
+ * 改成單行 flex 並縮小按鈕與間距，五顆剛好排得下。
+ */
 .leftupcorner {
-  height: 10%;
-  justify-content: center;
-  align-content: end;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 6px;
+  width: 100%;
+  flex-shrink: 0;
 }
 .choosetimeline,
 .undo,
@@ -43,9 +57,17 @@
   border: none;
   border-radius: 5px;
   cursor: pointer;
-  margin-right: 20px;
-  margin-bottom: 20px;
-  gap: 5px;
+  /* 間距交給 .leftupcorner 的 gap，不要各自 margin（會撐破那一行）。
+     寬度用 flex 分配，欄位變窄時自動縮，不會有按鈕被擠出去。 */
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 44px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  flex-shrink: 0;
 }
 .choosetimeline:hover,
 .undo:hover,

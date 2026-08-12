@@ -1,13 +1,19 @@
+/*
+ * 舞者顯示開關。
+ *
+ * 原本是 `position: absolute; bottom: 20px; left: 20px`，直接浮在光衣上面——
+ * 實測蓋住 12 個部位（好幾位舞者的腿與鞋），那些部位完全點不到。
+ * 改成一般流內元素，排在光衣那一列的下方，各佔各的空間。
+ */
 .dancer-toggle-container {
   display: flex;
-  gap: 10px;
-  padding: 15px;
+  gap: 8px;
+  padding: 8px 12px;
   background-color: rgb(45, 45, 45);
   border-radius: 8px;
-  position: absolute;
-  bottom: 20px;
-  left: 20px;
-  z-index: 10;
+  align-self: flex-start;
+  flex-shrink: 0;
+  margin: 0 0 8px 12px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
 }
 

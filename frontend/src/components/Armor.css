@@ -5,6 +5,16 @@
   z-index: 10;
 }
 
+/* 光衣排成一列，吃掉舞者開關以外的高度 */
+.people-row {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  justify-content: space-around;
+  align-items: center;
+}
+
 .personBackGround {
   /* align-self: center; */
   margin: 0 15px;
@@ -59,10 +69,12 @@
   /* 視覺樣式 */
   background: linear-gradient(135deg, #4a9eff 0%, #3a8eef 100%);
   color: white;
-  padding: 6px 16px;
+  padding: 4px 10px;
   border-radius: 20px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: bold;
+  /* 欄位變窄時不要把「舞者 1」拆成直排 */
+  white-space: nowrap;
 
   /* 陰影與深度 */
   box-shadow: 0 4px 8px rgba(74, 158, 255, 0.3),

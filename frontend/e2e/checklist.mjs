@@ -27,6 +27,7 @@ import { chromium } from "playwright";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { launchOptions } from "./browser.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = join(HERE, "shots");
@@ -167,10 +168,7 @@ const openEditor = async (page, attempts = 4) => {
 };
 
 const run = async () => {
-  const browser = await chromium.launch({
-    executablePath: process.env.CHROMIUM_PATH || undefined,
-    args: ["--no-sandbox", "--disable-dev-shm-usage"],
-  });
+  const browser = await chromium.launch(launchOptions());
   const context = await browser.newContext({
     viewport: { width: 1600, height: 950 },
   });

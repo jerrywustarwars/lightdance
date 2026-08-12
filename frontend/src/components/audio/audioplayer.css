@@ -99,14 +99,32 @@
   pointer-events: none;
 }
 
+/*
+ * 工具列。
+ *
+ * 原本是 `justify-content: flex-end; gap: 40px`——內容總寬超過容器時，
+ * flex-end 會讓**溢出的部分往左邊跑**。實測音樂選單被推到 x = −16（畫面外），
+ * 一路蓋住左側的 Choose-Timeline / Undo / Add-Timeline 按鈕。
+ *
+ * 改成靠左起排、縮小間距，並允許水平捲動：內容再多也只是要捲，不會有東西
+ * 被擠到別人身上或跑出畫面。
+ */
 .controls {
   all: unset; /* 重置所有默認樣式 */
   display: flex;
-  justify-content: flex-end;
-  gap: 40px;
+  justify-content: flex-start;
+  gap: 16px;
   height: 10%;
   width: 100%;
   align-items: center;
+  padding: 0 8px;
+  box-sizing: border-box;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+/* 工具列的項目不要被壓扁成不可辨識 */
+.controls > * {
+  flex-shrink: 0;
 }
 .effect-button,
 .cut-button,

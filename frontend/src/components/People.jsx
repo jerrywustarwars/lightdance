@@ -30,16 +30,23 @@ function People() {
 
   return (
     <>
-      {PLAYER_INDICES.map((index) => {
-        if (!dancerVisibility[index]) {
-          return null;
-        }
-        return (
-          <div className="personBackGround" key={index}>
-            <Armor index={index} />
-          </div>
-        );
-      })}
+      {/*
+        光衣自成一列。舞者顯示開關（DancerToggle）原本是 position: absolute
+        浮在這一區上面，實測蓋住 12 個部位（好幾位舞者的腿與鞋），那些部位
+        根本點不到、沒辦法上色。包成一列之後開關排在下方、各佔各的空間。
+      */}
+      <div className="people-row">
+        {PLAYER_INDICES.map((index) => {
+          if (!dancerVisibility[index]) {
+            return null;
+          }
+          return (
+            <div className="personBackGround" key={index}>
+              <Armor index={index} />
+            </div>
+          );
+        })}
+      </div>
       <AccessoryPanel />
     </>
   );
