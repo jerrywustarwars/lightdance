@@ -73,7 +73,7 @@ function MusicSelector({ onTrackChange }) {
             </option>
           ))}
         </select>
-        <span className="tooltip">Switch Track</span>
+        <span className="tooltip">切換音樂</span>
       </div>
     </div>
   );

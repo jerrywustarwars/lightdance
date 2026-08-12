@@ -6,6 +6,7 @@
  *   1. 每個可互動元素的中心點，`document.elementFromPoint()` 回傳的是不是它自己？
  *      不是 → 被別的東西蓋住了，使用者點不到。
  *   2. 每個元素的 bounding box 有沒有超出容器？超出 → 跑到別人的地盤上。
+ *   3. 每則提示有沒有被祖先的 overflow 裁掉？被裁 → hover 之後什麼都不會出現。
  *
  * ## 為什麼需要這個
  *
@@ -146,7 +147,8 @@ const collectProblems = () => {
     for (const child of box.querySelectorAll("*")) {
       const cr = child.getBoundingClientRect();
       if (cr.width < 2 || cr.height < 2) continue;
-      if (child.classList?.contains("tooltip")) continue; // hover 才顯示，溢出正常
+      // hover 才顯示的提示（含它裡面的 <kbd>）浮在按鈕上方，溢出是設計上的
+      if (child.closest(".tooltip")) continue;
 
       // 在可捲動容器裡的內容，超出是設計上的
       let inScroller = false;
@@ -175,7 +177,36 @@ const collectProblems = () => {
     }
   }
 
-  return { unclickable, overflow };
+  // ── 3. 被裁掉的提示 ──────────────────────────────
+  //
+  // 提示浮在按鈕正上方，只要任何一層祖先有 overflow 就會被切掉——而且**畫面上
+  // 完全看不出來**：hover 之後就是沒東西跑出來，不會有錯誤。實測抓到過 17 則
+  // 提示有 12 則被 .controls 的 overflow 裁掉，剛好是最需要提示的工具列那批。
+  const clippedTips = [];
+  for (const tip of document.querySelectorAll(".tooltip")) {
+    const host = tip.parentElement;
+    if (!host) continue;
+    const tr = tip.getBoundingClientRect();
+    if (tr.width < 2 || tr.height < 2) continue;
+
+    let reason = null;
+    for (let a = host; a; a = a.parentElement) {
+      if (getComputedStyle(a).overflow === "visible") continue;
+      const ar = a.getBoundingClientRect();
+      if (tr.top < ar.top - 0.5 || tr.bottom > ar.bottom + 0.5) {
+        reason = `被 ${label(a)} 裁切`;
+        break;
+      }
+    }
+    if (!reason && (tr.left < 0 || tr.right > innerWidth || tr.top < 0)) {
+      reason = "跑出畫面";
+    }
+    if (reason) {
+      clippedTips.push({ text: (tip.textContent || "").trim().slice(0, 20), reason });
+    }
+  }
+
+  return { unclickable, overflow, clippedTips };
 };
 
 const stubApi = (context) =>
@@ -258,7 +289,8 @@ const run = async () => {
     }
     await page.waitForTimeout(2500);
 
-    const { unclickable, overflow } = await page.evaluate(collectProblems);
+    const { unclickable, overflow, clippedTips } =
+      await page.evaluate(collectProblems);
 
     console.log(`\n===== ${vp.name} =====`);
     console.log(`點不到的控制項：${unclickable.length}`);
@@ -274,7 +306,10 @@ const run = async () => {
         ),
       );
 
-    failed += unclickable.length + overflow.length;
+    console.log(`被裁掉的提示：${clippedTips.length}`);
+    clippedTips.forEach((t) => console.log(`  ✗ 「${t.text}」 ${t.reason}`));
+
+    failed += unclickable.length + overflow.length + clippedTips.length;
 
     await page.screenshot({ path: join(OUT, `layout-${vp.name}.png`) });
     await browser.close();

@@ -430,27 +430,27 @@ function ControlPanel({ setButtonState }) {
         <div className="lefttool-container">
           <div className="leftupcorner">
             <button className="choosetimeline" onClick={choosetimeline}>
-              <span className="tooltip">Choose-Timeline</span>
+              <span className="tooltip">選擇要顯示的軌道</span>
               <FontAwesomeIcon icon={faSliders} size="lg" />
             </button>
             <button className="undo" onClick={undo}>
               <FontAwesomeIcon icon={faReply} size="lg" />
-              <span className="tooltip">Undo ( Ctrl+Z )</span>
+              <span className="tooltip">復原<kbd>Ctrl+Z</kbd></span>
             </button>
             <button className="redo" onClick={redo}>
               <FontAwesomeIcon icon={faShare} size="lg" />
-              <span className="tooltip">Redo ( Ctrl+Y )</span>
+              <span className="tooltip">重做<kbd>Ctrl+Y</kbd></span>
             </button>
             <button className="add-timeline" onClick={addTimeline}>
               <FontAwesomeIcon icon={faPlus} size="lg" />
-              <span className="tooltip">Add-Timeline</span>
+              <span className="tooltip">新增軌道</span>
             </button>
             <button
               className={`move-mode-button ${moveMode ? "active" : ""}`}
               onClick={() => dispatch(toggleMoveMode())}
             >
               <FontAwesomeIcon icon={faArrowsLeftRight} size="lg" />
-              <span className="tooltip">Move Mode ( M )</span>
+              <span className="tooltip">移動模式<kbd>M</kbd></span>
             </button>
           </div>
           <div

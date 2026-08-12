@@ -93,7 +93,7 @@ function PlayerControls({
           <option value="1.5">1.5x</option>
           <option value="2">2x</option>
         </select>
-        <span className="tooltip">Playback speed</span>
+        <span className="tooltip">播放速度</span>
       </div>
 
       <div className="play-control">
@@ -104,12 +104,12 @@ function PlayerControls({
           {isPlaying ? (
             <>
               <FontAwesomeIcon icon={faPause} size="lg" />
-              <span className="tooltip">Pause ( Space )</span>
+              <span className="tooltip">暫停<kbd>Space</kbd></span>
             </>
           ) : (
             <>
               <FontAwesomeIcon icon={faPlay} size="lg" />
-              <span className="tooltip">Play ( Space )</span>
+              <span className="tooltip">播放<kbd>Space</kbd></span>
             </>
           )}
         </button>

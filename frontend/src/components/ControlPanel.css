@@ -83,47 +83,7 @@
 }
 
 /* 通用 Tooltip 樣式 */
-.tooltip {
-  visibility: hidden; /* 默認隱藏 */
-  opacity: 0; /* 默認透明 */
-  position: absolute;
-  background-color: var(--bg-control); /* 和按鈕一致的背景色 */
-  color: var(--text-primary); /* 和按鈕一致的文字顏色 */
-  text-align: center;
-  align-items: center; /* 垂直置中對齊 */
-  border-radius: 5px;
-  padding: 5px 10px;
-  font-size: 20px;
-  z-index: 10;
-  transition: opacity 0.2s ease-in-out;
-  top: -4px; /* 向上移動，位於按鈕上方 */
-  transform: translateX(-50%); /* 水平居中 */
-}
 
-/* 按鈕懸停時顯示 Tooltip */
-.choosetimeline:hover .tooltip,
-.undo:hover .tooltip,
-.redo:hover .tooltip,
-.add-timeline:hover .tooltip,
-.move-mode-button:hover .tooltip {
-  visibility: visible; /* 顯示 Tooltip */
-  opacity: 1; /* 不透明 */
-}
-.choosetimeline:hover .tooltip {
-  left: 28%;
-}
-.undo:hover .tooltip {
-  width: 120px;
-  left: 48%;
-}
-.redo:hover .tooltip {
-  width: 120px;
-  left: 68%;
-}
-.add-timeline:hover .tooltip {
-  width: 110px;
-  left: 88%;
-}
 
 .timeline-setting-container {
   width: 100%;

@@ -301,26 +301,49 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   return (
     <div className="audio-player-container">
       <CopyModeBanner isCopying={copyPaste.isCopying} />
+      {/*
+        工具列分成五組，中間用分隔線隔開：音樂 / 導航 / 編輯 / 效果 / 播放。
+
+        改之前是 14 顆圖示平鋪、沒有分組也沒有分隔線，剪刀、垃圾桶、調色盤、
+        魔杖的視覺權重完全相同，只能一顆一顆 hover 過去猜。光是把間距拉開
+        並補上分隔線，同一批按鈕就會變成五個讀得出來的區塊。
+
+        順序照排燈的動作流程：先選歌 → 找到位置 → 編輯色塊 → 套效果 → 播來聽。
+      */}
       <div className="controls">
-        <MusicSelector
-          onTrackChange={() => {
-            // 換歌時停止播放，讓 waveform 重新載入音檔
-            if (isPlaying) setIsPlaying(false);
-          }}
-        />
-        <UniformAlphaMenu actions={trackActions} />
-        <ShiftToolButton shift={shift} />
-        <EffectMenu effects={effects} />
-        <TrackNavigation actions={trackActions} />
-        <TrackEditButtons actions={trackActions} />
-        <PlayerControls
-          isPlaying={isPlaying}
-          setIsPlaying={setIsPlaying}
-          zoomLevel={zoomLevel}
-          setZoomLevel={setZoomLevel}
-          volume={volume}
-          setVolume={setVolume}
-        />
+        <div className="tool-group">
+          <MusicSelector
+            onTrackChange={() => {
+              // 換歌時停止播放，讓 waveform 重新載入音檔
+              if (isPlaying) setIsPlaying(false);
+            }}
+          />
+        </div>
+        <span className="tool-sep" />
+        <div className="tool-group">
+          <TrackNavigation actions={trackActions} />
+        </div>
+        <span className="tool-sep" />
+        <div className="tool-group">
+          <TrackEditButtons actions={trackActions} />
+        </div>
+        <span className="tool-sep" />
+        <div className="tool-group">
+          <EffectMenu effects={effects} />
+          <ShiftToolButton shift={shift} />
+          <UniformAlphaMenu actions={trackActions} />
+        </div>
+        <span className="tool-sep" />
+        <div className="tool-group">
+          <PlayerControls
+            isPlaying={isPlaying}
+            setIsPlaying={setIsPlaying}
+            zoomLevel={zoomLevel}
+            setZoomLevel={setZoomLevel}
+            volume={volume}
+            setVolume={setVolume}
+          />
+        </div>
       </div>
       <div className="scroll-container" ref={scrollRef}>
         <div

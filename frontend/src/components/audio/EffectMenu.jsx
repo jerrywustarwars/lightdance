@@ -216,7 +216,7 @@ function EffectMenu({ effects }) {
     <div className="effect-wrapper">
       <button className="effect-button" onClick={toggleMenu}>
         <FontAwesomeIcon icon={faWandMagicSparkles} size="lg" />
-        <span className="tooltip">Effect</span>
+        <span className="tooltip">特效</span>
       </button>
 
       {/* 一級選單 */}

@@ -432,11 +432,11 @@ export function TrackNavigation({ actions }) {
     <div className="timeline-controls">
       <button className="timeline-left" onClick={actions.goToPreviousPoint}>
         <FontAwesomeIcon icon={faArrowLeft} size="lg" />
-        <span className="tooltip">Previous Time Point (Shift + ←)</span>
+        <span className="tooltip">上一個時間點<kbd>Shift+←</kbd></span>
       </button>
       <button className="timeline-right" onClick={actions.goToNextPoint}>
         <FontAwesomeIcon icon={faArrowRight} size="lg" />
-        <span className="tooltip">Next Time Point (Shift + →)</span>
+        <span className="tooltip">下一個時間點<kbd>Shift+→</kbd></span>
       </button>
     </div>
   );
@@ -448,11 +448,11 @@ export function TrackEditButtons({ actions }) {
     <>
       <button className="cut-button" onClick={actions.cutSelected}>
         <FontAwesomeIcon icon={faScissors} size="lg" />
-        <span className="tooltip">Cut Selected Block ( C )</span>
+        <span className="tooltip">剪下色塊<kbd>C</kbd></span>
       </button>
       <button className="delete-button" onClick={actions.deleteSelected}>
         <FontAwesomeIcon icon={faTrash} size="lg" />
-        <span className="tooltip">Delete Selected Block ( Del )</span>
+        <span className="tooltip">刪除色塊<kbd>Del</kbd></span>
       </button>
 
       <div className="brightness-control">
@@ -470,11 +470,11 @@ export function TrackEditButtons({ actions }) {
             </option>
           ))}
         </select>
-        <span className="tooltip">Brightness</span>
+        <span className="tooltip">亮度</span>
       </div>
       <button className="color-button" onClick={actions.openColorPicker}>
         <FontAwesomeIcon icon={faPalette} size="lg" />
-        <span className="tooltip">Color( P )</span>
+        <span className="tooltip">顏色<kbd>P</kbd></span>
       </button>
     </>
   );

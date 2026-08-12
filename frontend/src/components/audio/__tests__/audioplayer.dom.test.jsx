@@ -309,11 +309,12 @@ describe("播放控制列", () => {
     mount();
     const playButton = document.querySelector(".play-button");
 
-    expect(playButton.querySelector(".tooltip").textContent).toContain("Play");
+    // 提示文字已改成繁中（介面其餘部分本來就是中文，只有這 16 則提示是英文）
+    expect(playButton.querySelector(".tooltip").textContent).toContain("播放");
     fireEvent.click(playButton);
     expect(
       document.querySelector(".play-button .tooltip").textContent,
-    ).toContain("Pause");
+    ).toContain("暫停");
   });
 
   it("顯示目前時間與總長度", () => {

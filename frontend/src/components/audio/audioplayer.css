@@ -18,10 +18,13 @@
 }
 
 .scroll-container {
-  position: absolute;
-  bottom: 0;
+  /*
+   * 原本是 `position: absolute; bottom: 0; height: 90%`——工具列一換行就會被
+   * 蓋住。改成正常的 flex 項目吃掉剩餘高度，工具列要幾排都不會互相干擾。
+   */
+  flex: 1 1 auto;
+  min-height: 0;
   width: 100%;
-  height: 90%;
   overflow-x: auto;
   overflow-y: hidden;
   flex-direction: column;
@@ -113,14 +116,25 @@
   all: unset; /* 重置所有默認樣式 */
   display: flex;
   justify-content: flex-start;
-  gap: 16px;
-  height: 10%;
+  /* 組與組之間的距離由 .tool-sep 兩側的 margin 決定，這裡只留組內間距 */
+  gap: var(--space-1);
   width: 100%;
+  min-height: 44px;
   align-items: center;
-  padding: 0 8px;
+  padding: 0 var(--space-2);
   box-sizing: border-box;
-  overflow-x: auto;
-  overflow-y: hidden;
+  flex-shrink: 0;
+
+  /*
+   * 不能裁切：提示浮在按鈕正上方，一旦這裡設了 overflow，17 則提示會有 12 則
+   * 被切掉（實測數字）。而且 `overflow-x: auto` + `overflow-y: visible` 在
+   * CSS 裡不成立——只要有一軸不是 visible，另一軸就會跟著變成 auto。
+   *
+   * 所以改成「放不下就換行」：窄視窗會得到兩排工具列，比橫向捲動的工具列
+   * 好用，也不必為了捲動而犧牲提示。
+   */
+  overflow: visible;
+  flex-wrap: wrap;
 }
 /* 工具列的項目不要被壓扁成不可辨識 */
 .controls > * {
@@ -153,44 +167,7 @@
 .color-button:hover {
   color: var(--text-primary);
 }
-.tooltip {
-  position: absolute;
-  background-color: var(--bg-control); /* 和按鈕一致的背景色 */
-  color: var(--text-primary); /* 和按鈕一致的文字顏色 */
-  text-align: center;
-  border-radius: 5px;
-  font-size: 20px;
-  z-index: 10;
-  transition: opacity 0.2s ease-in-out;
-  top: -12px; /* 向上移動，位於按鈕上方 */
-}
 
-/* 按鈕懸停時顯示 Tooltip */
-.timeline-left:hover .tooltip,
-.timeline-right:hover .tooltip,
-.cut-button:hover .tooltip,
-.delete-button:hover .tooltip,
-.dropdown:hover .tooltip,
-.brightness-control:hover .tooltip,
-.color-button:hover .tooltip,
-.play-button:hover .tooltip,
-.effect-button:hover .tooltip {
-  visibility: visible; /* 顯示 Tooltip */
-  opacity: 1; /* 不透明 */
-}
-.effect-button:hover .tooltip {
-  left: 64%;
-  /* width: 130px; */
-  top: -40px;
-}
-.dropdown:hover .tooltip {
-  left: 64%;
-  width: 130px;
-  top: -40px;
-}
-.play-button:hover .tooltip {
-  left: 78%;
-}
 .brightness-control {
   background-color: var(--bg-control);
   color: var(--text-muted);
@@ -493,10 +470,6 @@
 }
 
 /* 懸停 Tooltip (與原本 logic 相同) */
-.shift-main-button:hover .tooltip {
-  visibility: visible;
-  opacity: 1;
-}
 
 /* 引導面板樣式 */
 .shift-guide-panel {
@@ -741,10 +714,25 @@
   position: relative;
 }
 
-.uniform-alpha-wrapper .tooltip {
-  top: -40px;
-  left: 50%;
-  transform: translateX(-50%);
-  white-space: nowrap;
-  padding: 2px 8px;
+
+/*
+ * 工具列分組。
+ *
+ * 14 顆圖示平鋪、權重全等的時候，使用者只能一顆一顆 hover 過去猜。
+ * 分成五組（音樂 / 導航 / 編輯 / 效果 / 播放）之後，光靠間距與一條細線
+ * 就能讓同一批按鈕變成五個讀得出來的區塊。
+ */
+.tool-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+.tool-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: var(--space-2) var(--space-3);
+  background: var(--border-strong);
+  flex-shrink: 0;
 }
