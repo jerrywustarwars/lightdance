@@ -11,6 +11,13 @@ import {
   updateFavoriteColor,
 } from "../redux/actions";
 
+/** 最愛色盤的格數：2 列 × 3 欄 = 6 格 */
+const FAVORITE_ROWS = 2;
+const FAVORITE_COLS = 3;
+
+/** `#RRGGBB`（大小寫皆可）才算合法，避免半途輸入就去改顏色 */
+const HEX_PATTERN = /^#[0-9a-fA-F]{6}$/;
+
 function Palette({ rgba, setRgba }) {
   const dispatch = useDispatch();
   const favoriteColor = useSelector((state) => state.profiles.favoriteColor);
@@ -21,25 +28,36 @@ function Palette({ rgba, setRgba }) {
   const [clickStatus, setClickStatus] = useState(false);
   const [toggleState, setToggleState] = useState(false); //
 
-  const color =
-    ((chosenColor.R & 0xff) << 24) |
-    ((chosenColor.G & 0xff) << 16) |
-    ((chosenColor.B & 0xff) << 8) |
-    ((chosenColor.A * 100) & 0xff);
-  let unsignedColor = color >>> 0;
-
+  /**
+   * 最愛色固定 6 格，排成 2 列 × 3 欄。
+   *
+   * 原本是 4 列 × 2 欄（8 格），但面板只有 170px 寬，後兩列會被捲出可視範圍
+   * ——存進去之後就找不到了。改成 6 格剛好一次看得完。
+   *
+   * 既有使用者的 store 裡是舊形狀，所以這裡不只在空的時候初始化，也把任何
+   * 不是 2×3 的形狀攤平重排（保留前 6 個顏色，不足補白）。
+   */
   useEffect(() => {
-    if (favoriteColor.length > 0) return;
-    const tmpArray = [];
-    for (let i = 0; i < 2; i++) {
-      tmpArray.push({ R: 255, G: 255, B: 255, A: 1 });
-    }
-    const array = [];
-    for (let i = 0; i < 4; i++) {
-      array.push([...tmpArray]);
-    }
-    dispatch(updateFavoriteColor(array));
-  }, [dispatch]);
+    const rows = FAVORITE_ROWS;
+    const cols = FAVORITE_COLS;
+    const alreadyRight =
+      favoriteColor.length === rows &&
+      favoriteColor.every((line) => Array.isArray(line) && line.length === cols);
+    if (alreadyRight) return;
+
+    const flat = favoriteColor.flat();
+    const filled = Array.from(
+      { length: rows * cols },
+      (_, i) => flat[i] ?? { R: 255, G: 255, B: 255, A: 1 },
+    );
+    dispatch(
+      updateFavoriteColor(
+        Array.from({ length: rows }, (_, r) =>
+          filled.slice(r * cols, (r + 1) * cols),
+        ),
+      ),
+    );
+  }, [dispatch, favoriteColor]);
 
   useEffect(() => {
     const sample = document.getElementById("thecolorsample");
@@ -62,6 +80,35 @@ function Palette({ rgba, setRgba }) {
       }
     };
   }, []);
+
+  /*
+   * HEX 欄位需要自己的草稿狀態：使用者一個字一個字打的時候會經過
+   * `#F`、`#FF3`… 這些還不合法的中間狀態，不能每次按鍵都去改顏色。
+   * 只有輸入完整的 6 位色碼才真的套用，離開欄位時再同步回目前顏色。
+   */
+  const [hexDraft, setHexDraft] = useState(paletteColor);
+  useEffect(() => {
+    setHexDraft(paletteColor.toUpperCase());
+  }, [paletteColor]);
+
+  const handleHexChange = (event) => {
+    const next = event.target.value.toUpperCase();
+    setHexDraft(next);
+    if (HEX_PATTERN.test(next)) applyHexColor(next);
+  };
+
+  /** 套用一個合法的 #RRGGBB，透明度維持不變 */
+  const applyHexColor = (hex) => {
+    dispatch(updatePaletteColor(hex));
+    dispatch(
+      updateChosenColor({
+        R: parseInt(hex.slice(1, 3), 16),
+        G: parseInt(hex.slice(3, 5), 16),
+        B: parseInt(hex.slice(5, 7), 16),
+        A: chosenColor.A !== undefined ? chosenColor.A : 1,
+      }),
+    );
+  };
 
   const handleColorChange = (event) => {
     const newColor = event.target.value;
@@ -156,10 +203,25 @@ function Palette({ rgba, setRgba }) {
         id="colorWell"
         onChange={handleColorChange}
       />{" "}
-      <TransparentButton rgba={rgba} setRgba={setRgba} />
-      <div className="unsignedColor" style={{ color: "white" }}>
-        {unsignedColor}
+      {/*
+        原本這個位置顯示的是打包後的 32-bit RGBA 整數（例如 84215140）——
+        那是 debug 產物，對使用者沒有意義。位置本來就該回答「目前顏色是什麼」，
+        所以換成看得懂、也能貼色碼進去的 HEX 欄位。
+      */}
+      <div className="hex-field">
+        <label htmlFor="hexInput">HEX</label>
+        <input
+          id="hexInput"
+          type="text"
+          value={hexDraft}
+          spellCheck={false}
+          maxLength={7}
+          aria-label="目前顏色的 HEX 色碼"
+          onChange={handleHexChange}
+          onBlur={() => setHexDraft(paletteColor.toUpperCase())}
+        />
       </div>
+      <TransparentButton rgba={rgba} setRgba={setRgba} />
       <div className="favorite_color_background">
         {favoriteColor.map((colorArray, lineId) => (
           <div key={lineId} className="favorite_color_line">

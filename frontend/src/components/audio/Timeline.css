@@ -12,18 +12,55 @@
 
 /* Timeline 方塊通用樣式 */
 .timeline-block {
-  transition: border 0.1s ease;
+  transition: box-shadow 0.1s ease;
 }
 
-/* 綠色目標框：代表 Ctrl+V 會貼到這個部位 */
-.timeline-block[style*="rgb(0, 255, 0)"] {
-  box-shadow: 0 0 10px rgba(0, 255, 0, 0.8);
-  border: 4px solid #00FF00 !important;
-  z-index: 10;
+/*
+ * 貼上目標的四角標記。
+ *
+ * 三種選取狀態（普通選取 / 複製來源 / 貼上目標）現在都是白色 ring，
+ * 靠線型區分：實線 / 虛線 / 加粗加四角。舊版是靠顏色分（橘 / 橘 / 綠），
+ * 前兩者長得一模一樣，而綠色又會跟綠色的燈光色塊混淆。
+ *
+ * ring 本身畫在 Timeline.jsx 的 inline style（要跟色塊寬度一起算），
+ * 四個角落的方塊放這裡，因為它需要偽元素。
+ */
+.timeline-block.is-paste-target::before,
+.timeline-block.is-paste-target::after {
+  content: "";
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  background: var(--ring-selected);
+  z-index: 3;
+}
+.timeline-block.is-paste-target::before {
+  left: -2px;
+  top: -2px;
+  box-shadow: calc(100% + 2px) 0 0 var(--ring-selected);
+}
+.timeline-block.is-paste-target::after {
+  left: -2px;
+  bottom: -2px;
+  box-shadow: calc(100% + 2px) 0 0 var(--ring-selected);
 }
 
-/* 懸浮英文文字提示位置微調 */
-.shift-main-button:hover .tooltip {
-  width: 300px;
-  left: -120px;
+/*
+ * 亮度未滿的角標。
+ *
+ * 「鮮紅 30% 亮度」與「暗紅 100% 亮度」合成後像素完全相同，用眼睛分不出來。
+ * 這個三角形不佔色相，只回答「這塊是不是全亮」——要知道確切數值可以 hover
+ * 看 title，或選起來看工具列。
+ */
+.block-dim-mark {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 9px 9px 0;
+  border-color: transparent var(--ring-selected) transparent transparent;
+  pointer-events: none;
+  z-index: 2;
 }

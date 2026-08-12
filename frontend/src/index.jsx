@@ -1,5 +1,6 @@
 // 設計 token 要最先載入 —— 其他樣式全都靠 var() 引用它
 import "./styles/tokens.css";
+import "./styles/buttons.css";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { Provider } from "react-redux"; // 引入 Redux Provider

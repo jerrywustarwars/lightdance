@@ -105,7 +105,7 @@
 .shortcut-h2 {
   font-family: "Kanit", sans-serif;
   font-size: 16px;
-  color: #28a745;
+  color: var(--text-primary);
   margin: 24px 0 10px;
 }
 
@@ -138,7 +138,7 @@
 
 .shortcut-code {
   background: var(--bg-control-hover);
-  color: #e0a040;
+  color: var(--text-secondary);
   padding: 2px 6px;
   border-radius: 3px;
   font-family: "SF Mono", "Fira Code", monospace;
@@ -147,11 +147,11 @@
 
 .shortcut-blockquote {
   background: var(--bg-control);
-  border-left: 3px solid #28a745;
+  border-left: 3px solid var(--border-strong);
   margin: 8px 0 16px;
   padding: 8px 14px;
   border-radius: 0 6px 6px 0;
-  color: #9c9;
+  color: var(--text-secondary);
 }
 
 .shortcut-hr {
@@ -196,7 +196,7 @@
 }
 
 .shortcut-error {
-  color: #e06060;
+  color: var(--state-danger);
   text-align: center;
   padding: 40px 0;
   font-size: 15px;

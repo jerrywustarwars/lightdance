@@ -68,6 +68,16 @@ export const launchOptions = () => ({
 export const warmUp = async (browser, base) => {
   const context = await browser.newContext();
   try {
+    // 一定要攔掉 API。暖機時沒有攔的話，app 會去打 /api/get_music/...，
+    // vite 把它轉給 `backend` 這個在開發機上不存在的主機，請求就一直掛著——
+    // 開發伺服器接著會變得很慢，後面真正要驗的流程反而全部載入不了。
+    await context.route("**/api/**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: "{}",
+      }),
+    );
     const page = await context.newPage();
     await page.goto(`${base}/home`, {
       waitUntil: "domcontentloaded",

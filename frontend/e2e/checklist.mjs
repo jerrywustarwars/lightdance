@@ -91,7 +91,9 @@ const blocksOf = (page, track = 0) =>
     return els.map((el) => ({
       background: el.style.background || el.style.backgroundColor,
       width: el.style.width,
-      selected: /solid/.test(el.style.border || ""),
+      // 選取框改成白色雙層 ring（box-shadow），不再是 border——
+      // 舊版靠顏色分三種狀態，撞到同色系的色塊時會整個消失
+      selected: /inset|0 0 0/.test(el.style.boxShadow || ""),
     }));
   }, track);
 

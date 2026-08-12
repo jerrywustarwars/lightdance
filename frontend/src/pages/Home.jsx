@@ -370,11 +370,11 @@ function Home({ rgba, setRgba, setButtonState }) {
           >
             NYCUEE Light Dance
           </button>
-          <button className="output-button" onClick={handleOutput}>
+          <button className="ld-btn ld-btn--primary output-button" onClick={handleOutput}>
             Output <MdOutput className="output-icon" />
           </button>
           <button
-            className="shortcut-button"
+            className="ld-btn ld-btn--secondary shortcut-button"
             onClick={() => setShowShortcuts(true)}
           >
             Shortcuts <MdKeyboard className="shortcut-icon" />
@@ -386,10 +386,10 @@ function Home({ rgba, setRgba, setButtonState }) {
             setIsLoaded={setIsLoaded}
             isLoaded={isLoaded}
           />
-          <button className="edit-button" onClick={editing}>
+          <button className="ld-btn ld-btn--secondary edit-button" onClick={editing}>
             Edit <FiEdit className="edit-icon" />
           </button>
-          <button className="logout-button" onClick={handleLogout}>
+          <button className="ld-btn ld-btn--ghost logout-button" onClick={handleLogout}>
             Logout <FaSignOutAlt className="logout-icon" />
           </button>
           {isDirty && (
@@ -441,7 +441,7 @@ function Home({ rgba, setRgba, setButtonState }) {
               <span className="action-text">New Project</span>
             </div>
           </div>
-          <button className="device-info-button">
+          <button className="ld-btn ld-btn--ghost device-info-button">
             <FontAwesomeIcon icon={faRobot} size="lg" />
           </button>
           </div>

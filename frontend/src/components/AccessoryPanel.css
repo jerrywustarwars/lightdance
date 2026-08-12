@@ -68,7 +68,7 @@
 .sidebar-accessory-name {
   font-size: 18px;
   font-weight: bold;
-  color: #4a9eff;
+  color: var(--text-primary);
   letter-spacing: 1px;
 }
 

@@ -305,7 +305,12 @@ const AudioWaveform = ({
 
     const container = containerRef.current;
     context.clearRect(0, 0, scrollRef.current.clientWidth, height); // 清空畫布
-    context.fillStyle = "#dbf0e4"; // 設置波形顏色
+    // 波形顏色從 token 讀，不寫死——原本是淺綠，跟燈光的綠色色塊搶注意力。
+    // canvas 沒辦法直接吃 CSS 變數，所以在這裡解析一次。
+    context.fillStyle =
+      getComputedStyle(document.documentElement)
+        .getPropertyValue("--wave-fill")
+        .trim() || "#6f6f6f";
     const targetBarCount = 1000;
     const startIndex = Math.floor(
       (scrollRef.current?.scrollLeft / container.offsetWidth) * fullPeaks.length

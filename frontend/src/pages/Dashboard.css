@@ -8,6 +8,10 @@
     --text-main: #ffffff;
     --text-muted: #8b949e;
     --glass-bg: rgba(0, 0, 0, 0.85);
+    /* 上方漸層與音樂項目 hover——入口頁保留品牌綠，但一樣只定義在這裡 */
+    --hero-gradient-from: #04404b;
+    --hero-gradient-to: #24984e;
+    --item-hover-bg: rgba(126, 232, 250, 0.2);
   }
   
   .dashboard-container {
@@ -49,7 +53,7 @@
   /* --- 上方漸層區域 (開始創作) --- */
   .upper-section {
     height: 35vh;
-    background: linear-gradient(135deg, #04404b 0%, #24984e 100%);
+    background: linear-gradient(135deg, var(--hero-gradient-from) 0%, var(--hero-gradient-to) 100%);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -142,7 +146,7 @@
   }
   
   .music-item:hover {
-    background: rgba(126, 232, 250, 0.2);
+    background: var(--item-hover-bg);
     border-color: var(--primary-cyan);
     transform: translateY(-2px);
   }

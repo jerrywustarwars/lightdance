@@ -222,25 +222,36 @@ const run = async () => {
     });
     await stubApi(context);
     const page = await context.newPage();
+    const diag = [];
+    page.on("pageerror", (e) => diag.push("PAGEERROR " + String(e).slice(0, 200)));
+    page.on("console", (m) => m.type() === "error" && diag.push(m.text().slice(0, 200)));
 
     await page.goto(`${BASE}/login`, { waitUntil: "networkidle" });
     await page.fill('input[type="text"]', "tester");
     await page.fill('input[type="password"]', "pw");
     await page.click("text=登入");
     await page.waitForURL("**/dashboard", { timeout: 15000 });
+    // /home 掛載時會檢查 redux 裡的 token，而 redux-persist 的寫入是非同步的。
+    // 登入完立刻整頁載入 /home 有機會讀不到 token 而被彈回首頁——這是 app
+    // 既有的競態（程式裡用 flushPersist 縮小了窗口，但沒有完全消除）。
+    // 這裡先等一下再開，並保留重試。
+    await page.waitForTimeout(2500);
 
     let opened = false;
-    for (let i = 0; i < 6 && !opened; i++) {
+    for (let i = 0; i < 8 && !opened; i++) {
       await page.goto(`${BASE}/home`, { waitUntil: "networkidle" });
       try {
         await page.waitForSelector(".timeline-container", { timeout: 25000 });
         opened = true;
       } catch {
-        /* 再試一次 */
+        await page.waitForTimeout(1000); // 喘口氣再試
       }
     }
     if (!opened) {
-      console.log(`[${vp.name}] 編輯器載入不了`);
+      // 載入失敗時把當下的網址與 console 錯誤一起印出來——沒有這些資訊
+      // 只會看到「載入不了」，分不出是程式壞了還是量測環境的問題
+      console.log(`[${vp.name}] 編輯器載入不了 url=${page.url()}`);
+      console.log("  診斷：", diag.slice(0, 5));
       failed++;
       await browser.close();
       continue;

@@ -33,7 +33,7 @@
 }
 
 .back-button {
-  background-color: #007bff;
+  background-color: var(--bg-inverse);
   color: var(--text-primary);
   padding: 10px 15px;
   border: none;
@@ -45,7 +45,7 @@
 }
 
 .back-button:hover {
-  background-color: #0056b3;
+  background-color: var(--text-secondary);
   transform: scale(1.05);
 }
 .table-container {
@@ -82,7 +82,7 @@ td {
   border: 1px solid var(--bg-inverse);
 }
 th {
-  background: #007bff;
+  background: var(--bg-inverse);
   color: var(--text-primary);
 }
 
@@ -100,7 +100,7 @@ th {
 
 /* 按鈕樣式 */
 button {
-  background-color: #28a745;
+  background-color: var(--bg-control);
   color: var(--text-primary);
   border: none;
   padding: 10px 15px;
@@ -111,6 +111,6 @@ button {
 }
 
 button:hover {
-  background-color: #218838;
+  background-color: var(--bg-control-hover);
   transform: scale(1.05);
 }

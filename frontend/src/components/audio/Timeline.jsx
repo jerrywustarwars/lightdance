@@ -832,17 +832,27 @@ const Timeline = forwardRef(
           backgroundStyle = `rgba(${color.R}, ${color.G}, ${color.B}, ${color.A})`;
         }
 
-        // 計算框線顏色
-        const colorDistance = (c1, c2) => Math.sqrt(
-          Math.pow((c1.R||0)-(c2.R||0),2) + Math.pow((c1.G||0)-(c2.G||0),2) + Math.pow((c1.B||0)-(c2.B||0),2)
-        );
-        let selectionBorderColor = "#FFA500"; // 橘色
-        if (colorDistance(color, { R: 255, G: 165, B: 0 }) < 200) {
-          selectionBorderColor = "#00FFFF"; // 改為青色
-        }
-
           // 空隙不能被選取、拖曳、resize（以前是用「顏色是不是純黑」判斷）
           const isGapBlock = !block.segmentId;
+
+          /*
+           * 選取框：一律白色雙層 ring，靠**線型**而不是顏色區分三種狀態。
+           *
+           * 舊版是橘色，撞到橘色色塊時改判青色——只擋得住一種顏色，選一塊青色
+           * 色塊時邊框直接消失。而且「複製來源」與「普通選取」長得一模一樣，
+           * 使用者只能靠記得自己剛才按了什麼。
+           *
+           * 白色在飽和色上對比最高，外圈的深色則保證在白色/淺色色塊上也看得見
+           * ——這樣任何底色都讀得出來，不需要任何依顏色分支的判斷。
+           */
+          const ring = (width, color) =>
+            `0 0 0 ${width}px ${color}, 0 0 0 ${width + 2}px var(--ring-outer)`;
+
+          const boxShadow = isPasteTarget
+            ? ring(3, "var(--ring-selected)") // 貼上目標：最粗
+            : isCopySource || isNormalSelected
+              ? ring(2, "var(--ring-selected)")
+              : "none";
 
           // 設定 blockStyle
           const blockStyle = {
@@ -851,12 +861,12 @@ const Timeline = forwardRef(
             width: `${(block.durationTime / duration) * 100}%`,
             height: "90%",
             position: "relative",
-            borderRadius: "7px",
-            zIndex: (isPasteTarget || isCopySource) ? 10 : 1,
-            // 優先權：貼上目標(綠) > 複製來源(橘) > 普通選取
-            border: isPasteTarget
-              ? "4px solid #00FF00"
-              : (isCopySource || isNormalSelected ? `3px solid ${selectionBorderColor}` : "none"),
+            borderRadius: "var(--radius-sm)",
+            zIndex: isPasteTarget ? 12 : isCopySource || isNormalSelected ? 10 : 1,
+            boxShadow,
+            // 複製來源用虛線區分——它和普通選取都是「被選中」，差在接下來會發生什麼
+            outline: isCopySource ? "2px dashed var(--ring-selected)" : "none",
+            outlineOffset: "-1px",
             boxSizing: "border-box",
             cursor: "default",
           };
@@ -915,7 +925,7 @@ const Timeline = forwardRef(
                 // [Drag 已停用] hoveredBlock 懸停透明度，啟用 drag 時恢復：
                 // ...(hoveredBlock?.index === index ? { opacity: 0.85 } : { opacity: 1 }),
               }}
-              className="timeline-block"
+              className={`timeline-block${isPasteTarget ? " is-paste-target" : ""}`}
               onMouseMove={moveMode ? undefined : handleBlockMouseMove}
               onMouseLeave={moveMode ? undefined : handleBlockMouseLeave}
               onMouseDown={(e) => handleMouseDown(e, index)}
@@ -928,9 +938,22 @@ const Timeline = forwardRef(
                     position: "absolute",
                     top: "5px",
                     right: "5px",
-                    color: "white",
+                    color: "var(--ring-selected)",
                     zIndex: 2,
                   }}
+                />
+              )}
+              {/*
+                亮度未滿的記號。
+                「100% 亮度的鮮紅、alpha 設 30%」與「30% 亮度的暗紅、alpha 設 100%」
+                合成後**像素完全相同**——這是數學不是 bug，用眼睛永遠分不出來。
+                所以在右上角補一個不佔色相的三角角標，只表達「這塊沒有全亮」。
+                漸變段已經有魔杖圖示佔著右上角，就不再疊一個。
+              */}
+              {!isGapBlock && block.linear !== 1 && (block.color?.A ?? 1) < 1 && (
+                <span
+                  className="block-dim-mark"
+                  title={`亮度 ${Math.round((block.color?.A ?? 1) * 100)}%`}
                 />
               )}
               {" "}

@@ -1,6 +1,6 @@
 #colorWell {
-  width: 72px;
-  height: 72px;
+  width: 56px;
+  height: 56px;
   position: relative;
   z-index: 10;
   flex-shrink: 0;
@@ -19,9 +19,15 @@
   align-items: center;
 
   /* 由 flex 依序往下排，不要靠各自的 margin/absolute 硬喬位置 */
-  gap: 8px;
-  padding: 8px 0;
-  overflow: hidden;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+
+  /* 內容放不下時由這一欄自己捲動。
+     這是保險：1280×800 下 .panel 只有 280px 高，調色器 + HEX + 亮度 +
+     六格色票 + 模式切換剛好貼著上限，字級或行高一變就會頂出去。
+     有了這行，最壞情況是要捲一下，而不是內容跑到面板外面點不到。 */
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .color_example {
   width: 0px;
@@ -49,12 +55,18 @@
 }
 
 .favorite_color_sample {
-  margin-top: 0px;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  border: solid var(--text-muted);
+  /* 寬度隨欄位縮放，不寫死 40px——面板只有 10% 寬，1280 視窗下是 128px，
+     三欄寫死 40px 加間距就會擠出去 */
+  flex: 1 1 0;
+  min-width: 0;
+  aspect-ratio: 1;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
   background-color: var(--bg-canvas); /* 默認顏色示例 */
+  cursor: pointer;
+}
+.favorite_color_sample:hover {
+  box-shadow: 0 0 0 2px var(--text-muted);
 }
 
 /*
@@ -73,17 +85,16 @@
   display: flex;
   align-items: center;
   flex-direction: column;
-  gap: 10px;
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
+  gap: var(--space-1);
+  flex: 0 0 auto;
   width: 100%;
+  padding: 0 var(--space-3);
 }
 
 .favorite_color_line {
   display: flex;
-  /* flex-direction: row; 水平排列 */
-  gap: 10px; /* 每個顏色樣本之間的間距 */
+  width: 100%;
+  gap: var(--space-1); /* 每個顏色樣本之間的間距 */
   /* justify-content: center; 水平居中 */
   /* align-items: center; 垂直居中 */
   z-index: 10;
@@ -181,4 +192,46 @@ input[type="range"]::-ms-thumb {
   font-size: 13px;
   color: var(--text-primary);
   z-index: 20;
+}
+
+/*
+ * HEX 欄位。
+ *
+ * 取代原本顯示 32-bit 打包整數的那一格——那是 debug 產物。這個位置本來就
+ * 該回答「目前顏色是什麼」，換成看得懂、也能貼色碼進去的欄位嚴格更好。
+ */
+.hex-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 84%;
+  height: var(--control-h);
+  padding: 0 var(--space-2);
+  background: var(--bg-control);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.hex-field label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.hex-field input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: none;
+  border: 0;
+  outline: none;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.hex-field:focus-within {
+  border-color: var(--text-muted);
 }

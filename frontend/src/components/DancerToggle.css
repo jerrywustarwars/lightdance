@@ -39,13 +39,13 @@
 }
 
 .dancer-toggle-item.active {
-  background-color: #4a9eff;
-  border-color: #4a9eff;
+  background-color: var(--text-muted);
+  border-color: var(--text-muted);
 }
 
 .dancer-toggle-item.active:hover {
-  background-color: #3a8eef;
-  border-color: #3a8eef;
+  background-color: var(--text-secondary);
+  border-color: var(--text-secondary);
 }
 
 .dancer-icon {

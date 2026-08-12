@@ -85,32 +85,33 @@
   margin-left: auto;
 }
 
-.output-button {
+/*
+ * header 的六顆按鈕：外觀一律由 styles/buttons.css 的 .btn 階層決定，
+ * 這裡只補「這個站特有」的字族與字距。
+ *
+ * 之前每顆按鈕各自寫了一份 background / border / color / font-size，
+ * 六份幾乎一樣卻又差一點點（border 是 2.5px 還是 3px、圓角 5.7px…），
+ * 而且因為 Home.css 比 buttons.css 晚載入，它們會無聲蓋掉階層樣式。
+ */
+.output-button,
+.shortcut-button,
+.load-button,
+.edit-button,
+.device-info-button,
+.logout-button {
   font-family: "Kanit", sans-serif;
-  font-weight: 400;
-  font-size: 15px;
-  color: var(--text-primary);
   letter-spacing: 0.5px;
-  height: 34px;
-  width: 90px;
-  border: solid, 2.5px, var(--bg-inverse);
-  border-radius: 5.7px;
-  background: var(--bg-canvas);
-  cursor: pointer;
-  transition: all 0.2s ease-in-out;
-  line-height: 1.5;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.5px;
 }
-.output-button:hover {
-  background: var(--bg-control-active);
-  border-radius: 10px;
+
+.output-button:active,
+.shortcut-button:active,
+.load-button:active,
+.edit-button:active,
+.device-info-button:active,
+.logout-button:active {
+  transform: scale(0.94);
 }
-.output-button:active {
-  transform: scale(0.8);
-}
+
 .output-icon {
   display: inline-block;
   vertical-align: baseline;
@@ -119,32 +120,6 @@
   margin-left: 4.5px;
 }
 
-.shortcut-button {
-  font-family: "Kanit", sans-serif;
-  font-weight: 400;
-  font-size: 15px;
-  color: var(--text-primary);
-  letter-spacing: 0.5px;
-  height: 34px;
-  width: 110px;
-  border: solid, 2.5px, var(--bg-inverse);
-  border-radius: 5.7px;
-  background: var(--bg-canvas);
-  cursor: pointer;
-  transition: all 0.2s ease-in-out;
-  line-height: 1.5;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.5px;
-}
-.shortcut-button:hover {
-  background: var(--bg-control-active);
-  border-radius: 10px;
-}
-.shortcut-button:active {
-  transform: scale(0.8);
-}
 .shortcut-icon {
   display: inline-block;
   vertical-align: baseline;
@@ -153,12 +128,13 @@
   margin-left: 4.5px;
 }
 .alert-warning {
-  background: rgb(255, 162, 0);
-  color: var(--text-primary);
+  background: var(--bg-control);
+  border: 1px solid var(--state-warning);
+  color: var(--state-warning);
   height: 34px;
-  font-size: 18px;
+  font-size: var(--fs-sm);
   font-family: "Kanit", sans-serif;
-  font-weight: 700;
+  font-weight: 600;
   border-radius: 5.7px;
   padding: 0 12px;
   display: inline-flex;
@@ -167,29 +143,6 @@
   flex-shrink: 0;
 }
 
-.load-button {
-  font-family: "Kanit", sans-serif;
-  font-weight: 400;
-  font-size: 15px;
-  color: var(--text-primary);
-  letter-spacing: 0.5px;
-  /*top: 100px;*/
-  height: 34px;
-  width: 90px;
-  border: solid, 3px, var(--bg-inverse);
-  border-radius: 5.7px;
-  background: var(--bg-canvas);
-  cursor: pointer;
-  transition: all 0.2s ease-in-out;
-  line-height: 1.5;
-}
-.load-button:hover {
-  background: var(--bg-control-active);
-  border-radius: 10px;
-}
-.load-button:active {
-  transform: scale(0.8);
-}
 .load-icon {
   display: inline-block;
   vertical-align: baseline;
@@ -197,75 +150,13 @@
   font-size: 15px;
   top: 2px;
 }
-.edit-button {
-  font-family: "Kanit", sans-serif;
-  font-weight: 400;
-  font-size: 15px;
-  color: var(--text-primary);
-  letter-spacing: 0.5px;
-  /*top: 175px;*/
-  height: 34px;
-  width: 90px;
-  border: solid, 3px, var(--bg-inverse);
-  border-radius: 5.7px;
-  background: var(--bg-canvas);
-  cursor: pointer;
-  transition: all 0.2s ease-in-out;
-  line-height: 1.5;
-}
 .device-info-button:hover,
-.edit-button:hover {
-  background: var(--bg-control-active);
-  border-radius: 10px;
-}
-.edit-button:active {
-  transform: scale(0.8);
-}
 .edit-icon {
   display: inline-block;
   vertical-align: baseline;
   position: relative;
   font-size: 15px;
   top: 2px;
-}
-.device-info-button {
-  font-family: "Kanit", sans-serif;
-  font-weight: 400;
-  font-size: 15px;
-  color: var(--text-primary);
-  letter-spacing: 0.5px;
-  /*top: 175px;*/
-  width: 90px;
-  height: 34px;
-  border: solid, 3px, var(--bg-inverse);
-  border-radius: 5.7px;
-  background: var(--bg-canvas);
-  cursor: pointer;
-  transition: all 0.2s ease-in-out;
-  line-height: 1.5;
-}
-.logout-button {
-  font-family: "Kanit", sans-serif;
-  font-weight: 400;
-  font-size: 15px;
-  color: var(--text-primary);
-  letter-spacing: 0.5px;
-  /*top: 100px;*/
-  height: 34px;
-  width: 90px;
-  border: solid, 3px, var(--bg-inverse);
-  border-radius: 5.7px;
-  background: var(--bg-canvas);
-  cursor: pointer;
-  transition: all 0.2s ease-in-out;
-  line-height: 1.5;
-}
-.logout-button:hover {
-  background: var(--bg-control-active);
-  border-radius: 10px;
-}
-.logout-button:active {
-  transform: scale(0.8);
 }
 .logout-icon {
   display: inline-block;
@@ -315,20 +206,6 @@
  */
 .panel > *:not(.people-container) {
   z-index: 1;
-}
-
-.background-botton {
-  position: absolute;
-  top: 25px;
-  left: 160px;
-  height: 45px;
-  width: 90px;
-  border: none;
-  font-size: 20px;
-  border-radius: 100px;
-  background: rgb(255, 229, 180);
-  cursor: pointer;
-  transition: all 0.2s ease-in-out;
 }
 
 .box-row {
@@ -384,8 +261,8 @@
   display: flex;
   flex-direction: row; /* 水平排列，JSX 中音樂清單在前 */
   align-items: center;
-  background-color: #1a3d24; /* 深暗綠色 */
-  border: 1px solid #2d5a3c;
+  background-color: var(--bg-control);
+  border: 1px solid var(--border-strong);
   border-radius: 5.7px; /* 統一圓角以對齊其他按鈕 */
   height: 34px; /* 對齊 Output/Edit 按鈕高度 */
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -400,7 +277,7 @@
 
 /* 展開後的寬度（可以根據音樂名字長度調整，或設為 auto） */
 .home-creation-bar.expanded {
-  background-color: #244d30;
+  background-color: var(--bg-control-hover);
   box-shadow: -5px 0 15px var(--overlay-soft);
 }
 
@@ -486,7 +363,7 @@
   background: var(--bg-control); /* 深色背景 */
   padding: 25px;
   border-radius: 12px;
-  border: 1px solid #2d5a3c; /* 暗綠邊框 */
+  border: 1px solid var(--border-strong);
   width: 400px;
   text-align: center;
   color: var(--text-primary);
@@ -496,7 +373,7 @@
 .modal-title {
   margin-bottom: 15px;
   font-family: "Kanit", sans-serif;
-  color: #28a745; /* 綠色標題 */
+  color: var(--text-primary);
 }
 
 .modal-body {
@@ -521,9 +398,12 @@
   transition: opacity 0.2s;
 }
 
-.btn-save { background-color: #28a745; color: var(--text-primary); }
-.btn-discard { background-color: #dc3545; color: var(--text-primary); } /* 紅色警告 */
-.btn-cancel { background-color: var(--bg-control-active); color: var(--text-primary); }
+/* 儲存是主要動作（唯一的亮底），捨棄是破壞性，取消是次要 */
+.btn-save { background-color: var(--bg-inverse); color: var(--text-inverse); font-weight: 600; }
+.btn-discard { background-color: transparent; color: var(--state-danger);
+  border: 1px solid var(--state-danger-border); }
+.btn-discard:hover { background-color: var(--state-danger-bg); }
+.btn-cancel { background-color: var(--bg-control); color: var(--text-secondary); }
 
 .modal-footer-buttons button:hover {
   opacity: 0.8;

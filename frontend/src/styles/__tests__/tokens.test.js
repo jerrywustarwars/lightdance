@@ -33,18 +33,7 @@ const TOKENS_FILE = "styles/tokens.css";
  * 清完一個檔案就把它整列刪掉，全部清完就讓這個物件變成空的。
  */
 const PENDING = {
-  "components/AccessoryPanel.css": 1,
-  "components/Armor.css": 4,
-  "components/ControlPanel.css": 4,
-  "components/DancerToggle.css": 4,
-  "components/ShortcutModal.css": 5,
-  "components/StartButton.css": 6,
-  "components/audio/Timeline.css": 2,
-  "components/audio/audioplayer.css": 22,
-  "pages/Dashboard.css": 3,
-  "pages/EditActionTable.css": 5,
-  "pages/Home.css": 9,
-  "pages/style.css": 10,
+  // （空的）—— 全部收斂完成。新增的違規會讓對應檔案的測試直接紅。
 };
 
 const listCss = (dir) =>

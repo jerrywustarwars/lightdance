@@ -294,7 +294,7 @@ function Dropdown({ userName, setIsDirty, isDirty, setIsLoaded, isLoaded }) {
   return (
     <div>
       <button
-        className="load-button"
+        className="ld-btn ld-btn--secondary load-button"
         onClick={fetchAvailableDataList}
         data-bs-toggle="dropdown"
       >
