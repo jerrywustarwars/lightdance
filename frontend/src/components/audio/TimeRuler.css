@@ -7,7 +7,9 @@
 .time-ruler {
   position: relative;
   width: 100%;
-  height: 24px;
+  /* 高度是共用的：左側軌名欄要讓出同樣一段，兩邊的列才對得齊
+     （定義在 ControlPanel.css 的 .control-panel） */
+  height: var(--ruler-h, 24px);
   flex-shrink: 0;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border-subtle);

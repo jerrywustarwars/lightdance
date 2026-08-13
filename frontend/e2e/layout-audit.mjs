@@ -7,7 +7,8 @@
  *      不是 → 被別的東西蓋住了，使用者點不到。
  *   2. 每個元素的 bounding box 有沒有超出容器？超出 → 跑到別人的地盤上。
  *   3. 每則提示有沒有被祖先的 overflow 裁掉？被裁 → hover 之後什麼都不會出現。
- *   4. 該對齊的成對元素（舞者開關 ↔ 光衣）中心有沒有對上？
+ *   4. 該對齊的成對元素有沒有對上？（舞者開關 ↔ 光衣的中心、
+ *      軌名列 ↔ 時間軸的每一列）
  *   5. 各塊的左右邊緣、以及下半部各排的內容左緣，在不在同一條線上？
  *
  * ## 為什麼需要這個
@@ -237,6 +238,35 @@ const collectProblems = () => {
     misaligned.push({
       pair: "開關數量與光衣數量",
       delta: `${toggleBoxes.length} vs ${armorBoxes.length}`,
+    });
+  }
+
+  /*
+   * 左側軌名列 ↔ 右側時間軸：**每一列都要落在同一條水平線上**。
+   *
+   * 這是這份稽核裡最難用肉眼確定的一項：兩邊各自看起來都很整齊，分隔線也
+   * 都等距，但整欄可能一起偏移。實測左欄比右欄高 25px——右半邊上方有時間
+   * 刻度尺佔掉一段高度，左欄沒有讓。捲到下面時軌名就對到隔壁那條軌，
+   * 而使用者會以為自己在編第 5 軌，其實在編第 6 軌。
+   *
+   * 容許 2px：兩欄的容器各自帶邊框，整數像素捨入會差一格。
+   */
+  const labelRows = [...document.querySelectorAll(".timeline-settings-block")];
+  const trackRows = [...document.querySelectorAll(".timeline")];
+
+  if (labelRows.length && labelRows.length === trackRows.length) {
+    labelRows.forEach((label, i) => {
+      const delta = Math.round(
+        label.getBoundingClientRect().top - trackRows[i].getBoundingClientRect().top,
+      );
+      if (Math.abs(delta) > 2) {
+        misaligned.push({ pair: `第 ${i + 1} 軌的軌名列與時間軸`, delta });
+      }
+    });
+  } else if (labelRows.length !== trackRows.length) {
+    misaligned.push({
+      pair: "軌名列數量與時間軸數量",
+      delta: `${labelRows.length} vs ${trackRows.length}`,
     });
   }
 

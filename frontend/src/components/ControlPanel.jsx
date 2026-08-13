@@ -238,6 +238,50 @@ function ControlPanel({ setButtonState }) {
     setShowModal(false); // 关闭模态框
   };
 
+  /*
+   * 讓左側軌名列與右側時間軸的**每一列落在同一條水平線上**。
+   *
+   * 兩欄上方擋著的東西不一樣：右邊有工具列與時間刻度尺，左邊只有五顆工具鈕。
+   * CSS 裡先用 `--ruler-h` 讓出一段當預設值，但那只在工具列排成一行時才對——
+   * 1280 寬時工具列會換兩行，實測整欄差 49px。差多少只有版面自己知道，
+   * 所以量第一列的落差再補上去。
+   *
+   * 用「第一列的落差」而不是「容器的落差」是因為前者會收斂：補上 delta 之後
+   * 左側第一列就落在右側第一列上，下一次量到的 delta 是 0。容器的 top 不受
+   * 自己的 padding 影響，拿它當基準會一直往下加。
+   */
+  useEffect(() => {
+    const align = () => {
+      const setting = settingRef.current;
+      const label = setting?.querySelector(".timeline-settings-block");
+      const track = document.querySelector(".timeline");
+      if (!setting || !label || !track) return;
+
+      const current = parseFloat(getComputedStyle(setting).paddingTop) || 0;
+      const delta =
+        track.getBoundingClientRect().top - label.getBoundingClientRect().top;
+      if (Math.abs(delta) < 0.5) return;
+
+      setting.style.paddingTop = `${Math.max(0, current + delta)}px`;
+    };
+
+    align();
+
+    // 工具列換行、視窗改變、軌道增減都會讓落差變掉
+    const observer = new ResizeObserver(align);
+    const controls = document.querySelector(".controls");
+    if (controls) observer.observe(controls);
+    if (settingRef.current) observer.observe(settingRef.current);
+    window.addEventListener("resize", align);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", align);
+    };
+    // 軌道清單與行高變了要重算；其餘的變動（工具列換行、視窗縮放）由
+    // ResizeObserver 接手。不留空依賴是因為換工作集時整批列會被換掉。
+  }, [showPart, rowHeight]);
+
   useEffect(() => {
     const scrollContainer = document.querySelector(".timeline-container");
     const settingContainer = settingRef.current;
