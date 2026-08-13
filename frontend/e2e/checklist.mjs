@@ -439,6 +439,73 @@ const run = async () => {
     record("刻度尺存在", false, "找不到 .time-ruler");
   }
 
+  // ── Move Mode：多個色塊一起搬 ──────────────────────────
+  //
+  // 這一項要同時對三件事：拖曳過程的像素邊界、放開後 moveSegments 算出來的
+  // 落點、以及「整批共用同一個位移量」。相對位置只要差一格，樂句的節奏就變了。
+  // jsdom 連色塊有多寬都不知道，只有真瀏覽器驗得到。
+  const litBoxes = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll(".timeline-block")]
+        .filter((el) =>
+          /rgba?\((?!\s*0,\s*0,\s*0)/.test(el.style.background || ""),
+        )
+        .map((el) => {
+          const r = el.getBoundingClientRect();
+          return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+        })
+        .sort((a, b) => a.x - b.x),
+    );
+
+  // 再放一個色塊，讓這條時間軸上有兩個可以一起搬的東西
+  await clickRulerAt(0.35);
+  await clickArmorPart(page, 0, 0);
+  await page.waitForTimeout(600);
+
+  const dragBefore = await litBoxes();
+  if (dragBefore.length >= 2) {
+    const centerOf = (b) => [b.x + b.w / 2, b.y + b.h / 2];
+
+    // 選起兩個色塊：點第一個、Shift 點第二個
+    await page.mouse.click(...centerOf(dragBefore[0]));
+    await page.waitForTimeout(200);
+    await page.keyboard.down("Shift");
+    await page.mouse.click(...centerOf(dragBefore[1]));
+    await page.keyboard.up("Shift");
+    await page.waitForTimeout(300);
+
+    const selected = await page.evaluate(
+      () => document.querySelectorAll(".timeline-block[data-selected='true']").length,
+    );
+
+    // 進 Move Mode → 點色塊開始追蹤 → 移動滑鼠 → 再點一下提交
+    await page.keyboard.press("m");
+    await page.waitForTimeout(200);
+    const [gx, gy] = centerOf(dragBefore[0]);
+    await page.mouse.click(gx, gy);
+    await page.waitForTimeout(150);
+    await page.mouse.move(gx + 100, gy, { steps: 10 });
+    await page.waitForTimeout(150);
+    await page.mouse.click(gx + 100, gy);
+    await page.waitForTimeout(600);
+
+    const after = await litBoxes();
+    const moved = after.length === dragBefore.length;
+    const shifts = moved ? after.map((b, i) => b.x - dragBefore[i].x) : [];
+    const sameShift =
+      shifts.length >= 2 && shifts.every((d) => Math.abs(d - shifts[0]) <= 2);
+
+    record("Shift 多選兩個色塊", selected === 2, `${selected} 塊被選`);
+    record(
+      "Move Mode 整批一起搬，位移量相同",
+      moved && shifts[0] > 20 && sameShift,
+      `位移 ${shifts.map(Math.round).join(" / ")} px`,
+    );
+    await shot(page, "multi-drag");
+  } else {
+    record("Move Mode 整批一起搬", false, `只有 ${dragBefore.length} 個色塊`);
+  }
+
   // ── Output ────────────────────────────────────────────
   const outputBtn = page.locator("button.output-button");
   if (await outputBtn.count()) {

@@ -8,6 +8,8 @@
 import { describe, it, expect } from "vitest";
 import {
   moveSegment,
+  moveSegments,
+  movableRange,
   resizeSegment,
   MIN_BLOCK_GAP_MS,
   MIN_SEGMENT_MS,
@@ -171,6 +173,133 @@ describe("resizeSegment", () => {
             expect(next[i].start).toBeGreaterThanOrEqual(next[i - 1].end);
           }
         }
+      }
+    }
+  });
+});
+
+describe("movableRange", () => {
+  /**
+   * 這是拖曳的**單一真相**：像素預覽與放開後的 commit 都問它。
+   * 兩邊各自算一次的話會出現「拖到底了但放開後又跳一點」。
+   */
+  it("單一色塊的可動範圍就是與前後鄰居的距離", () => {
+    // A 1000~2000、B 4000~5000，總長 10000
+    expect(movableRange(makeSegments(), ["a"], opts)).toEqual({
+      min: -1000, // 往左頂到 0
+      max: 1950, // 往右頂到 B 起點前 50ms
+    });
+  });
+
+  it("整批選取時取所有段的交集", () => {
+    const range = movableRange(makeSegments(), ["a", "b"], opts);
+    // 往左由 A 決定（頂到 0），往右由 B 決定（頂到總長）
+    expect(range).toEqual({ min: -1000, max: 5000 });
+  });
+
+  it("被夾死時回傳 null", () => {
+    const tight = [
+      { id: "l", start: 0, end: 1000 },
+      { id: "m", start: 1050, end: 2000 },
+      { id: "r", start: 2050, end: 3000 },
+    ];
+    expect(movableRange(tight, ["m"], opts)).toEqual({ min: 0, max: 0 });
+    expect(movableRange(tight, [], opts)).toBe(null);
+  });
+
+  it("色塊首尾相接時，拖 0 仍然是 0（不會自己彈開）", () => {
+    // segment 模型允許 a.end === b.start（貼上與 trim 都會產生這種形狀）。
+    // 這時「與鄰居至少留 50ms」算出來的下界是 +50，若不夾住 0，
+    // 拖 0 像素會把色塊往右彈 50ms —— 使用者只是點了一下而已。
+    const touching = [
+      { id: "x", start: 0, end: 1000 },
+      { id: "y", start: 1000, end: 2000 },
+    ];
+    expect(movableRange(touching, ["y"], opts).min).toBe(0);
+    expect(moveSegments(touching, ["y"], 0, opts)).toBe(touching);
+    expect(moveSegments(touching, ["y"], -200, opts)).toBe(touching);
+  });
+
+  it("沒給總長時往右視為無限，不會算出 NaN", () => {
+    // 音檔還沒載入時 duration 是 undefined。舊版會讓 NaN 流進位移計算，
+    // 把 start/end 寫成 NaN——那份光表之後怎麼看都是壞的。
+    const range = movableRange(makeSegments(), ["b"], {});
+    expect(range.max).toBe(Infinity);
+    expect(Number.isNaN(range.min)).toBe(false);
+  });
+});
+
+describe("moveSegments（多段一起搬）", () => {
+  it("整批同一個位移量，相對位置不變", () => {
+    const next = moveSegments(makeSegments(), ["a", "b"], 500, opts);
+    expect(next[0]).toMatchObject({ start: 1500, end: 2500 });
+    expect(next[1]).toMatchObject({ start: 4500, end: 5500 });
+    // 段與段的間隔不變 —— 使用者搬完之後樂句的節奏要一樣
+    expect(next[1].start - next[0].end).toBe(2000);
+  });
+
+  it("整批往右頂到總長就停，不會有人被推出去", () => {
+    const next = moveSegments(makeSegments(), ["a", "b"], 99_999, opts);
+    expect(next[1].end).toBe(DURATION);
+    expect(next[0]).toMatchObject({ start: 6000, end: 7000 });
+  });
+
+  it("整批往左頂到 0 就停", () => {
+    const next = moveSegments(makeSegments(), ["a", "b"], -99_999, opts);
+    expect(next[0].start).toBe(0);
+    expect(next[1]).toMatchObject({ start: 3000, end: 4000 });
+  });
+
+  it("中間夾著沒選到的色塊時，由最靠近它的那一段決定極限", () => {
+    // A(sel) 0~1000、M(未選) 2000~3000、B(sel) 4000~5000
+    const withMiddle = [
+      { id: "a", start: 0, end: 1000 },
+      { id: "m", start: 2000, end: 3000 },
+      { id: "b", start: 4000, end: 5000 },
+    ];
+    const next = moveSegments(withMiddle, ["a", "b"], 99_999, opts);
+
+    // A 只能推到 M 起點前 50ms（+950），B 雖然還很空也只能跟著 +950
+    expect(next[0]).toMatchObject({ id: "a", start: 950, end: 1950 });
+    expect(next[1]).toBe(withMiddle[1]); // M 沒被選到，reference 都沒換
+    expect(next[2]).toMatchObject({ id: "b", start: 4950, end: 5950 });
+
+    // 夾緊保證整批不會越過未選取的鄰居，所以陣列不需要重排也仍然有序
+    for (let i = 1; i < next.length; i++) {
+      expect(next[i].start).toBeGreaterThanOrEqual(next[i - 1].end);
+    }
+  });
+
+  it("沒有實際位移時回傳原陣列（不佔一格 undo）", () => {
+    const segments = makeSegments();
+    expect(moveSegments(segments, ["a", "b"], 0, opts)).toBe(segments);
+    expect(moveSegments(segments, [], 500, opts)).toBe(segments);
+    expect(moveSegments(segments, ["nope"], 500, opts)).toBe(segments);
+  });
+
+  it("接受 Set 或陣列", () => {
+    const fromSet = moveSegments(makeSegments(), new Set(["a"]), 500, opts);
+    const fromArray = moveSegments(makeSegments(), ["a"], 500, opts);
+    expect(fromSet[0]).toEqual(fromArray[0]);
+  });
+
+  it("任何位移之後都不重疊、長度不變、都在 [0, duration] 內", () => {
+    for (const delta of [-9999, -1234, -50, 50, 1234, 9999]) {
+      for (const ids of [["a"], ["b"], ["a", "b"]]) {
+        const before = makeSegments();
+        const next = moveSegments(before, ids, delta, opts);
+
+        next.forEach((segment, i) => {
+          expect(segment.end - segment.start).toBe(
+            before[i].end - before[i].start,
+          );
+          expect(segment.start).toBeGreaterThanOrEqual(0);
+          expect(segment.end).toBeLessThanOrEqual(DURATION);
+          expect(segment.start % 50).toBe(0);
+          if (i > 0) {
+            expect(segment.start).toBeGreaterThanOrEqual(next[i - 1].end);
+          }
+        });
       }
     }
   });

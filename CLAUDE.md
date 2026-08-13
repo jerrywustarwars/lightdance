@@ -137,8 +137,8 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 | `hooks/useKeyboardShortcuts.js` | — | 全站唯一的 keydown 註冊點（宣告式 keymap） |
 
 `Timeline.jsx` 的拖曳/resize 運算已在 Phase 5f 抽到
-`utils/segments/gestures.js`（`moveSegment` / `resizeSegment` 兩個純函式），
-元件裡只剩像素換算與直接寫 DOM。`waveform.jsx` 內部尚未拆。
+`utils/segments/gestures.js`（`movableRange` / `moveSegments` / `resizeSegment`
+三個純函式），元件裡只剩像素換算與直接寫 DOM。`waveform.jsx` 內部尚未拆。
 
 ### 文件檔案
 - **`README.md`**：專案說明文件（散文式，重點在資料模型與驗收方式）
@@ -181,8 +181,8 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 ```bash
 cd frontend
 npm run dev            # 另一個終端機
-npm run e2e            # 22 項：放色 / 選取 / 剪下 / undo / 快捷鍵 / 重新整理 /
-                       #        拖曳 resize / 刻度尺跳時間 / Output / /edit 表格
+npm run e2e            # 24 項：放色 / 選取 / 剪下 / undo / 快捷鍵 / 重新整理 /
+                       #        拖曳 resize / 多段一起搬 / 刻度尺 / Output / /edit
 npm run audit:layout   # 4 項：控制項被蓋住 / 元素溢出容器 / 提示被裁掉 /
                        #      成對元素沒對齊
 ```
@@ -221,12 +221,20 @@ Edit/Logout 被橫幅蓋住、舞者開關蓋掉 12 個光衣部位、按鈕階�
 ### 手勢（拖曳與 resize）
 
 運算在 `utils/segments/gestures.js`，元件裡只剩像素換算與寫 DOM。
-最小間距與最小長度兩個常數**只有那裡一份定義**——像素預覽與放開後的 commit
-必須用同一組數字，不然會出現「拖到底了但放開後又跳一點」。
 
-邊界情況（撞到鄰居、越過 0、超過總長、被夾死、縮到最小）在
-`utils/segments/__tests__/gestures.test.js` 窮舉過。真正的手感（幾何接線）
-只有 `npm run e2e` 的拖曳那一項驗得到，jsdom 量不到版面。
+**「能移多遠」只有 `movableRange` 一份答案**：像素預覽拿它換算成像素，放開時
+`moveSegments` 拿它決定最終落點。先前 Timeline 自己用像素重算一遍邊界，那正是
+「拖到底了但放開後又跳一點」那類錯位的來源。最小間距與最小長度兩個常數同理，
+只在那個檔案定義一次。
+
+多選時整批共用**同一個位移量**（相對位置不變，樂句的節奏才不會跑掉），
+可動範圍是每一段各自對「最近的未選取鄰居」的限制取交集。範圍**永遠包含 0**
+——色塊允許首尾相接，這時「至少留 50ms」的下界是正數，少了這道夾緊，
+拖 0 像素會把色塊自己彈開一格。
+
+邊界情況（撞到鄰居、越過 0、超過總長、被夾死、縮到最小、首尾相接、
+表演長度還沒載入）在 `utils/segments/__tests__/gestures.test.js` 窮舉過。
+真正的手感（幾何接線）只有 `npm run e2e` 的拖曳兩項驗得到，jsdom 量不到版面。
 
 ### 程式碼重構
 1. 保持向後相容性
@@ -308,6 +316,15 @@ Edit/Logout 被橫幅蓋住、舞者開關蓋掉 12 個光衣部位、按鈕階�
 
 ## 更新記錄
 
+- **2026-08-13（晚）**：**Phase 6 起步：多個色塊一起搬**。`gestures.js` 新增
+  `movableRange`（能移多遠的單一真相）與 `moveSegments`，`moveSegment` 收成它的
+  單元素版本。Timeline 的像素預覽改問同一個函式——先前它自己用像素重算一遍邊界，
+  那是「拖到底又跳一點」的來源；兩份重複的拖曳 commit 邏輯（其中一份多一個守衛，
+  於是兩條路徑行為不同）也收成一份。順手修掉兩個洞：色塊首尾相接時拖 0 像素會
+  自己彈開 50ms（範圍沒夾住 0）、表演長度還沒載入時 `duration` 是 undefined 會讓
+  NaN 流進位移把 start/end 寫壞。另外擋下「會讓光表縮小的 commit」——四個呼叫端
+  都拿 hook 給的表當基準，而它在資料還沒載入時是空陣列，整場表演會被靜默清空。
+  e2e 22 → 24。測試 354 passed
 - **2026-08-13**：**Phase 5g 完成，黑色哨兵從執行路徑消失**。刪掉
   `withKeyframeAdapter.js` / `useKeyframeActionTable.js` /
   `insertColorKeyframes.js` / `LEGACY_BLACK_SENTINEL_MS`，以及選取項目上的

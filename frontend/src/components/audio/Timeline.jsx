@@ -10,7 +10,8 @@ import {
 import { useSegmentPartTimeline } from "../../hooks/useSegmentActionTable.js";
 import { buildTimelineBlocks } from "../../utils/segments/blocks.js";
 import {
-  moveSegment,
+  movableRange,
+  moveSegments,
   resizeSegment,
   MIN_BLOCK_GAP_MS,
   MIN_SEGMENT_MS,
@@ -75,8 +76,10 @@ const Timeline = forwardRef(
     // Move Mode 相關 ref（零延遲拖曳，不觸發 React 重繪）
     const moveMode = useSelector((state) => state.profiles.moveMode);
     const moveDragStartRef = useRef(null);   // 拖曳起始 clientX
-    const moveDraggedIdRef = useRef(null);   // 被拖曳的 segmentId（不是索引——索引會位移）
-    const moveDraggedDomRef = useRef(null);  // 被拖曳的 DOM 元素
+    // 被拖曳的那一批 segmentId（不是索引——索引會位移）。多選時整批一起搬，
+    // 單選時就是一個。空陣列代表目前沒有在追蹤任何色塊。
+    const moveDraggedIdsRef = useRef([]);
+    const moveDraggedDomsRef = useRef([]); // 對應的 DOM，預覽時一起 transform
     const minDragPxRef = useRef(0);          // 最小可拖曳像素（向左）
     const maxDragPxRef = useRef(0);          // 最大可拖曳像素（向右）
     const moveDragPixelsRef = useRef(0);     // 目前拖曳偏移像素
@@ -102,83 +105,74 @@ const Timeline = forwardRef(
     const resizeBlockStartRef = useRef(0);     // 被 resize block 的起始時間（ms）
     const resizeBlockEndRef = useRef(0);       // 被 resize block 的結束時間（ms）
 
+    /**
+     * 把目前的拖曳距離換算成毫秒寫回，並清掉預覽用的 DOM 樣式。
+     *
+     * 兩個地方會結束一次拖曳——按 M 直接離開 move mode、或再點一下滑鼠提交——
+     * 這段邏輯原本兩邊各寫一份，而且其中一份多了一個 `!== 0` 的守衛，
+     * 於是兩條路徑的行為悄悄地不一樣。收成一份之後只有一種行為要維護。
+     *
+     * 只讀 ref，所以放進 ref 給 effect 用不會有 stale closure 的問題。
+     */
+    const commitMoveDrag = () => {
+      const ids = moveDraggedIdsRef.current;
+      const dragPx = moveDragPixelsRef.current;
+
+      if (ids.length > 0 && dragPx !== 0 && timelineRef?.current) {
+        const rect = timelineRef.current.getBoundingClientRect();
+        const pixelsPerMs = rect.width / durationRef.current;
+        // 邊界夾緊、網格對齊、與鄰居的最小間距全部在 moveSegments 裡，
+        // 那是純函式所以測得到（gestures.test.js）。這裡只負責把像素換算成
+        // 毫秒。沒有實際位移時它會回傳原陣列，commitSegments 就不會佔一格 undo。
+        commitSegments(
+          moveSegments(segmentsRef.current, ids, dragPx / pixelsPerMs, {
+            duration: durationRef.current,
+          }),
+        );
+      }
+
+      moveDraggedDomsRef.current.forEach((dom) => {
+        if (!dom) return;
+        dom.style.transform = "";
+        dom.style.zIndex = "";
+        dom.style.overflow = "";
+      });
+
+      moveDragStartRef.current = null;
+      moveDraggedIdsRef.current = [];
+      moveDraggedDomsRef.current = [];
+      moveDragPixelsRef.current = 0;
+    };
+
+    const commitMoveDragRef = useRef(commitMoveDrag);
+    commitMoveDragRef.current = commitMoveDrag;
+
     // Move Mode：進入時掛載全域滑鼠事件，離開時清除
     // 操作邏輯：點 block → 開始跟蹤滑鼠移動（不需按住）→ 再點任意位置 → 提交並退出
     useEffect(() => {
       if (!moveMode) {
         // M 鍵直接退出 move mode 時，若有正在追蹤的 block，先提交位置
-        const segmentId = moveDraggedIdRef.current;
-        if (segmentId !== null && moveDragPixelsRef.current !== 0 && timelineRef?.current) {
-          const dragPx = moveDragPixelsRef.current;
-          const rect = timelineRef.current.getBoundingClientRect();
-          const pixelsPerMs = rect.width / durationRef.current;
-          const dt = Math.round((dragPx / pixelsPerMs) / 50) * 50;
-          if (dt !== 0) {
-            // 邊界夾緊、網格對齊、與鄰居的最小間距全部在 moveSegment 裡，
-            // 那是純函式所以測得到（gestures.test.js）。這裡只負責把像素換算
-            // 成毫秒。沒有實際位移時它會回傳原陣列，commitSegments 就不會佔一格 undo。
-            commitSegments(
-              moveSegment(segmentsRef.current, segmentId, dt, {
-                duration: durationRef.current,
-              }),
-            );
-          }
-        }
-        // move mode 結束時確保 DOM 樣式清除
-        if (moveDraggedDomRef.current) {
-          moveDraggedDomRef.current.style.transform = '';
-          moveDraggedDomRef.current.style.zIndex = '';
-          moveDraggedDomRef.current.style.overflow = '';
-        }
-        moveDragStartRef.current = null;
-        moveDraggedIdRef.current = null;
-        moveDraggedDomRef.current = null;
-        moveDragPixelsRef.current = 0;
+        commitMoveDragRef.current();
         return;
       }
 
       // 滑鼠移動時更新 block 的 DOM 位置（零延遲，不走 React）
       const handleGlobalMouseMove = (e) => {
-        if (moveDragStartRef.current === null || !moveDraggedDomRef.current) return;
+        if (moveDragStartRef.current === null) return;
         const rawDelta = e.clientX - moveDragStartRef.current;
         const clamped = Math.max(minDragPxRef.current, Math.min(maxDragPxRef.current, rawDelta));
         moveDragPixelsRef.current = clamped;
-        moveDraggedDomRef.current.style.transform = `translateX(${clamped}px)`;
+        // 整批一起位移，使用者看得到樂句是整段在動
+        moveDraggedDomsRef.current.forEach((dom) => {
+          if (dom) dom.style.transform = `translateX(${clamped}px)`;
+        });
       };
 
       // 任意點擊（mousedown）→ 提交目前位置並退出 move mode
       // 注意：點 block 本身的 mousedown 若是「選取新 block」會 stopPropagation，
       //       所以此 handler 只有在「已有追蹤中的 block」或「點空白處」時才觸發提交。
       const handleGlobalMouseDown = () => {
-        const segmentId = moveDraggedIdRef.current;
-        if (segmentId !== null && timelineRef?.current) {
-          const dragPx = moveDragPixelsRef.current;
-          const rect = timelineRef.current.getBoundingClientRect();
-          const pixelsPerMs = rect.width / durationRef.current;
-          const dt = Math.round((dragPx / pixelsPerMs) / 50) * 50;
-
-          if (dt !== 0) {
-            // 邊界夾緊、網格對齊、與鄰居的最小間距全部在 moveSegment 裡，
-            // 那是純函式所以測得到（gestures.test.js）。這裡只負責把像素換算
-            // 成毫秒。沒有實際位移時它會回傳原陣列，commitSegments 就不會佔一格 undo。
-            commitSegments(
-              moveSegment(segmentsRef.current, segmentId, dt, {
-                duration: durationRef.current,
-              }),
-            );
-          }
-
-          if (moveDraggedDomRef.current) {
-            moveDraggedDomRef.current.style.transform = '';
-            moveDraggedDomRef.current.style.zIndex = '';
-            moveDraggedDomRef.current.style.overflow = '';
-          }
-        }
-
-        moveDragStartRef.current = null;
-        moveDraggedIdRef.current = null;
-        moveDraggedDomRef.current = null;
-        moveDragPixelsRef.current = 0;
+        commitMoveDragRef.current();
         dispatch(updateMoveMode(false));
       };
 
@@ -322,7 +316,7 @@ const Timeline = forwardRef(
       // - 若已在追蹤中 或 點到空隙：不攔截 → 全域 mousedown 提交/退出
       // - 若尚未追蹤且點到色塊：stopPropagation 開始追蹤（本次點擊是「選取」，不是「提交」）
       if (moveMode) {
-        if (moveDraggedIdRef.current !== null) return; // 已追蹤 → 讓全域 handler 提交
+        if (moveDraggedIdsRef.current.length > 0) return; // 已追蹤 → 讓全域 handler 提交
         if (isGapBlock) return;                          // 空隙 → 讓全域 handler 退出
 
         // 本次點擊是「選取 block 開始追蹤」，攔截讓全域 handler 無法立刻觸發提交
@@ -332,47 +326,56 @@ const Timeline = forwardRef(
         const selection = selectionForBlock(block);
         if (!selection?.segmentId) return;
 
-        dispatch(updateMultiSelectedBlocks([selection]));
+        /*
+         * 點到已經在選取裡的色塊 → 整批一起搬（Shift 選了一段樂句就是要整段移）。
+         * 點到選取外的色塊 → 這一下算重新選取，只搬它自己。
+         */
+        const dragIds = selectedIds.has(selection.segmentId)
+          ? segments
+              .filter((segment) => selectedIds.has(segment.id))
+              .map((segment) => segment.id)
+          : [selection.segmentId];
+
+        if (dragIds.length === 1) {
+          dispatch(updateMultiSelectedBlocks([selection]));
+        }
 
         const rect = timelineRef.current?.getBoundingClientRect();
         if (!rect) return;
 
-        const pixelsPerMs = rect.width / duration;
-
         /*
          * 拖曳範圍（像素）—— 只給拖曳過程的即時預覽用，放開時的最終位置由
-         * `moveSegment` 重算一次。兩邊用同一組常數（MIN_BLOCK_GAP_MS），
-         * 否則會出現「拖到底了但放開後又跳一點」的錯位。
-         *
-         * 邊界直接看前後一段就好。舊版要往前往後跳過連續的黑色 entry 才找得到
-         * 真正的鄰居，因為被刪掉的色塊會留下孤立黑點。
+         * `moveSegments` 重算一次。**兩邊問的是同一個 `movableRange`**，
+         * 所以不會出現「拖到底了但放開後又跳一點」的錯位；先前這裡自己用
+         * 像素重算一遍邊界，那正是那類錯位的來源。
          */
-        const index = segments.findIndex((s) => s.id === selection.segmentId);
-        if (index === -1) return;
+        const range = movableRange(segments, dragIds, { duration });
+        if (!range) return;
 
-        const target = segments[index];
-        const leftBoundTime = index > 0 ? segments[index - 1].end : 0;
-        const rightBoundTime =
-          index < segments.length - 1 ? segments[index + 1].start : duration;
+        const pixelsPerMs = rect.width / duration;
+        minDragPxRef.current = range.min * pixelsPerMs;
+        maxDragPxRef.current = range.max * pixelsPerMs;
 
-        minDragPxRef.current = Math.min(
-          0,
-          (leftBoundTime - target.start + MIN_BLOCK_GAP_MS) * pixelsPerMs,
-        );
-        maxDragPxRef.current = Math.max(
-          0,
-          (rightBoundTime - target.end - MIN_BLOCK_GAP_MS) * pixelsPerMs,
-        );
         moveDragStartRef.current = e.clientX;
-        moveDraggedIdRef.current = selection.segmentId;
-        moveDraggedDomRef.current = e.currentTarget; // 直接用事件的 target，不依賴 blockDomRefs（避免 null-cycle）
+        moveDraggedIdsRef.current = dragIds;
+        // 單選時直接用事件的 target（避開 blockDomRefs 的 null-cycle）；
+        // 多選時只能查 blockDomRefs，因為其他色塊的 DOM 不在這次事件上
+        moveDraggedDomsRef.current =
+          dragIds.length === 1
+            ? [e.currentTarget]
+            : dragIds
+                .map((id) =>
+                  timelineBlocks.findIndex((b) => b?.segmentId === id),
+                )
+                .map((blockIdx) => blockDomRefs.current[blockIdx])
+                .filter(Boolean);
         moveDragPixelsRef.current = 0;
 
         // 拖曳時提高 z-index，確保移動中的 block 顯示在所有相鄰 block 上方
-        if (moveDraggedDomRef.current) {
-          moveDraggedDomRef.current.style.zIndex = '100';
-          moveDraggedDomRef.current.style.overflow = 'visible';
-        }
+        moveDraggedDomsRef.current.forEach((dom) => {
+          dom.style.zIndex = "100";
+          dom.style.overflow = "visible";
+        });
         return;
       }
 
@@ -800,6 +803,9 @@ const Timeline = forwardRef(
                 // ...(hoveredBlock?.index === index ? { opacity: 0.85 } : { opacity: 1 }),
               }}
               className={`timeline-block${isPasteTarget ? " is-paste-target" : ""}`}
+              // 選取狀態目前只反映在 box-shadow 上，而顏色是使用者的資料，
+              // 從樣式反推「這塊有沒有被選到」很脆弱。用一個屬性明講。
+              data-selected={isNormalSelected || isCopySource ? "true" : undefined}
               onMouseMove={moveMode ? undefined : handleBlockMouseMove}
               onMouseLeave={moveMode ? undefined : handleBlockMouseLeave}
               onMouseDown={(e) => handleMouseDown(e, index)}
