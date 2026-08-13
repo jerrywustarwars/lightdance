@@ -11,12 +11,17 @@ import { useKeyframePartTimeline } from "../../hooks/useKeyframeActionTable.js";
 import { useSegmentPartTimeline } from "../../hooks/useSegmentActionTable.js";
 import { buildTimelineBlocks } from "../../utils/segments/blocks.js";
 import {
+  moveSegment,
+  resizeSegment,
+  MIN_BLOCK_GAP_MS,
+  MIN_SEGMENT_MS,
+} from "../../utils/segments/gestures.js";
+import {
   keyframeIndexOfSegment,
   makeSelection,
   selectedIdsOnPart,
 } from "../../utils/selection.js";
 
-import { produce } from "immer";
 // cloneDeep 已移除：tempActionTable cascade 已合併，drag 復原時再加回
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
@@ -63,10 +68,13 @@ const Timeline = forwardRef(
     // 現在只有真的被改到的那條會動。
     //
     // 兩份視圖並存是**遷移期的暫時狀態**（見 utils/selection.js）：
-    //   - segments：渲染與選取用的目標形狀
-    //   - partTimeline：拖曳/resize commit 與尚未原生化的消費者還在用 keyframe
+    //   - segments：渲染、選取、拖曳與 resize 都走這一份
+    //   - partTimeline：只剩 selection 的 `blockIndex` 相容欄位要用（Phase 5g 會刪）
     // 兩者來自同一個 store slice，keyframe 那份是逐部位快取的，成本可忽略。
-    const { segments } = useSegmentPartTimeline(armorIndex, partIndex);
+    const { segments, commitPart: commitSegments } = useSegmentPartTimeline(
+      armorIndex,
+      partIndex,
+    );
     const { timeline: partTimeline, commitPart } = useKeyframePartTimeline(
       armorIndex,
       partIndex,
@@ -74,31 +82,32 @@ const Timeline = forwardRef(
     const duration = useSelector((state) => state.profiles.duration); // 總時長
     const multiSelectedBlocks = useSelector((state) => state.profiles.multiSelectedBlocks); // 全局多選中方塊
     const clipboard = useSelector((state) => state.profiles.clipboard);
-    const STRETCH_MIN_MS  = 50; // Stretch Mode：block 可縮到的最小持續時間（ms）
-    const MIN_BLOCK_GAP_MS = 50; // 相鄰兩個有色 block 之間必須保留的最小間距（ms）
+    // 兩個手勢常數的唯一定義在 utils/segments/gestures.js——那裡的純函式與
+    // 這裡的像素預覽必須用同一組數字，否則拖到底的位置會跟放開後的位置對不上
+    const STRETCH_MIN_MS = MIN_SEGMENT_MS;
 
     // Move Mode 相關 ref（零延遲拖曳，不觸發 React 重繪）
     const moveMode = useSelector((state) => state.profiles.moveMode);
     const moveDragStartRef = useRef(null);   // 拖曳起始 clientX
-    const moveDraggedIdxRef = useRef(null);  // 被拖曳的 block index
+    const moveDraggedIdRef = useRef(null);   // 被拖曳的 segmentId（不是索引——索引會位移）
     const moveDraggedDomRef = useRef(null);  // 被拖曳的 DOM 元素
     const minDragPxRef = useRef(0);          // 最小可拖曳像素（向左）
     const maxDragPxRef = useRef(0);          // 最大可拖曳像素（向右）
     const moveDragPixelsRef = useRef(0);     // 目前拖曳偏移像素
     const blockDomRefs = useRef({});         // index → DOM element
-    const isBlackEntry = (e) =>
-      e?.color?.R === 0 && e?.color?.G === 0 && e?.color?.B === 0;
     // 用 ref 保持最新值供 useEffect 閉包使用
     const partTimelineRef = useRef(partTimeline);
+    const segmentsRef = useRef(segments);
     const durationRef = useRef(duration);
     useEffect(() => { partTimelineRef.current = partTimeline; }, [partTimeline]);
+    useEffect(() => { segmentsRef.current = segments; }, [segments]);
     useEffect(() => { durationRef.current = duration; }, [duration]);
 
     // Resize 相關 ref（零延遲邊緣拖曳，不觸發 React 重繪）
     const [hoverEdge, setHoverEdge] = useState(null); // { index, edge: 'left'|'right' } | null
     const resizeEdgeRef = useRef(null);        // 'left' | 'right'（正在 resize 的邊）
     const resizeDragStartRef = useRef(null);   // 拖曳起始 clientX
-    const resizedAtIdxRef = useRef(null);      // 被 resize 的 actionTable index
+    const resizedIdRef = useRef(null);         // 被 resize 的 segmentId
     const resizedDomRef = useRef(null);        // 被 resize 的 DOM 元素
     const resizeOrigPctRef = useRef(0);        // 原始寬度（% of timeline width）
     const minResizePxRef = useRef(0);          // 拖曳最小值（px，負數為向左）
@@ -114,59 +123,21 @@ const Timeline = forwardRef(
     useEffect(() => {
       if (!moveMode) {
         // M 鍵直接退出 move mode 時，若有正在追蹤的 block，先提交位置
-        const idx = moveDraggedIdxRef.current;
-        if (idx !== null && moveDragPixelsRef.current !== 0 && timelineRef?.current) {
+        const segmentId = moveDraggedIdRef.current;
+        if (segmentId !== null && moveDragPixelsRef.current !== 0 && timelineRef?.current) {
           const dragPx = moveDragPixelsRef.current;
           const rect = timelineRef.current.getBoundingClientRect();
           const pixelsPerMs = rect.width / durationRef.current;
           const dt = Math.round((dragPx / pixelsPerMs) / 50) * 50;
           if (dt !== 0) {
-            const partData = partTimelineRef.current;
-            if (partData.length > 0) {
-              const updatedTimeline = produce(partData, (pd) => {
-                let i = idx;
-                if (pd[i] === undefined) return;
-
-                const blockDur      = (pd[i + 1]?.time ?? durationRef.current) - pd[i].time;
-                const originalStart = pd[i].time;
-
-                // 找左鄰有色 block 的尾端
-                let leftBound = 0;
-                for (let j = i - 1; j >= 0; j--) {
-                  if (!isBlackEntry(pd[j])) { leftBound = pd[j + 1]?.time ?? 0; break; }
-                }
-                // 找右鄰有色 block 的起點
-                let rightBound = durationRef.current;
-                for (let j = i + 2; j < pd.length; j++) {
-                  if (!isBlackEntry(pd[j])) { rightBound = pd[j].time; break; }
-                }
-
-                // 套用 dt 後顯式夾緊，確保與左右 block 保持 MIN_BLOCK_GAP_MS 間距
-                const clampedStart = Math.max(
-                  leftBound + MIN_BLOCK_GAP_MS,
-                  Math.min(rightBound - blockDur - MIN_BLOCK_GAP_MS, originalStart + dt)
-                );
-                // 強制對齊 50ms，防止左邊界黑點非對齊時間污染有色區塊
-                const newStart = Math.round(clampedStart / 50) * 50;
-                const newEnd = newStart + blockDur;
-
-                pd[i].time = newStart;
-                if (pd[i + 1] !== undefined) pd[i + 1].time = newEnd;
-
-                // 清除因位移而排序違反的孤立黑色 entries
-                if (newStart > originalStart) {
-                  while (pd[i + 2] !== undefined && pd[i + 2].time <= pd[i + 1].time && isBlackEntry(pd[i + 2])) {
-                    pd.splice(i + 2, 1);
-                  }
-                } else if (newStart < originalStart) {
-                  while (i > 0 && pd[i - 1] !== undefined && pd[i - 1].time >= pd[i].time && isBlackEntry(pd[i - 1])) {
-                    pd.splice(i - 1, 1);
-                    i--;
-                  }
-                }
-              });
-              commitPart(updatedTimeline);
-            }
+            // 邊界夾緊、網格對齊、與鄰居的最小間距全部在 moveSegment 裡，
+            // 那是純函式所以測得到（gestures.test.js）。這裡只負責把像素換算
+            // 成毫秒。沒有實際位移時它會回傳原陣列，commitPart 就不會佔一格 undo。
+            commitSegments(
+              moveSegment(segmentsRef.current, segmentId, dt, {
+                duration: durationRef.current,
+              }),
+            );
           }
         }
         // move mode 結束時確保 DOM 樣式清除
@@ -176,7 +147,7 @@ const Timeline = forwardRef(
           moveDraggedDomRef.current.style.overflow = '';
         }
         moveDragStartRef.current = null;
-        moveDraggedIdxRef.current = null;
+        moveDraggedIdRef.current = null;
         moveDraggedDomRef.current = null;
         moveDragPixelsRef.current = 0;
         return;
@@ -195,60 +166,22 @@ const Timeline = forwardRef(
       // 注意：點 block 本身的 mousedown 若是「選取新 block」會 stopPropagation，
       //       所以此 handler 只有在「已有追蹤中的 block」或「點空白處」時才觸發提交。
       const handleGlobalMouseDown = () => {
-        const idx = moveDraggedIdxRef.current;
-        if (idx !== null && timelineRef?.current) {
+        const segmentId = moveDraggedIdRef.current;
+        if (segmentId !== null && timelineRef?.current) {
           const dragPx = moveDragPixelsRef.current;
           const rect = timelineRef.current.getBoundingClientRect();
           const pixelsPerMs = rect.width / durationRef.current;
           const dt = Math.round((dragPx / pixelsPerMs) / 50) * 50;
 
           if (dt !== 0) {
-            const partData = partTimelineRef.current;
-            if (partData.length > 0) {
-              const updatedTimeline = produce(partData, (pd) => {
-                let i = idx;
-                if (pd[i] === undefined) return;
-
-                const blockDur      = (pd[i + 1]?.time ?? durationRef.current) - pd[i].time;
-                const originalStart = pd[i].time;
-
-                // 找左鄰有色 block 的尾端
-                let leftBound = 0;
-                for (let j = i - 1; j >= 0; j--) {
-                  if (!isBlackEntry(pd[j])) { leftBound = pd[j + 1]?.time ?? 0; break; }
-                }
-                // 找右鄰有色 block 的起點
-                let rightBound = durationRef.current;
-                for (let j = i + 2; j < pd.length; j++) {
-                  if (!isBlackEntry(pd[j])) { rightBound = pd[j].time; break; }
-                }
-
-                // 套用 dt 後顯式夾緊，確保與左右 block 保持 MIN_BLOCK_GAP_MS 間距
-                const clampedStart = Math.max(
-                  leftBound + MIN_BLOCK_GAP_MS,
-                  Math.min(rightBound - blockDur - MIN_BLOCK_GAP_MS, originalStart + dt)
-                );
-                // 強制對齊 50ms，防止左邊界黑點非對齊時間污染有色區塊
-                const newStart = Math.round(clampedStart / 50) * 50;
-                const newEnd = newStart + blockDur;
-
-                pd[i].time = newStart;
-                if (pd[i + 1] !== undefined) pd[i + 1].time = newEnd;
-
-                // 清除因位移而排序違反的孤立黑色 entries
-                if (newStart > originalStart) {
-                  while (pd[i + 2] !== undefined && pd[i + 2].time <= pd[i + 1].time && isBlackEntry(pd[i + 2])) {
-                    pd.splice(i + 2, 1);
-                  }
-                } else if (newStart < originalStart) {
-                  while (i > 0 && pd[i - 1] !== undefined && pd[i - 1].time >= pd[i].time && isBlackEntry(pd[i - 1])) {
-                    pd.splice(i - 1, 1);
-                    i--;
-                  }
-                }
-              });
-              commitPart(updatedTimeline);
-            }
+            // 邊界夾緊、網格對齊、與鄰居的最小間距全部在 moveSegment 裡，
+            // 那是純函式所以測得到（gestures.test.js）。這裡只負責把像素換算
+            // 成毫秒。沒有實際位移時它會回傳原陣列，commitPart 就不會佔一格 undo。
+            commitSegments(
+              moveSegment(segmentsRef.current, segmentId, dt, {
+                duration: durationRef.current,
+              }),
+            );
           }
 
           if (moveDraggedDomRef.current) {
@@ -259,7 +192,7 @@ const Timeline = forwardRef(
         }
 
         moveDragStartRef.current = null;
-        moveDraggedIdxRef.current = null;
+        moveDraggedIdRef.current = null;
         moveDraggedDomRef.current = null;
         moveDragPixelsRef.current = 0;
         dispatch(updateMoveMode(false));
@@ -416,17 +349,15 @@ const Timeline = forwardRef(
       // - 若已在追蹤中 或 點到空隙：不攔截 → 全域 mousedown 提交/退出
       // - 若尚未追蹤且點到色塊：stopPropagation 開始追蹤（本次點擊是「選取」，不是「提交」）
       if (moveMode) {
-        if (moveDraggedIdxRef.current !== null) return; // 已追蹤 → 讓全域 handler 提交
+        if (moveDraggedIdRef.current !== null) return; // 已追蹤 → 讓全域 handler 提交
         if (isGapBlock) return;                          // 空隙 → 讓全域 handler 退出
 
         // 本次點擊是「選取 block 開始追蹤」，攔截讓全域 handler 無法立刻觸發提交
         e.stopPropagation();
         e.preventDefault();
 
-        const partData = partTimeline;
         const selection = selectionForBlock(block);
-        const atIdx = selection?.blockIndex ?? -1;
-        if (atIdx === -1) return;
+        if (!selection?.segmentId) return;
 
         dispatch(updateMultiSelectedBlocks([selection]));
 
@@ -434,40 +365,35 @@ const Timeline = forwardRef(
         if (!rect) return;
 
         const pixelsPerMs = rect.width / duration;
-        const blockStartTime = partData[atIdx].time;
-        const blockEndTime   = partData[atIdx + 1]?.time ?? duration;
 
-        // 左邊界：往左跳過連續黑色 entry，找到前一個有色 block 的尾端
-        // 這樣即使前一個 block 被刪除留下空洞，也能移到正確的邊界
-        let leftSearchIdx = atIdx - 1;
-        while (leftSearchIdx >= 0 && isBlackEntry(partData[leftSearchIdx])) {
-          leftSearchIdx--;
-        }
-        // leftSearchIdx：前一個有色 block 的 index（-1 表示不存在）
-        // 左邊界 = 前一個有色 block 尾端（其後第一個 black entry 的時間），無則為 0
-        const leftBoundTime = leftSearchIdx >= 0
-          ? (partData[leftSearchIdx + 1]?.time ?? 0)
-          : 0;
+        /*
+         * 拖曳範圍（像素）—— 只給拖曳過程的即時預覽用，放開時的最終位置由
+         * `moveSegment` 重算一次。兩邊用同一組常數（MIN_BLOCK_GAP_MS），
+         * 否則會出現「拖到底了但放開後又跳一點」的錯位。
+         *
+         * 邊界直接看前後一段就好。舊版要往前往後跳過連續的黑色 entry 才找得到
+         * 真正的鄰居，因為被刪掉的色塊會留下孤立黑點。
+         */
+        const index = segments.findIndex((s) => s.id === selection.segmentId);
+        if (index === -1) return;
 
-        // 右邊界：往右跳過連續黑色 entry，找到下一個有色 block 的起點
-        // 被刪除的 block 留下的孤立 black entry 會被跳過
-        let rightSearchIdx = atIdx + 2;
-        while (rightSearchIdx < partData.length && isBlackEntry(partData[rightSearchIdx])) {
-          rightSearchIdx++;
-        }
-        // rightSearchIdx：下一個有色 block 的 index（partData.length 表示不存在）
-        // 右邊界 = 下一個有色 block 的起始時間，無則為 duration
-        const rightBoundTime = rightSearchIdx < partData.length
-          ? partData[rightSearchIdx].time
-          : duration;
+        const target = segments[index];
+        const leftBoundTime = index > 0 ? segments[index - 1].end : 0;
+        const rightBoundTime =
+          index < segments.length - 1 ? segments[index + 1].start : duration;
 
-        // 保留 50ms 緩衝，防止移動至恰好觸碰相鄰 block 而觸發刪除
-        minDragPxRef.current   = Math.min(0, (leftBoundTime  - blockStartTime + 50) * pixelsPerMs);
-        maxDragPxRef.current   = Math.max(0, (rightBoundTime - blockEndTime   - 50) * pixelsPerMs);
-        moveDragStartRef.current   = e.clientX;
-        moveDraggedIdxRef.current  = atIdx;   // ← 存 actionTable index，不是 timelineBlocks index
-        moveDraggedDomRef.current  = e.currentTarget; // 直接用事件的 target，不依賴 blockDomRefs（避免 null-cycle）
-        moveDragPixelsRef.current  = 0;
+        minDragPxRef.current = Math.min(
+          0,
+          (leftBoundTime - target.start + MIN_BLOCK_GAP_MS) * pixelsPerMs,
+        );
+        maxDragPxRef.current = Math.max(
+          0,
+          (rightBoundTime - target.end - MIN_BLOCK_GAP_MS) * pixelsPerMs,
+        );
+        moveDragStartRef.current = e.clientX;
+        moveDraggedIdRef.current = selection.segmentId;
+        moveDraggedDomRef.current = e.currentTarget; // 直接用事件的 target，不依賴 blockDomRefs（避免 null-cycle）
+        moveDragPixelsRef.current = 0;
 
         // 拖曳時提高 z-index，確保移動中的 block 顯示在所有相鄰 block 上方
         if (moveDraggedDomRef.current) {
@@ -506,10 +432,8 @@ const Timeline = forwardRef(
         return;
       }
 
-      const partData = partTimeline;
       const selection = selectionForBlock(block);
-      const atIdx = selection?.blockIndex ?? -1;
-      if (!selection || atIdx === -1) return;
+      if (!selection) return;
 
       // 點擊區塊時同步更新 currentTime，確保後續操作（如 Cut）能正確定位
       // 使用區塊自身的 bounding rect 計算區塊內點擊位置對應的時間，
@@ -546,7 +470,7 @@ const Timeline = forwardRef(
                 armorIndex,
                 partIndex,
                 segment,
-                blockIndex: keyframeIndexOfSegment(partData, segment),
+                blockIndex: keyframeIndexOfSegment(partTimeline, segment),
               }),
             ),
           ),
@@ -576,22 +500,22 @@ const Timeline = forwardRef(
     // edge: 'left' | 'right'，tlIdx: timelineBlocks index
     const startBlockResize = (e, tlIdx, edge) => {
       const block = timelineBlocks[tlIdx];
-      const partData = partTimeline;
-      // 必須排除 black entry：當 black entry 與 colored entry 同時間（緊鄰 block），findIndex 若只比對時間會取到錯誤 index
-      const atIdx = partData.findIndex(entry => entry.time === block.startTime && !isBlackEntry(entry));
-      if (atIdx === -1) return;
+      if (!block?.segmentId) return;
+      const index = segments.findIndex((s) => s.id === block.segmentId);
+      if (index === -1) return;
+      const target = segments[index];
 
       const rect = timelineRef.current?.getBoundingClientRect();
       if (!rect) return;
       const pixelsPerMs = rect.width / duration;
 
-      const blockStartTime = partData[atIdx].time;
-      const blockEndTime   = partData[atIdx + 1]?.time ?? duration;
+      const blockStartTime = target.start;
+      const blockEndTime = target.end;
 
       const domEl = blockDomRefs.current[tlIdx];
       if (!domEl) return;
 
-      // 右拖：同步縮小下一個 black block；左拖：同步縮小上一個 black block（避免 flex 重分配）
+      // 右拖：同步縮小下一個空隙；左拖：同步縮小上一個空隙（避免 flex 重分配）
       const nextBlackDom     = edge === 'right' ? (blockDomRefs.current[tlIdx + 1] ?? null) : null;
       const nextBlackBlock   = edge === 'right' ? (timelineBlocks[tlIdx + 1] ?? null) : null;
       const nextBlackOrigPct = nextBlackBlock ? (nextBlackBlock.durationTime / duration) * 100 : 0;
@@ -601,7 +525,7 @@ const Timeline = forwardRef(
 
       resizeEdgeRef.current      = edge;
       resizeDragStartRef.current = e.clientX;
-      resizedAtIdxRef.current    = atIdx;
+      resizedIdRef.current       = block.segmentId;
       resizedDomRef.current      = domEl;
       resizeDragPixelsRef.current = 0;
       resizeOrigPctRef.current   = (block.durationTime / duration) * 100;
@@ -610,25 +534,28 @@ const Timeline = forwardRef(
       resizeBlockStartRef.current = blockStartTime;
       resizeBlockEndRef.current   = blockEndTime;
 
+      /*
+       * 可拖曳範圍（像素）—— 只給拖曳過程的即時預覽用，放開時由 `resizeSegment`
+       * 重算一次最終值。兩邊必須用同一組常數，否則拖到底之後放開會再跳一下。
+       *
+       * 鄰居直接看陣列的前後一格。舊版要往前往後跳過連續的黑色 entry：
+       * 被刪掉的色塊會留下孤立黑點，只看相鄰一格會找到錯的邊界。
+       */
+      // 鄰居的實際邊界（不含間距）——放開後要用它算相鄰空隙的新寬度
+      resizeRightBoundRef.current =
+        index < segments.length - 1 ? segments[index + 1].start : duration;
+      resizeLeftBoundRef.current = index > 0 ? segments[index - 1].end : 0;
+
       if (edge === 'right') {
-        // 右邊界：往右跳過連續黑色 entry，找下一個有色 block 的起點
-        let rightSearchIdx = atIdx + 2;
-        while (rightSearchIdx < partData.length && isBlackEntry(partData[rightSearchIdx])) rightSearchIdx++;
-        // 若無下一個有色 block，設 duration+50 使 rightBound-50=duration，允許 block 延伸至末尾
-        const rightBoundTime = rightSearchIdx < partData.length ? partData[rightSearchIdx].time : duration + 50;
-        resizeRightBoundRef.current = rightBoundTime;
-        // 保留 50ms 緩衝，防止擴展至恰好觸碰相鄰 block；向左最多縮到 STRETCH_MIN_MS
-        maxResizePxRef.current = Math.max(0, (rightBoundTime - blockEndTime - 50) * pixelsPerMs);
+        const maxEnd = Math.min(
+          resizeRightBoundRef.current - MIN_BLOCK_GAP_MS,
+          duration,
+        );
+        maxResizePxRef.current = Math.max(0, (maxEnd - blockEndTime) * pixelsPerMs);
         minResizePxRef.current = -(blockEndTime - blockStartTime - STRETCH_MIN_MS) * pixelsPerMs;
       } else {
-        // 左邊界：往左跳過連續黑色 entry，找上一個有色 block 的尾端
-        let leftSearchIdx = atIdx - 1;
-        while (leftSearchIdx >= 0 && isBlackEntry(partData[leftSearchIdx])) leftSearchIdx--;
-        // 若無前一個有色 block，設 -50 使 leftBound+50=0，允許 block 從 0ms 開始
-        const leftBoundTime = leftSearchIdx >= 0 ? (partData[leftSearchIdx + 1]?.time ?? 0) : -50;
-        resizeLeftBoundRef.current = leftBoundTime;
-        // 保留 50ms 緩衝，防止擴展至恰好觸碰相鄰 block；向右最多縮到 STRETCH_MIN_MS
-        minResizePxRef.current = Math.min(0, (leftBoundTime - blockStartTime + 50) * pixelsPerMs);
+        const minStart = Math.max(resizeLeftBoundRef.current + MIN_BLOCK_GAP_MS, 0);
+        minResizePxRef.current = Math.min(0, (minStart - blockStartTime) * pixelsPerMs);
         maxResizePxRef.current = (blockEndTime - STRETCH_MIN_MS - blockStartTime) * pixelsPerMs;
       }
 
@@ -656,68 +583,40 @@ const Timeline = forwardRef(
 
       const handleResizeMouseUp = () => {
         const dragPx    = resizeDragPixelsRef.current;
-        const savedIdx  = resizedAtIdxRef.current;
+        const savedId = resizedIdRef.current;
         const savedEdge = resizeEdgeRef.current;
 
         // 將最終計算結果提升到 produce 外，供 DOM 直接更新使用
         let committedEnd   = null; // right edge 時設定
         let committedStart = null; // left  edge 時設定
 
-        if (savedIdx !== null && timelineRef?.current) {
+        if (savedId !== null && timelineRef?.current) {
           const r = timelineRef.current.getBoundingClientRect();
           if (r.width > 0) {
             const pxPerMs = r.width / durationRef.current;
             const rawDeltaMs = dragPx / pxPerMs;
             const dur = durationRef.current;
 
-            const updatedTimeline = produce(partTimelineRef.current, (pd) => {
-              if (savedEdge === 'right') {
-                if (pd[savedIdx + 1] === undefined) return;
+            /*
+             * 邊界夾緊與網格對齊都在 resizeSegment 裡（純函式，測得到）。
+             * 舊版除了算這些，還要把「因為位移而順序錯亂的孤立黑色 entry」
+             * 一個個夾回去——那些黑點是熄滅的表示法，segment 模型裡不存在。
+             */
+            const nextSegments = resizeSegment(
+              segmentsRef.current,
+              savedId,
+              savedEdge,
+              rawDeltaMs,
+              { duration: dur },
+            );
+            commitSegments(nextSegments);
 
-                // commit 時從當前 pd 重新查找右邊界（最近的有色 block 起點）
-                // 無右鄰 block 時設 dur+50，使 rightBound-50=dur，允許 block 延伸至歌曲末端
-                let rightBound = dur + 50;
-                for (let j = savedIdx + 2; j < pd.length; j++) {
-                  if (!isBlackEntry(pd[j])) { rightBound = pd[j].time; break; }
-                }
-                const blockStart = pd[savedIdx].time;
-                const rawTarget  = Math.round((resizeBlockEndRef.current + rawDeltaMs) / 50) * 50;
-                committedEnd     = Math.max(blockStart + STRETCH_MIN_MS, Math.min(rightBound - 50, rawTarget));
-                pd[savedIdx + 1].time = committedEnd;
-
-                // 修正孤立黑色 entry 的時間順序：若 savedIdx+2 之後有時間小於 committedEnd 的黑色 entry，
-                // 將其夾緊到 committedEnd，避免負 durationTime 造成所有 block 位移錯誤
-                for (let j = savedIdx + 2; j < pd.length; j++) {
-                  if (!isBlackEntry(pd[j])) break;
-                  if (pd[j].time < committedEnd) pd[j].time = committedEnd;
-                }
-
-              } else {
-                if (pd[savedIdx] === undefined) return;
-
-                // commit 時從當前 pd 重新查找左邊界（最近的有色 block 終點）
-                // leftBound + 50 = 允許的最早起點：有左鄰時 = prevEnd，無時 = 0ms
-                let leftBound = -50; // sentinel：無左鄰 block 時 leftBound+50=0，允許延伸至 0ms
-                for (let j = savedIdx - 1; j >= 0; j--) {
-                  if (!isBlackEntry(pd[j])) {
-                    leftBound = pd[j + 1]?.time ?? 0;
-                    break;
-                  }
-                }
-                const blockEnd   = pd[savedIdx + 1]?.time ?? dur;
-                const rawTarget  = Math.round((resizeBlockStartRef.current + rawDeltaMs) / 50) * 50;
-                committedStart   = Math.min(blockEnd - STRETCH_MIN_MS, Math.max(leftBound + 50, rawTarget));
-                pd[savedIdx].time = committedStart;
-
-                // 修正孤立黑色 entry 的時間順序：若 savedIdx-1 之前有時間大於 committedStart 的黑色 entry，
-                // 將其夾緊到 committedStart，避免負 durationTime 造成所有 block 位移錯誤
-                for (let j = savedIdx - 1; j >= 0; j--) {
-                  if (!isBlackEntry(pd[j])) break;
-                  if (pd[j].time > committedStart) pd[j].time = committedStart;
-                }
-              }
-            });
-            commitPart(updatedTimeline);
+            // DOM 要用最終值把寬度寫死（理由見下方註解），所以把結果讀回來
+            const committed = nextSegments.find((seg) => seg.id === savedId);
+            if (committed) {
+              if (savedEdge === 'right') committedEnd = committed.end;
+              else committedStart = committed.start;
+            }
           }
         }
 
@@ -744,8 +643,7 @@ const Timeline = forwardRef(
         if (nextBlackDom) {
           if (committedEnd !== null) {
             // 右拉：相鄰黑色 block 新寬度 = (nextColoredStart - newEnd) / dur
-            // resizeRightBoundRef 在 mousedown 時設定；sentinel(dur+50) 代表無右鄰，延伸至歌曲末端
-            const nextColoredStart = Math.min(resizeRightBoundRef.current, dur);
+            const nextColoredStart = resizeRightBoundRef.current;
             nextBlackDom.style.width = `${((nextColoredStart - committedEnd) / dur) * 100}%`;
           } else {
             nextBlackDom.style.width = '';
@@ -755,8 +653,7 @@ const Timeline = forwardRef(
         if (prevBlackDom) {
           if (committedStart !== null) {
             // 左拉：相鄰黑色 block 新寬度 = (newStart - prevColoredEnd) / dur
-            // resizeLeftBoundRef sentinel(-50) 代表無左鄰，從 0ms 開始
-            const prevColoredEnd = Math.max(resizeLeftBoundRef.current, 0);
+            const prevColoredEnd = resizeLeftBoundRef.current;
             prevBlackDom.style.width = `${((committedStart - prevColoredEnd) / dur) * 100}%`;
           } else {
             prevBlackDom.style.width = '';
@@ -765,7 +662,7 @@ const Timeline = forwardRef(
 
         resizeEdgeRef.current       = null;
         resizeDragStartRef.current  = null;
-        resizedAtIdxRef.current     = null;
+        resizedIdRef.current     = null;
         resizedDomRef.current       = null;
         resizeDragPixelsRef.current = 0;
         setHoverEdge(null);

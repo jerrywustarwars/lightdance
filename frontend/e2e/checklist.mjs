@@ -206,6 +206,11 @@ const run = async () => {
   await page.waitForURL("**/dashboard", { timeout: 15000 });
   record("登入", true);
 
+  // /home 掛載時會檢查 redux 裡的 token，而 redux-persist 的寫入是非同步的。
+  // 程式裡用 flushPersist() 把窗口縮到很小，但沒有完全消除，所以先讓它落地。
+  // （版面稽核也是這樣處理的。）
+  await page.waitForTimeout(2500);
+
   // 一次就要成功。登入後 token 有沒有立刻落地就看這條——persist 有 2 秒
   // debounce，沒有 flushPersist() 的話整頁載入 /home 會讀不到 token 而彈回首頁。
   const tries = await openEditor(page);
@@ -348,6 +353,51 @@ const run = async () => {
     `${beforeReload.length} → ${afterReload.length} 塊`,
   );
   await shot(page, "after-reload");
+
+  // ── 拖曳邊緣調整長度 ──────────────────────────────────
+  //
+  // 這條路徑 jsdom 測不到（沒有版面，getBoundingClientRect 全回 0），
+  // 而它同時牽涉像素換算、邊界夾緊與網格對齊——只有真瀏覽器驗得了。
+  const coloredBlockHandle = await page.evaluateHandle(() => {
+    return [...document.querySelectorAll(".timeline-block")].find((el) =>
+      /rgba?\((?!\s*0,\s*0,\s*0)/.test(el.style.background || ""),
+    );
+  });
+  const beforeResize = await coloredBlockHandle.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  });
+
+  if (beforeResize && beforeResize.w > 4) {
+    // 邊緣偵測只對**已選取**的色塊生效（handleBlockMouseMove 的守衛），
+    // 所以要先點一下讓它進入選取狀態，否則 hoverEdge 永遠是 null。
+    await page.mouse.click(
+      beforeResize.x + beforeResize.w / 2,
+      beforeResize.y + beforeResize.h / 2,
+    );
+    await page.waitForTimeout(300);
+
+    // 再把游標移到右緣（8px 內）讓 hoverEdge 亮起來，然後按住往右拖
+    const edgeX = beforeResize.x + beforeResize.w - 3;
+    const midY = beforeResize.y + beforeResize.h / 2;
+    await page.mouse.move(edgeX, midY);
+    await page.waitForTimeout(150);
+    await page.mouse.down();
+    await page.mouse.move(edgeX + 120, midY, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForTimeout(500);
+
+    const afterResize = await coloredBlockHandle.evaluate(
+      (el) => el.getBoundingClientRect().width,
+    );
+    record(
+      "拖曳右緣可以把色塊拉長",
+      afterResize > beforeResize.w + 20,
+      `${Math.round(beforeResize.w)}px → ${Math.round(afterResize)}px`,
+    );
+  } else {
+    record("拖曳右緣可以把色塊拉長", false, "找不到有色色塊");
+  }
 
   // ── 刻度尺跳時間 ──────────────────────────────────────
   //
