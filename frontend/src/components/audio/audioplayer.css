@@ -11,8 +11,10 @@
   background-color: var(--bg-panel); /* 灰色背景 */
   display: flex;
   flex-direction: column;
-  right: 0.3%;
-  width: 85%;
+  /* 左緣接在軌名欄之後、右緣與上半部同一條線。先前是 `width: 85%`，
+     而軌名欄是 15%——1600 下兩者重疊 5px，播放器蓋在軌名欄上面 */
+  left: var(--gutter-w);
+  right: var(--page-inset);
   height: 100%;
   z-index: 10;
 }

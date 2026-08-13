@@ -8,7 +8,7 @@
  *   2. 每個元素的 bounding box 有沒有超出容器？超出 → 跑到別人的地盤上。
  *   3. 每則提示有沒有被祖先的 overflow 裁掉？被裁 → hover 之後什麼都不會出現。
  *   4. 該對齊的成對元素（舞者開關 ↔ 光衣）中心有沒有對上？
- *   5. 上下兩塊（光表區 ↔ 工具列/時間軸/波形）的左右邊緣在不在同一條線上？
+ *   5. 各塊的左右邊緣、以及下半部各排的內容左緣，在不在同一條線上？
  *
  * ## 為什麼需要這個
  *
@@ -256,9 +256,9 @@ const collectProblems = () => {
     return { sel, left: Math.round(r.left), right: Math.round(r.right) };
   };
 
-  // 上半部的外框由光表區與調色盤共同界定（調色盤是它右上角的內欄）
   const bands = [
     edgeOf(".people-container"),
+    edgeOf(".workset-bar"),
     edgeOf(".controls"),
     edgeOf(".scroll-container"),
     edgeOf(".waveform-container"),
@@ -271,6 +271,34 @@ const collectProblems = () => {
       if (Math.abs(delta) > 2) {
         edges.push({
           pair: `${band.sel} 的右緣 vs ${reference.sel}`,
+          delta,
+        });
+      }
+    }
+  }
+
+  /*
+   * 下半部各排的**內容**左緣也要在同一條線上。
+   *
+   * 上面第 5 項比的是容器的右緣，抓不到這個：三排的容器都從 0 開始，
+   * 但各自的內縮不同（實測工作集列 12、工具列 6、軌名列 1），於是畫面上
+   * 三排的東西起頭處各差幾像素——窄視窗下特別明顯。
+   */
+  const rowStarts = [".workset-bar", ".leftupcorner"]
+    .map((sel) => {
+      const el = document.querySelector(sel)?.firstElementChild;
+      if (!el) return null;
+      return { sel, left: Math.round(el.getBoundingClientRect().left) };
+    })
+    .filter(Boolean);
+
+  if (rowStarts.length >= 2) {
+    const reference = rowStarts[0];
+    for (const row of rowStarts.slice(1)) {
+      const delta = row.left - reference.left;
+      if (Math.abs(delta) > 2) {
+        edges.push({
+          pair: `${row.sel} 的內容左緣 vs ${reference.sel}`,
           delta,
         });
       }
@@ -383,7 +411,7 @@ const run = async () => {
     console.log(`沒對齊的成對元素：${misaligned.length}`);
     misaligned.forEach((m) => console.log(`  ✗ ${m.pair} 差 ${m.delta}px`));
 
-    console.log(`上下兩塊沒對齊的邊緣：${edges.length}`);
+    console.log(`沒對齊的邊緣：${edges.length}`);
     edges.forEach((e) => console.log(`  ✗ ${e.pair} 差 ${e.delta}px`));
 
     failed +=

@@ -10,12 +10,16 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  width: 100%;
-  padding: var(--space-1) var(--space-3);
+  /* 左右兩緣與下面兩排對齊：左緣 0、右緣 --page-inset（播放器也停在那裡）；
+     內容的左內縮則用 --row-inset，和工具列、軌名列共用 */
+  width: auto;
+  margin-right: var(--page-inset);
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--row-inset);
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border-subtle);
   box-sizing: border-box;
   flex: none;
+  align-self: stretch;
 }
 
 .workset-bar__label {

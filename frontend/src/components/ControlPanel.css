@@ -1,4 +1,15 @@
+/*
+ * 下半部的欄位尺寸 —— 這三排（工作集列、工具列、軌名列）共用。
+ *
+ * 先前三排各自寫自己的內縮：工作集列 12px、工具列 6px、軌名列 1px，
+ * 於是三排的內容左緣是三個不同的 x（窄視窗下最明顯）。左欄的寬度也對不上：
+ * `.lefttool-container` 是 15%（1600 下 240px）而右邊的播放器從 235px 開始，
+ * 兩者重疊 5px。
+ */
 .control-panel {
+  --gutter-w: 15%; /* 左側軌名欄的寬度，右邊的播放器從這裡接續 */
+  --row-inset: 12px; /* 每一排內容的左內縮，三排共用 */
+
   flex-direction: column; /* 垂直排列 */
   height: 65%;
   width: 100%;
@@ -30,7 +41,7 @@
   align-items: end;
   display: flex;
   height: 100%;
-  width: 15%;
+  width: var(--gutter-w);
   background-color: var(--bg-panel); /* 灰色背景 */
 }
 /*
@@ -48,7 +59,8 @@
   align-items: center;
   justify-content: flex-start;
   gap: 4px;
-  padding: 6px;
+  /* 左內縮與上面的工作集列共用同一個變數，兩排的內容才會對齊 */
+  padding: 6px var(--row-inset);
   width: 100%;
   flex-shrink: 0;
 }
@@ -141,7 +153,8 @@
   justify-content: center;
   overflow: hidden;
   gap: 10px;
-  padding-left: 10px; /* 讓開左邊的高度把手 */
+  /* 高度把手是絕對定位的 8px，蓋在這段內縮裡——所以內容左緣仍然對得上其他排 */
+  padding-left: var(--row-inset);
 }
 
 /*
