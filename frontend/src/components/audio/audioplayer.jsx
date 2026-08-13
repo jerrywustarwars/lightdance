@@ -361,7 +361,6 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       key={setting.id}
       armorIndex={setting.armorIndex}
       partIndex={setting.partIndex}
-      hidden={setting.hidden}
       zoomValue={zoomLevel}
       ref={elRefs.current[showPart.findIndex((s) => s.id === setting.id)]}
       height={showPart.length <= 7 ? 100 / showPart.length : 14}

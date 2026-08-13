@@ -33,7 +33,7 @@ const colorDistance = (color1, color2) => {
 };
 // Timeline 組件
 const Timeline = forwardRef(
-  ({ zoomValue, height, armorIndex, partIndex, hidden, isCopying }, timelineRef) => {
+  ({ zoomValue, height, armorIndex, partIndex, isCopying }, timelineRef) => {
     const dispatch = useDispatch();
 
     // **狀態變數**
@@ -660,8 +660,6 @@ const Timeline = forwardRef(
           border: "1px solid rgb(63, 63, 63)",
           boxSizing: "border-box",
           padding: "0px",
-          opacity: hidden ? 0 : 1, // 如果 hidden 为 true，則隱藏內容
-          pointerEvents: hidden ? "none" : "auto", // 禁用鼠标事件
         }}
         // [Drag 已停用] 啟用 drag 時需恢復以下兩行
         // onMouseMove={handleMouseMove}

@@ -108,8 +108,7 @@
 
 .delete-timeline-button,
 .move-timeline-down-button,
-.move-timeline-up-button,
-.toggle-timeline-visibility-button {
+.move-timeline-up-button {
   background-color: var(--bg-control);
   color: var(--text-muted);
   height: 28px;

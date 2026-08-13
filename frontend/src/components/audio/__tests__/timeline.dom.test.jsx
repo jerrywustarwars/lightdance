@@ -103,12 +103,17 @@ describe("色塊渲染", () => {
       .forEach((gap) => expect(gap.color).toMatchObject({ R: 0, G: 0, B: 0 }));
   });
 
-  it("hidden 時整條軌道透明且不吃滑鼠事件（色塊仍在 DOM 裡）", () => {
+  it("沒有 hidden 這回事——軌道永遠是可見可點的", () => {
+    /**
+     * 曾經有一個眼睛按鈕會把軌道設成 opacity:0 + pointerEvents:none，
+     * 但軌道**照樣佔滿整個高度**，變成一條看不見也點不到的空白帶，
+     * 而旁邊就有刪除鍵。整個功能已移除，這則測試守著它不要長回來。
+     */
     const { container } = mount(createTestStore(), { hidden: true });
 
     const track = container.querySelector(".timeline-block").parentElement;
-    expect(track.style.opacity).toBe("0");
-    expect(track.style.pointerEvents).toBe("none");
+    expect(track.style.opacity).toBe("");
+    expect(track.style.pointerEvents).toBe("");
   });
 });
 

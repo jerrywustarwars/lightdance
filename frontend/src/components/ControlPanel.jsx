@@ -13,8 +13,6 @@ import {
   faSliders,
   faAngleUp,
   faAngleDown,
-  faEyeSlash,
-  faEye,
   faArrowsLeftRight,
 } from "@fortawesome/free-solid-svg-icons";
 import {
@@ -58,7 +56,6 @@ function ControlPanel({ setButtonState }) {
       const initialSelections = showPart.map((setting) => ({
         armorIndex: setting.armorIndex,
         partIndex: setting.partIndex,
-        hidden: setting.hidden,
       }));
       setSelectedTimelines(initialSelections);
       // console.log("showPart", showPart);
@@ -283,7 +280,6 @@ function ControlPanel({ setButtonState }) {
       id: showPart.length + 1, // 新增的 Timeline ID
       armorIndex: 0, // 預設 armorIndex
       partIndex: 0, // 預設 partIndex
-      hidden: false, // 預設不隱藏
     });
     dispatch(updateShowPart(tmp));
   };
@@ -317,13 +313,6 @@ function ControlPanel({ setButtonState }) {
 
   const deleteTimeline = (id) => {
     const updatedShowPart = showPart.filter((setting) => setting.id !== id);
-    dispatch(updateShowPart(updatedShowPart));
-  };
-
-  const handleToggleTimelineVisibility = (id) => {
-    const updatedShowPart = showPart.map((setting) =>
-      setting.id === id ? { ...setting, hidden: !setting.hidden } : setting,
-    );
     dispatch(updateShowPart(updatedShowPart));
   };
 
@@ -540,16 +529,6 @@ function ControlPanel({ setButtonState }) {
                   onClick={() => deleteTimeline(setting.id)}
                 >
                   <FontAwesomeIcon icon={faTrash} size="lg" />
-                </button>
-
-                <button
-                  className="toggle-timeline-visibility-button"
-                  onClick={() => handleToggleTimelineVisibility(setting.id)} // 切換隱藏狀態
-                >
-                  <FontAwesomeIcon
-                    icon={setting.hidden ? faEyeSlash : faEye}
-                    size="lg"
-                  />
                 </button>
               </div>
             ))}
