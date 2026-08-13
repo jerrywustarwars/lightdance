@@ -3,18 +3,27 @@
  *
  * 原本是 `position: absolute; bottom: 20px; left: 20px`，直接浮在光衣上面——
  * 實測蓋住 12 個部位（好幾位舞者的腿與鞋），那些部位完全點不到。
- * 改成一般流內元素，排在光衣那一列的下方，各佔各的空間。
+ * 改成一般流內元素，排在光衣那一列的下方。
+ *
+ * ## 為什麼要跟 .people-row 用同一套分配方式
+ *
+ * 每個開關對應正上方那位舞者，所以兩排的**中心必須對齊**。改成流內元素之後
+ * 一度是 `align-self: flex-start` 加固定 gap，七個開關全擠在左側 40..462，
+ * 而光衣攤在 28..1222——舞者 7 的開關在 x=400、光衣在 x=1080，要關掉某位
+ * 舞者得先數格子。
+ *
+ * `space-around` 把第 i 個項目的中心放在 `(i + 0.5) × 容器寬 / n`，
+ * 只跟「容器寬度」與「項目數」有關，跟項目本身多寬無關。所以兩排只要
+ * **同寬、同數量、同分配方式**，中心就會自動對齊——不需要任何寫死的座標。
  */
 .dancer-toggle-container {
   display: flex;
-  gap: 8px;
-  padding: 8px 12px;
-  background-color: var(--bg-control-hover);
-  border-radius: 8px;
-  align-self: flex-start;
+  width: 100%;
+  justify-content: space-around; /* 必須與 .people-row 一致 */
+  align-items: center;
   flex-shrink: 0;
-  margin: 0 0 8px 12px;
-  box-shadow: 0 4px 6px var(--overlay-soft);
+  padding: var(--space-1) 0;
+  margin: 0 0 var(--space-2);
 }
 
 .dancer-toggle-item {

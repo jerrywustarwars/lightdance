@@ -7,6 +7,7 @@
  *      不是 → 被別的東西蓋住了，使用者點不到。
  *   2. 每個元素的 bounding box 有沒有超出容器？超出 → 跑到別人的地盤上。
  *   3. 每則提示有沒有被祖先的 overflow 裁掉？被裁 → hover 之後什麼都不會出現。
+ *   4. 該對齊的成對元素（舞者開關 ↔ 光衣）中心有沒有對上？
  *
  * ## 為什麼需要這個
  *
@@ -206,7 +207,39 @@ const collectProblems = () => {
     }
   }
 
-  return { unclickable, overflow, clippedTips };
+  // ── 4. 該對齊卻沒對齊的成對元素 ────────────────────
+  //
+  // 舞者開關與光衣是一一對應的：第 i 個開關控制第 i 位舞者。它們的**中心**
+  // 必須對齊，否則使用者要關掉某位舞者時得先數格子。
+  //
+  // 實測抓到過七個開關全擠在左側 40..462、光衣攤在 28..1222——舞者 7 的開關
+  // 在 x=400 而光衣在 x=1080。畫面上兩排東西都畫得好好的，只是對不起來。
+  //
+  // 兩排都用 `justify-content: space-around` 且同寬同數量時，中心會自動對齊，
+  // 所以這條檢查等於是在守「有人把其中一排改成 flex-start / 改了寬度」。
+  const misaligned = [];
+  const armorBoxes = [...document.querySelectorAll(".armor-container")];
+  const toggleBoxes = [...document.querySelectorAll(".dancer-toggle-item")];
+
+  if (armorBoxes.length && armorBoxes.length === toggleBoxes.length) {
+    const centerX = (el) => {
+      const r = el.getBoundingClientRect();
+      return r.left + r.width / 2;
+    };
+    armorBoxes.forEach((armor, i) => {
+      const delta = Math.round(centerX(toggleBoxes[i]) - centerX(armor));
+      if (Math.abs(delta) > 2) {
+        misaligned.push({ pair: `舞者 ${i + 1} 的開關與光衣`, delta });
+      }
+    });
+  } else if (armorBoxes.length !== toggleBoxes.length) {
+    misaligned.push({
+      pair: "開關數量與光衣數量",
+      delta: `${toggleBoxes.length} vs ${armorBoxes.length}`,
+    });
+  }
+
+  return { unclickable, overflow, clippedTips, misaligned };
 };
 
 const stubApi = (context) =>
@@ -289,7 +322,7 @@ const run = async () => {
     }
     await page.waitForTimeout(2500);
 
-    const { unclickable, overflow, clippedTips } =
+    const { unclickable, overflow, clippedTips, misaligned } =
       await page.evaluate(collectProblems);
 
     console.log(`\n===== ${vp.name} =====`);
@@ -309,7 +342,14 @@ const run = async () => {
     console.log(`被裁掉的提示：${clippedTips.length}`);
     clippedTips.forEach((t) => console.log(`  ✗ 「${t.text}」 ${t.reason}`));
 
-    failed += unclickable.length + overflow.length + clippedTips.length;
+    console.log(`沒對齊的成對元素：${misaligned.length}`);
+    misaligned.forEach((m) => console.log(`  ✗ ${m.pair} 差 ${m.delta}px`));
+
+    failed +=
+      unclickable.length +
+      overflow.length +
+      clippedTips.length +
+      misaligned.length;
 
     await page.screenshot({ path: join(OUT, `layout-${vp.name}.png`) });
     await browser.close();

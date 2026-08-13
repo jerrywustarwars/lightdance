@@ -176,13 +176,22 @@
   /* 從 header（56px）下方開始，兩者不重疊 */
   top: 60px;
   bottom: 0;
-  left: 25px;
-  align-content: center;
+
+  /*
+   * 左緣對齊下半部的軌道側欄（`.timeline-setting-container` 從 0 開始）。
+   * 原本是 `left: 25px` + `width: 87.5%`，實測上半部從 x=25 開始、下半部從
+   * x=0 開始，兩塊差 25px——畫面上看起來上面那塊莫名往內縮。
+   *
+   * 右緣則要停在調色盤左邊：調色盤是 `right: 0.3%; width: 10%`，
+   * 所以它的左緣在 89.7%。用 `right` 而不是 `width` 表達，換視窗尺寸時
+   * 兩者的距離才會一直是那 8px。
+   */
+  left: 0;
+  right: calc(10.3% + 8px);
   border-radius: 1.5%;
   border: solid, 3px, var(--text-muted);
   border-radius: 7px;
   background: var(--bg-panel);
-  width: 87.5%;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
