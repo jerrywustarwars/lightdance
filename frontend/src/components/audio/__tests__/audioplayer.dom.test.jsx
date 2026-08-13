@@ -463,6 +463,94 @@ describe("效果選單與亮度階梯", () => {
     expect(JSON.stringify(timelineOf(store))).toBe(before);
   });
 
+  /*
+   * Phase 5d：三個效果改成 segment 原生。以下守住新的語意——
+   * 熄滅是段與段之間的空隙，不再是黑色關鍵格。
+   */
+
+  it("頻閃把一段切成多段，中間留空隙而不是黑色關鍵格", () => {
+    globalThis.prompt.mockReturnValueOnce("500");
+    const store = createTestStore();
+    selectSegment(store, 0, 0, 0); // 紅 1000~2000
+    mount(store);
+    openEffectMenu();
+    fireEvent.click(menuItem("頻閃 (B)"));
+
+    const segments = segmentsOf(store);
+    // 1000ms 的色塊、500ms 一個週期 → 兩段脈衝
+    const pulses = segments.filter((s) => s.start >= 1000 && s.start < 2000);
+    expect(pulses).toHaveLength(2);
+
+    // 每段亮 450ms（週期扣掉一格 TICK_MS），剩下那一格是空隙＝熄滅
+    expect(pulses[0]).toMatchObject({ start: 1000, end: 1450 });
+    expect(pulses[1]).toMatchObject({ start: 1500, end: 1950 });
+
+    // 顏色沿用原本的紅色，而且**沒有任何純黑的 segment**——
+    // 黑色在 segment 模型裡不是資料
+    for (const pulse of pulses) {
+      expect(pulse.colorStart.R).toBe(255);
+    }
+    const blackSegments = segments.filter(
+      (s) => !s.colorStart.R && !s.colorStart.G && !s.colorStart.B,
+    );
+    expect(blackSegments).toHaveLength(0);
+  });
+
+  it("頻閃週期短於兩格會被擋下來（沒有亮的部分）", () => {
+    globalThis.prompt.mockReturnValueOnce("50");
+    const store = createTestStore();
+    selectSegment(store, 0, 0, 0);
+    mount(store);
+    openEffectMenu();
+
+    const before = JSON.stringify(segmentsOf(store));
+    fireEvent.click(menuItem("頻閃 (B)"));
+    expect(JSON.stringify(segmentsOf(store))).toBe(before);
+  });
+
+  it("開啟漸變時，終點色取下一段的起始色（兩段相鄰）", () => {
+    const store = createTestStore();
+    selectSegment(store, 0, 0, 0); // 紅 1000~2000，後面緊接著綠 2000~10000
+    mount(store);
+    openEffectMenu();
+    fireEvent.click(menuItem("漸變 (L)"));
+
+    const [red, green] = segmentsOf(store);
+    expect(red.linear).toBe(1);
+    // 舊模型只有一個旗標，終點色要渲染時往後找；現在明確記在段上
+    expect(red.colorEnd).toMatchObject({
+      R: green.colorStart.R,
+      G: green.colorStart.G,
+      B: green.colorStart.B,
+    });
+  });
+
+  it("後面是空隙時，漸變的終點色是黑（fade out）", () => {
+    const store = createTestStore();
+    selectSegment(store, 0, 0, 1); // 綠 2000~10000，後面沒有東西了
+    mount(store);
+    openEffectMenu();
+    fireEvent.click(menuItem("漸變 (L)"));
+
+    const green = segmentsOf(store)[1];
+    expect(green.linear).toBe(1);
+    expect(green.colorEnd).toMatchObject({ R: 0, G: 0, B: 0 });
+  });
+
+  it("再按一次漸變會關掉，終點色收回成起始色", () => {
+    const store = createTestStore();
+    selectSegment(store, 0, 0, 0);
+    mount(store);
+    openEffectMenu();
+    fireEvent.click(menuItem("漸變 (L)"));
+    openEffectMenu();
+    fireEvent.click(menuItem("漸變 (L)"));
+
+    const red = segmentsOf(store)[0];
+    expect(red.linear).toBe(0);
+    expect(red.colorEnd).toMatchObject(red.colorStart);
+  });
+
   it("點「亮度階梯」會打開設定面板", () => {
     mount();
     openEffectMenu();
@@ -492,10 +580,9 @@ describe("效果選單與亮度階梯", () => {
 
   it("選取一個色塊後 Apply 會依階梯逐個色塊改透明度", () => {
     const store = createTestStore();
-    store.dispatch({
-      type: "UPDATE_MULTI_SELECTED_BLOCKS",
-      payload: [{ armorIndex: 0, partIndex: 0, blockIndex: 1 }],
-    });
+    // 選第一個色塊（紅 1000~2000）。不要手工組 blockIndex——segmentId 是
+    // 建 store 時才產生的，而 Phase 5d 之後效果是靠 segmentId 找目標。
+    selectSegment(store, 0, 0, 0);
     mount(store);
     openEffectMenu();
     fireEvent.click(menuItem("亮度階梯"));
@@ -506,9 +593,9 @@ describe("效果選單與亮度階梯", () => {
       ),
     );
 
-    // 測試光表壓平後是 [黑@0, 紅@1000, 綠@2000, 黑@10000]——兩個色塊緊鄰，
-    // 中間沒有黑哨兵（Phase 4 後這是常態）。所以階梯要落在 index 1 與 2，
-    // 而不是舊的 stride 2（1 和 3）。預設 10% → 每階 +10%。
+    // 測試光表有兩個緊鄰的色塊（紅 1000~2000、綠 2000~10000）。
+    // 階梯從選取的那一段往後逐段套用，預設 10% → 每階 +10%。
+    // segment 模型裡「下一個色塊」就是陣列的下一格，不必再跳過黑哨兵。
     const timeline = timelineOf(store);
     const colored = timeline.filter(
       (entry) => entry.color.R || entry.color.G || entry.color.B,
