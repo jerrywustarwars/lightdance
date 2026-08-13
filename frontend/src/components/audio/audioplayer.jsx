@@ -30,6 +30,7 @@ import {
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts.js";
 import { useSegmentActionTable } from "../../hooks/useSegmentActionTable.js";
 import { useActiveTracks } from "../../hooks/useWorksets.js";
+import { trackHeight } from "../../utils/tracks.js";
 
 function AudioPlayer({ setButtonState, timelineRef }) {
   const dispatch = useDispatch();
@@ -38,6 +39,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   const { segmentTable, commit, commitPart } = useSegmentActionTable();
   // 目前這一組工作集的軌道。切換工作集時整份換掉，Timeline 跟著重建
   const showPart = useActiveTracks();
+  const rowHeight = useSelector((state) => state.profiles.rowHeight);
   const chosenColor = useSelector((state) => state.profiles.chosenColor);
   const favoriteColor = useSelector((state) => state.profiles.favoriteColor);
   const isColorChangeActive = useSelector(
@@ -365,7 +367,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       partIndex={setting.partIndex}
       zoomValue={zoomLevel}
       ref={elRefs.current[showPart.findIndex((s) => s.id === setting.id)]}
-      height={showPart.length <= 7 ? 100 / showPart.length : 14}
+      height={trackHeight(setting, rowHeight)}
       isCopying={copyPaste.isCopying}
     />
   ));

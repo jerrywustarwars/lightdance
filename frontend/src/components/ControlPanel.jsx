@@ -36,6 +36,12 @@ import {
 } from "../constants/parts.js";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts.js";
 import { useWorksets } from "../hooks/useWorksets.js";
+import {
+  clampRowHeight,
+  isCompactHeight,
+  trackHeight,
+  withTrackHeight,
+} from "../utils/tracks.js";
 import WorksetBar from "./WorksetBar.jsx";
 
 function ControlPanel({ setButtonState }) {
@@ -54,6 +60,7 @@ function ControlPanel({ setButtonState }) {
   );
   const currentTime = useSelector((state) => state.profiles.currentTime);
   const { sets, current, tracks: showPart } = useWorksets();
+  const rowHeight = useSelector((state) => state.profiles.rowHeight);
   const dispatch = useDispatch();
   const partName = PART_LABELS;
 
@@ -322,7 +329,37 @@ function ControlPanel({ setButtonState }) {
     dispatch(updateShowPart(updatedShowPart));
   };
 
-  const height = showPart?.length <= 7 ? 100 / showPart?.length : 14;
+  /**
+   * 逐軌拖曳把手：按住往下拉高、往上壓扁。
+   *
+   * 只在放開時 dispatch 一次——拖曳過程每一格像素都寫 redux 的話，
+   * 154 條 Timeline 會跟著重繪，手感會變成一格一格跳。
+   */
+  const startHeightDrag = (event, setting) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const startY = event.clientY;
+    const startHeight = trackHeight(setting, rowHeight);
+    const block = event.currentTarget.closest(".timeline-settings-block");
+    let latest = startHeight;
+
+    const onMove = (moveEvent) => {
+      latest = startHeight + (moveEvent.clientY - startY);
+      // 拖曳中只改自己的 DOM，放開才進 redux
+      if (block) block.style.height = `${clampRowHeight(latest)}px`;
+    };
+
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      if (block) block.style.height = "";
+      dispatch(updateShowPart(withTrackHeight(showPart, setting.id, latest)));
+    };
+
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
   return (
     <div className="control-panel">
       {showModal &&
@@ -461,18 +498,24 @@ function ControlPanel({ setButtonState }) {
               <div
                 key={setting.id}
                 ref={(el) => (timelineRefs.current[index] = el)}
-                className="timeline-settings-block"
-                style={{
-                  flex: `0 0 ${height}%`,
-                  boxSizing: "border-box",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  overflow: "hidden",
-                  border: "1px solid rgb(63, 63, 63)",
-                  gap: "10px",
-                }}
+                className={`timeline-settings-block${
+                  isCompactHeight(trackHeight(setting, rowHeight))
+                    ? " is-compact"
+                    : ""
+                }`}
+                style={{ flex: `0 0 ${trackHeight(setting, rowHeight)}px` }}
               >
+                {/* 逐軌調整高度：正在細修的那一條拉高，其他縮成一條輪廓 */}
+                <span
+                  className="track-height-grip"
+                  onMouseDown={(e) => startHeightDrag(e, setting)}
+                  title="上下拖曳調整這一軌的高度（雙擊回到預設）"
+                  onDoubleClick={() =>
+                    dispatch(
+                      updateShowPart(withTrackHeight(showPart, setting.id, null)),
+                    )
+                  }
+                />
                 {/* Armor Index Selector */}
                 <label>
                   <select

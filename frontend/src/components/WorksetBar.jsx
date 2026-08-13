@@ -1,5 +1,5 @@
 import React from "react";
-import { useDispatch } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faPlus, faPen, faTrash } from "@fortawesome/free-solid-svg-icons";
 
@@ -10,7 +10,9 @@ import {
   removeWorkset,
   renameWorkset,
   switchWorkset,
+  updateRowHeight,
 } from "../redux/actions.js";
+import { MAX_ROW_H, MIN_ROW_H } from "../utils/tracks.js";
 
 /**
  * 工作集列 —— 切換「現在要看哪幾軌」。
@@ -24,6 +26,7 @@ import {
 function WorksetBar() {
   const dispatch = useDispatch();
   const { sets, current } = useWorksets();
+  const rowHeight = useSelector((state) => state.profiles.rowHeight);
 
   const promptRename = (set) => {
     const name = window.prompt("工作集名稱：", set.name);
@@ -87,6 +90,20 @@ function WorksetBar() {
         <FontAwesomeIcon icon={faTrash} />
         <span className="tooltip">刪除目前這一組</span>
       </button>
+
+      <label className="workset-bar__rowh" htmlFor="row-height">
+        行高
+        <input
+          id="row-height"
+          type="range"
+          min={MIN_ROW_H}
+          max={MAX_ROW_H}
+          step="4"
+          value={rowHeight}
+          onChange={(e) => dispatch(updateRowHeight(e.target.value))}
+        />
+        <span className="workset-bar__rowh-value">{rowHeight}px</span>
+      </label>
     </div>
   );
 }

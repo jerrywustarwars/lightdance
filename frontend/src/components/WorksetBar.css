@@ -105,3 +105,33 @@
   color: var(--text-disabled);
   cursor: default;
 }
+
+/*
+ * 行高滑桿。
+ *
+ * 拉它只會改一個數字，Timeline 的色塊一個都不會重繪——零 re-render 的
+ * 拖曳路徑因此完全不受影響。逐軌覆寫在軌名列左緣的把手上。
+ */
+.workset-bar__rowh {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-left: var(--space-2);
+  border-left: 1px solid var(--border-subtle);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.workset-bar__rowh input {
+  width: 96px;
+  accent-color: var(--text-muted);
+}
+
+.workset-bar__rowh-value {
+  width: 40px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}

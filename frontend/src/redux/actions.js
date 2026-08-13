@@ -101,6 +101,12 @@ export const renameWorkset = (id, name) => ({
 });
 export const removeWorkset = (id) => ({ type: "WORKSET_REMOVE", payload: id });
 
+/** 全域軌道行高（像素）。逐軌覆寫請用 updateShowPart 帶 track.height */
+export const updateRowHeight = (height) => ({
+  type: "UPDATEROWHEIGHT",
+  payload: height,
+});
+
 export const updateFavoriteColor = (value) => ({
   type: UPDATEFAVORITECOLOR,
   payload: value,

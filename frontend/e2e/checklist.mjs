@@ -563,6 +563,82 @@ const run = async () => {
   );
   await shot(page, "worksets");
 
+  // ── 行高 ──────────────────────────────────────────────
+  //
+  // 左邊的軌名欄與右邊的時間軸吃同一個數字，所以**兩邊要一起變**。
+  // 舊版兩欄各自算自己的百分比，容器高度只要有一點差就會逐漸對不齊——
+  // 捲到下面時軌名對到的是隔壁那條軌，而畫面上看起來完全正常。
+  const rowHeights = () =>
+    page.evaluate(() => {
+      const label = document.querySelector(".timeline-settings-block");
+      const track = document.querySelector(".timeline");
+      return {
+        label: label ? Math.round(label.getBoundingClientRect().height) : 0,
+        track: track ? Math.round(track.getBoundingClientRect().height) : 0,
+      };
+    });
+
+  const tall = await rowHeights();
+  await page.fill("#row-height", "40");
+  await page.dispatchEvent("#row-height", "input");
+  await page.waitForTimeout(500);
+  const short = await rowHeights();
+
+  record(
+    "行高滑桿讓兩欄一起變矮",
+    short.label < tall.label && short.track < tall.track,
+    `${tall.label}px → ${short.label}px`,
+  );
+  record(
+    "軌名欄與時間軸的行高一致",
+    Math.abs(short.label - short.track) <= 2,
+    `軌名 ${short.label}px vs 時間軸 ${short.track}px`,
+  );
+
+  // 矮到放不下時次要按鈕要收起來，否則會變成畫得出來但點不到的裝飾
+  const compactHidden = await page.evaluate(() => {
+    const stack = document.querySelector(
+      ".timeline-settings-block .move-timeline-buttons",
+    );
+    return !stack || getComputedStyle(stack).display === "none";
+  });
+  record("行高過矮時收起上下移按鈕", compactHidden);
+
+  await shot(page, "row-height");
+  await page.fill("#row-height", "120");
+  await page.dispatchEvent("#row-height", "input");
+  await page.waitForTimeout(400);
+
+  // 逐軌把手：拖曳過程只改自己的 DOM、放開才進 redux，所以只有真瀏覽器驗得到
+  const gripBox = await page.locator(".track-height-grip").first().boundingBox();
+  if (gripBox) {
+    const heightsOf = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll(".timeline-settings-block")].map((el) =>
+          Math.round(el.getBoundingClientRect().height),
+        ),
+      );
+
+    const beforeGrip = await heightsOf();
+    await page.mouse.move(gripBox.x + 4, gripBox.y + gripBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(gripBox.x + 4, gripBox.y + gripBox.height / 2 + 60, {
+      steps: 6,
+    });
+    await page.mouse.up();
+    await page.waitForTimeout(500);
+    const afterGrip = await heightsOf();
+
+    record(
+      "拖把手只調整那一條軌道的高度",
+      afterGrip[0] > beforeGrip[0] + 20 &&
+        afterGrip.slice(1).every((h, i) => h === beforeGrip[i + 1]),
+      `${beforeGrip.join("/")} → ${afterGrip.join("/")}`,
+    );
+  } else {
+    record("拖把手只調整那一條軌道的高度", false, "找不到把手");
+  }
+
   // ── Output ────────────────────────────────────────────
   const outputBtn = page.locator("button.output-button");
   if (await outputBtn.count()) {

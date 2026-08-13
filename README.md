@@ -83,7 +83,7 @@ actionTable[armor][part] = [
 
 ```bash
 cd frontend
-npm test          # 385 項
+npm test          # 395 項
 npm run build
 ```
 
@@ -91,7 +91,7 @@ npm run build
 
 ```bash
 npm run dev            # 另一個終端機
-npm run e2e            # 27 項功能驗收
+npm run e2e            # 31 項功能驗收
 npm run audit:layout   # 版面稽核
 ```
 

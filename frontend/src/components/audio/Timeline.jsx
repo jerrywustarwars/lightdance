@@ -652,7 +652,9 @@ const Timeline = forwardRef(
         className="timeline"
         ref={timelineRef} // 設置 ref
         style={{
-          flex: `0 0 ${height}%`,
+          // 高度改由使用者指定的像素決定（見 utils/tracks.js）——舊版是
+          // `100 / 軌道數 %`，加一條軌道會讓其他每一條都變矮
+          flex: `0 0 ${height}px`,
           width: "100%",
           display: "flex",
           alignItems: "center",

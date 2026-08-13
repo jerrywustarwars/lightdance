@@ -1,4 +1,5 @@
 import { PLAYER_COUNT } from "../../constants/parts.js";
+import { DEFAULT_ROW_H, clampRowHeight } from "../../utils/tracks.js";
 import {
   addSet,
   createDefaultWorksets,
@@ -32,6 +33,8 @@ const initialState = {
   moveMode: false,
   // 具名的軌道組合。舊版是一個沒有名字的 showPart 陣列，見 utils/worksets.js
   worksets: createDefaultWorksets(),
+  // 軌道行高（像素）。逐軌覆寫存在 track.height，見 utils/tracks.js
+  rowHeight: DEFAULT_ROW_H,
   favoriteColor: [],
   // 由 PLAYER_COUNT 推導：改人數時不會忘了這裡
   dancerVisibility: Array(PLAYER_COUNT).fill(true),
@@ -209,6 +212,8 @@ export const profiles = (state = initialState, action) => {
           action.payload.name,
         ),
       };
+    case "UPDATEROWHEIGHT":
+      return { ...state, rowHeight: clampRowHeight(action.payload) };
     case "WORKSET_REMOVE":
       return { ...state, worksets: removeSet(state.worksets, action.payload) };
     case "UPDATEFAVORITECOLOR":
