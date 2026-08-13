@@ -85,10 +85,21 @@ export const updatePlaybackRate = (value) => ({
 export const updateUndo = () => ({ type: "UPDATEUNDO" });
 export const updateRedo = () => ({ type: "UPDATEREDO" });
 
+/** 改寫**目前這一組工作集**的軌道清單（payload 形狀與舊的 showPart 相同） */
 export const updateShowPart = (value) => ({
   type: UPDATESHOWPART,
   payload: value,
 });
+
+/* ── 工作集 ────────────────────────────────────────────
+   軌道組合的命名、切換與增刪。實作與不變式見 utils/worksets.js。 */
+export const switchWorkset = (id) => ({ type: "WORKSET_SWITCH", payload: id });
+export const addWorkset = (name) => ({ type: "WORKSET_ADD", payload: name });
+export const renameWorkset = (id, name) => ({
+  type: "WORKSET_RENAME",
+  payload: { id, name },
+});
+export const removeWorkset = (id) => ({ type: "WORKSET_REMOVE", payload: id });
 
 export const updateFavoriteColor = (value) => ({
   type: UPDATEFAVORITECOLOR,

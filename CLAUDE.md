@@ -135,6 +135,7 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 | `TrackToolbar.jsx` | `useTrackActions` | 導航 / 剪下 / 刪除 / 亮度 / 改色 / 統一透明度 |
 | `CopyPasteManager.jsx` | `useCopyPaste` | 五種複製貼上 + 複製模式 |
 | `hooks/useKeyboardShortcuts.js` | — | 全站唯一的 keydown 註冊點（宣告式 keymap） |
+| `WorksetBar.jsx` | `useWorksets` | 工作集：具名軌道組的切換 / 新增 / 改名 / 刪除 |
 
 `Timeline.jsx` 的拖曳/resize 運算已在 Phase 5f 抽到
 `utils/segments/gestures.js`（`movableRange` / `moveSegments` / `resizeSegment`
@@ -181,8 +182,9 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 ```bash
 cd frontend
 npm run dev            # 另一個終端機
-npm run e2e            # 24 項：放色 / 選取 / 剪下 / undo / 快捷鍵 / 重新整理 /
-                       #        拖曳 resize / 多段一起搬 / 刻度尺 / Output / /edit
+npm run e2e            # 27 項：放色 / 選取 / 剪下 / undo / 快捷鍵 / 重新整理 /
+                       #        拖曳 resize / 多段一起搬 / 刻度尺 / 工作集 /
+                       #        Output / /edit
 npm run audit:layout   # 5 項：控制項被蓋住 / 元素溢出容器 / 提示被裁掉 /
                        #      成對元素沒對齊 / 上下兩塊的邊緣沒對齊
 ```
@@ -226,6 +228,24 @@ CSS 檔各寫各的，右緣一個停 1427、一個停 1595——版面稽核的
 不要用「第 N 個有 fill 的元素」——帽子與領帶各由兩個形狀組成。
 
 完整的設計決策與施工回顧見 `docs/ui-design-plan.md`。
+
+### 工作集（軌道組合）
+
+154 條時間軸不可能同時擺在畫面上，所以軌道一直由使用者自己挑。**那組挑選現在
+是具名的、存得起來、可以一鍵切換**——`utils/worksets.js` 是形狀與不變式的
+唯一定義處，`hooks/useWorksets.js` 是唯一的讀取入口。
+
+寫入仍然走既有的 `updateShowPart(tracks)`：payload 形狀沒變，只是 reducer 把它
+寫進**目前那一組**。加軌、移除、上下移、套用選取四個呼叫端因此一行都沒改。
+
+⚠️ 讀取一律用 `useActiveTracks()` / `useWorksets()`，不要自己去讀
+`state.profiles.worksets`。「目前是哪一組」必須只有一個答案，否則軌名列與
+Timeline 有機會顯示不同組——而且畫面看起來都正常，只是點某一軌會編到別條。
+
+兩個不變式由 `worksets.js` 保證：`sets` 至少留一組（刪到剩一組就不准再刪，
+沒有工作集的話畫面上一條軌道都沒有），`activeId` 永遠指得到東西（指不到時
+退回第一組而不是回傳 null）。舊的 `showPart` 由 persist 的 outbound transform
+收成「未命名」那一組，靠形狀辨認、不看版本號。
 
 ### 手勢（拖曳與 resize）
 
@@ -325,6 +345,17 @@ CSS 檔各寫各的，右緣一個停 1427、一個停 1595——版面稽核的
 
 ## 更新記錄
 
+- **2026-08-14**：**工作集**。`showPart` 從一個沒有名字的陣列升級成具名軌道組
+  （`utils/worksets.js` + `hooks/useWorksets.js` + `WorksetBar.jsx`），可以命名、
+  存起來、一鍵切換。新增時預設複製目前這一組——多數新組是從現有的微調而來
+  （「上半身」是從「全身」拿掉腿和鞋），從空白開始要重加十幾條。
+  既有的四個寫入端一行都沒改：`updateShowPart` 的 payload 形狀不變，
+  只是 reducer 把它寫進目前那一組。舊 persist 資料由 outbound transform 收成
+  「未命名」，靠形狀辨認不看版本號，順便丟掉已移除的 `hidden` 欄位。
+  另外移除軌道的眼睛按鈕——它把軌道設成 `opacity: 0` 但**照樣佔滿高度**，
+  變成看不見也點不到的空白帶，而且 persist 裡存了 `hidden: true` 的話使用者
+  除了刪掉那條軌之外沒辦法讓它回來（按鈕就在那條看不見的列上）。
+  e2e 24 → 27。測試 385 passed
 - **2026-08-13（深夜）**：**光表區對齊與光衣重畫**。上下兩塊的右緣先前一個停在
   1427、一個停在 1595（欄寬散在三個 CSS 檔各寫各的），右上角空出 168px 的缺口。
   收成 `.homepage` 的三個變數之後兩塊都是 0..1595，版面稽核加第五項守住。

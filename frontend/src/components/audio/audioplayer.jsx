@@ -29,13 +29,15 @@ import {
 } from "../../utils/segments/color.js";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts.js";
 import { useSegmentActionTable } from "../../hooks/useSegmentActionTable.js";
+import { useActiveTracks } from "../../hooks/useWorksets.js";
 
 function AudioPlayer({ setButtonState, timelineRef }) {
   const dispatch = useDispatch();
-  const showPart = useSelector((state) => state.profiles.showPart);
   const currentTime = useSelector((state) => state.profiles.currentTime);
   const duration = useSelector((state) => state.profiles.duration); // 音樂總長度
   const { segmentTable, commit, commitPart } = useSegmentActionTable();
+  // 目前這一組工作集的軌道。切換工作集時整份換掉，Timeline 跟著重建
+  const showPart = useActiveTracks();
   const chosenColor = useSelector((state) => state.profiles.chosenColor);
   const favoriteColor = useSelector((state) => state.profiles.favoriteColor);
   const isColorChangeActive = useSelector(

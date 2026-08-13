@@ -12,11 +12,16 @@
   z-index: 0;
 }
 
+/*
+ * 工作集列加進來之後，這一塊改成吃掉剩下的高度而不是寫死 95%——
+ * 兩者相加超過 100% 的話波形會被推出面板外。
+ */
 .downpart-container {
   position: relative;
   display: flex;
   width: 100%;
-  height: 95%;
+  flex: 1;
+  min-height: 0;
   border-top: 1px solid var(--bg-control);
 }
 .lefttool-container {

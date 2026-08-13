@@ -506,6 +506,63 @@ const run = async () => {
     record("Move Mode 整批一起搬", false, `只有 ${dragBefore.length} 個色塊`);
   }
 
+  // ── 工作集 ────────────────────────────────────────────
+  //
+  // 切換工作集要真的換掉軌道清單，而且**存得住**——這一項最容易壞的地方是
+  // 遷移：舊的 persist 資料裡只有 showPart，載入時要收成「未命名」那一組。
+  const trackCount = () =>
+    page.evaluate(
+      () => document.querySelectorAll(".timeline-settings-block").length,
+    );
+  const chipNames = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll(".workset-chip")].map((el) =>
+        el.textContent.replace(/\d+$/, "").trim(),
+      ),
+    );
+
+  const beforeChips = await chipNames();
+  record(
+    "工作集列出現，舊資料收成一組",
+    beforeChips.length >= 1,
+    beforeChips.join(" / ") || "沒有任何工作集",
+  );
+
+  const tracksBefore = await trackCount();
+
+  // 新增一組（會複製目前這一組），然後從新的那組刪掉一條軌。
+  // 命名的 prompt 由檔案開頭的全域 dialog handler 接受（回傳空字串），
+  // 所以新組會拿到自動產生的名字——這裡不驗名字，驗的是切換行為。
+  await page.click(".workset-bar__action");
+  await page.waitForTimeout(500);
+
+  const afterAdd = await chipNames();
+  const activeName = await page.evaluate(
+    () => document.querySelector(".workset-chip.is-current")?.textContent ?? "",
+  );
+  record(
+    "新增工作集並自動切換過去",
+    afterAdd.length === beforeChips.length + 1 &&
+      !activeName.includes(beforeChips[0]),
+    `${afterAdd.join(" / ")}（目前：${activeName.trim()}）`,
+  );
+
+  await page.click(".timeline-settings-block .delete-timeline-button");
+  await page.waitForTimeout(400);
+  const tracksInNew = await trackCount();
+
+  // 切回原本那一組，軌道數要回到原本的
+  await page.click(".workset-chip");
+  await page.waitForTimeout(400);
+  const tracksBack = await trackCount();
+
+  record(
+    "切換工作集會換掉軌道清單",
+    tracksInNew === tracksBefore - 1 && tracksBack === tracksBefore,
+    `原本 ${tracksBefore} → 新組 ${tracksInNew} → 切回 ${tracksBack}`,
+  );
+  await shot(page, "worksets");
+
   // ── Output ────────────────────────────────────────────
   const outputBtn = page.locator("button.output-button");
   if (await outputBtn.count()) {

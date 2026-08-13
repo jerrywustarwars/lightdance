@@ -21,6 +21,10 @@ import {
   updateShowPart,
   updateMultiSelectedBlocks,
   toggleMoveMode,
+  addWorkset,
+  removeWorkset,
+  renameWorkset,
+  switchWorkset,
 } from "../redux/actions.js";
 import { isPartAllowed } from "../config/accessoryConfig.js";
 import { findNearestSegment } from "../utils/segments/core.js";
@@ -31,6 +35,8 @@ import {
   PART_INDICES,
 } from "../constants/parts.js";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts.js";
+import { useWorksets } from "../hooks/useWorksets.js";
+import WorksetBar from "./WorksetBar.jsx";
 
 function ControlPanel({ setButtonState }) {
   const [timelineHeight, setTimelineHeight] = useState(0); // 儲存計算後的高度
@@ -47,7 +53,7 @@ function ControlPanel({ setButtonState }) {
     (state) => state.profiles.data?.actionTable || [],
   );
   const currentTime = useSelector((state) => state.profiles.currentTime);
-  const showPart = useSelector((state) => state.profiles.showPart);
+  const { sets, current, tracks: showPart } = useWorksets();
   const dispatch = useDispatch();
   const partName = PART_LABELS;
 
@@ -415,6 +421,7 @@ function ControlPanel({ setButtonState }) {
           </div>,
           document.body,
         )}
+      <WorksetBar />
       <div className="downpart-container">
         <div className="lefttool-container">
           <div className="leftupcorner">

@@ -6,6 +6,7 @@ import { persistStore, persistReducer, createTransform } from "redux-persist";
 // 假設你有個 profiles reducer
 import profiles from "./reducers/profiles";
 import { toSegmentTable } from "../utils/migration/loadProjectData.js";
+import { migrateWorksets } from "../utils/worksets.js";
 
 // 配置 localforage
 localforage.config({
@@ -111,10 +112,11 @@ const StripEphemeralTransform = createTransform(
     }
     return inboundState;
   },
-  // outbound: rehydrate 時補回預設值（autoMergeLevel2 可能遺漏）
+  // outbound: rehydrate 時補回預設值（autoMergeLevel2 可能遺漏），
+  // 並把舊版的 showPart 遷移成工作集（見 utils/worksets.js）
   (outboundState, key) => {
     if (key === "profiles") {
-      return { ...EPHEMERAL_DEFAULTS, ...outboundState };
+      return migrateWorksets({ ...EPHEMERAL_DEFAULTS, ...outboundState });
     }
     return outboundState;
   }

@@ -1,4 +1,13 @@
 import { PLAYER_COUNT } from "../../constants/parts.js";
+import {
+  addSet,
+  createDefaultWorksets,
+  removeSet,
+  renameSet,
+  switchSet,
+  withTracks,
+  activeSet,
+} from "../../utils/worksets.js";
 
 const initialState = {
   user: null,
@@ -21,11 +30,8 @@ const initialState = {
   isColorChangeActive: false,
   playbackRate: 1,
   moveMode: false,
-  showPart: [
-    { id: 1, armorIndex: 0, partIndex: 0, hidden: false },
-    { id: 2, armorIndex: 1, partIndex: 0, hidden: false },
-    { id: 3, armorIndex: 2, partIndex: 0, hidden: false },
-  ],
+  // 具名的軌道組合。舊版是一個沒有名字的 showPart 陣列，見 utils/worksets.js
+  worksets: createDefaultWorksets(),
   favoriteColor: [],
   // 由 PLAYER_COUNT 推導：改人數時不會忘了這裡
   dancerVisibility: Array(PLAYER_COUNT).fill(true),
@@ -177,8 +183,34 @@ export const profiles = (state = initialState, action) => {
     }
     case "UPDATEISCOLORCHANGEACTIVE":
       return { ...state, isColorChangeActive: action.payload };
-    case "UPDATESHOWPART":
-      return { ...state, showPart: action.payload };
+    /*
+     * 沿用舊的 action 名稱與 payload 形狀（一個軌道陣列），只是寫入的目標
+     * 從 `showPart` 換成「目前這一組工作集的 tracks」。加軌、移除、上下移、
+     * 套用選取這四個呼叫端因此一行都不用改。
+     */
+    case "UPDATESHOWPART": {
+      const current = activeSet(state.worksets);
+      if (!current) return state;
+      return {
+        ...state,
+        worksets: withTracks(state.worksets, current.id, action.payload),
+      };
+    }
+    case "WORKSET_SWITCH":
+      return { ...state, worksets: switchSet(state.worksets, action.payload) };
+    case "WORKSET_ADD":
+      return { ...state, worksets: addSet(state.worksets, action.payload) };
+    case "WORKSET_RENAME":
+      return {
+        ...state,
+        worksets: renameSet(
+          state.worksets,
+          action.payload.id,
+          action.payload.name,
+        ),
+      };
+    case "WORKSET_REMOVE":
+      return { ...state, worksets: removeSet(state.worksets, action.payload) };
     case "UPDATEFAVORITECOLOR":
       return { ...state, favoriteColor: action.payload };
     case "UPDATEDANCERVISIBILITY":
