@@ -13,8 +13,10 @@
  */
 .homepage {
   --page-inset: 0.3%; /* 版面右側留白，下半部的捲動區也是這個數字 */
-  --palette-w: 168px; /* 調色盤欄。內容是固定尺寸的控制項，用 px 才不會被視窗寬度擠壞 */
-  --accessory-w: 200px; /* 飾品側欄 */
+  /* Inspector：上半部右側唯一的欄（調色盤 + 部位 + 飾品）。
+     先前是「調色盤 168px」與「飾品側欄 200px」兩欄並排，合併之後不但少一條
+     分隔線，總寬也從 376px 降到 248px——多出來的都還給光衣。 */
+  --inspector-w: 248px;
 
   height: 100%;
   width: 100%;
@@ -79,13 +81,15 @@
  * （x 660..940）把 Edit（681..771）與 Logout（778..868）整個蓋住，
  * 兩顆按鈕完全點不到；1280 寬時連 Shortcuts 與 Load 也一起被蓋。
  *
- * 右側讓開調色盤那一欄（.palette 是絕對定位）。
+ * 橫跨整個寬度：Inspector 從 header 下方（60px）才開始，兩者不重疊，
+ * 所以這裡不必再減去右欄的寬度。先前減掉之後在 1280 寬會放不下六顆按鈕，
+ * flex 不會自己裁切，最後一顆就溢出到右欄底下被蓋住（版面稽核抓到的）。
  */
 .panel-header {
   position: absolute;
   top: 0;
   left: 0;
-  right: calc(var(--palette-w) + var(--space-2));
+  right: var(--page-inset);
   height: 56px;
   display: flex;
   align-items: center;
@@ -207,10 +211,8 @@
   flex-direction: column;
   justify-content: flex-start;
 
-  /* 讓開右側兩個內欄，光衣才不會被蓋住 */
-  padding-right: calc(
-    var(--palette-w) + var(--space-2) + var(--accessory-w)
-  );
+  /* 讓開右側的 Inspector，光衣才不會被蓋住 */
+  padding-right: calc(var(--inspector-w) + var(--space-2));
 
   /*
    * 只需要疊在 panel 的背景上，不需要壓過 panel 上排的按鈕。

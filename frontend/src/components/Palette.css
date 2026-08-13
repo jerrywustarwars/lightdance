@@ -1,34 +1,32 @@
+/* 合併進 Inspector 之後高度很緊，調色器從 56 收到 44——按得到就夠了 */
 #colorWell {
-  width: 56px;
-  height: 56px;
+  width: 44px;
+  height: 44px;
   position: relative;
   z-index: 10;
   flex-shrink: 0;
 }
-/* 欄寬與版面留白的定義在 pages/Home.css 的 .homepage（上下兩塊共用） */
+/*
+ * 調色盤現在是 Inspector 的一個區塊，不再是自己一欄。
+ *
+ * 先前它是 `position: absolute` 的獨立右欄，和「裝備編輯」那欄並排——
+ * 兩欄回答的是同一句話（你正在編輯誰的哪個部位、要塗什麼顏色），
+ * 分開只會讓視線來回跳，而且兩欄各佔一段寬度把光衣擠窄。
+ *
+ * 捲動交給 Inspector（它才知道整欄有多高），這裡只負責自己的排版。
+ */
 .palette {
-  right: var(--page-inset);
-  top: var(--page-inset);
-  width: var(--palette-w);
+  width: 100%;
+  flex: none;
   display: flex;
-  position: absolute;
   flex-direction: column;
-  background: var(--bg-panel);
-  justify-content: start;
-  /*left: 400px;*/
-  height: 100%;
   align-items: center;
+  justify-content: start;
 
   /* 由 flex 依序往下排，不要靠各自的 margin/absolute 硬喬位置 */
   gap: var(--space-2);
-  padding: var(--space-2) 0;
-
-  /* 內容放不下時由這一欄自己捲動。
-     這是保險：1280×800 下 .panel 只有 280px 高，調色器 + HEX + 亮度 +
-     六格色票 + 模式切換剛好貼著上限，字級或行高一變就會頂出去。
-     有了這行，最壞情況是要捲一下，而不是內容跑到面板外面點不到。 */
-  overflow-y: auto;
-  overflow-x: hidden;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
 }
 .color_example {
   width: 0px;
@@ -56,10 +54,12 @@
 }
 
 .favorite_color_sample {
-  /* 寬度隨欄位縮放，不寫死 40px——面板只有 10% 寬，1280 視窗下是 128px，
-     三欄寫死 40px 加間距就會擠出去 */
+  /* 寬度隨欄位縮放，不寫死 40px——欄位窄的時候寫死值會擠出去。
+     但也要有上限：Inspector 比舊的調色盤欄寬，不設限的話兩列色票會長到
+     140px 高，把下面的部位清單整個推出可視範圍。 */
   flex: 1 1 0;
   min-width: 0;
+  max-width: 34px;
   aspect-ratio: 1;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-strong);
@@ -235,4 +235,39 @@ input[type="range"]::-ms-thumb {
 
 .hex-field:focus-within {
   border-color: var(--text-muted);
+}
+
+/*
+ * 調色器 + HEX + 亮度並排成一列。
+ *
+ * 這一區直排時是 140px 高，而 Inspector 在 1280×800 下整欄只有 220px——
+ * 加上色票與模式切換之後，部位清單會整個掉到可視範圍外。並排之後這一區
+ * 收成 56px，剩下的高度留給部位清單。
+ */
+.palette-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 0 var(--space-2);
+  box-sizing: border-box;
+}
+
+.palette-row__fields {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* 並排之後 HEX 欄位吃滿右半邊，不再需要自己的百分比寬度 */
+.palette-row__fields .hex-field {
+  width: 100%;
+  height: 26px;
+}
+
+/* 最愛色票排成一列六格，兩列會把下面的部位清單推出去 */
+.favorite_color_line {
+  justify-content: center;
 }

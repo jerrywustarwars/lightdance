@@ -287,7 +287,7 @@ const AudioWaveform = ({
       // 進度條：每幀透過 callback 通知 AudioPlayer 直接操作 DOM（60fps）
       onTimeUpdate?.(elapsed);
 
-      // Redux：每 40ms 才 dispatch 一次（25fps），供 Armor/AccessoryPanel 顏色更新
+      // Redux：每 40ms 才 dispatch 一次（25fps），供 Armor/Inspector 顏色更新
       if (elapsed - lastDispatchRef.current >= DISPATCH_INTERVAL) {
         dispatch(updateCurrentTime(elapsed));
         lastDispatchRef.current = elapsed;

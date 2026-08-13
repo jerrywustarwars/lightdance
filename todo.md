@@ -249,29 +249,57 @@ segment 壓平回 keyframe 之後**緊鄰的色塊之間沒有黑點**，這個�
 > 待辦（下次動手前先做）：手動 checklist 尚未實跑，Timeline 拖曳/resize 的
 > 零 re-render 路徑沒有自動化測試涵蓋。
 
-### Phase 5 逐項 segment 原生化（L / 中風險 / **Phase 4 後高度平行**，每項獨立 PR）
+### Phase 5 逐項 segment 原生化 ✅ 全部完成（5a–5g）
 
-每項：改寫成 `utils/segments/*` 原生 → 拆該項 adapter → golden + checklist → ship。建議順序（讀取路徑與 DAW 核心優先）：
+每項都改寫成 `utils/segments/*` 原生 → 拆該項 adapter → golden + checklist → ship。
 
-- [ ] **Timeline.jsx**：色塊直接由 segments 渲染（key = `seg.id`）；Move Mode commit（L109-283）與 resize commit（L649-760）改為單 segment 操作（`moveSegment`/`resizeSegment` + trim 碰撞）——「動一塊要同步改 2-N 個 keyframe + 鄰居黑點」邏輯死亡。**零 re-render 驗收**（見下方約束）
-- [ ] **Armor.jsx / AccessoryPanel.jsx**：點擊 → `insertSegment(…, {duration: DEFAULT_SEGMENT_MS, collision: 'trim'})`；isPartAllowed 不動；顯色走 `getColorAt(segments, t)`
-- [ ] **audioplayer 寫入者逐個**（現行行號）：colorChange L211、executeAdvancedPaste L312、insertFavoriteColorArray L578、handleFavoriteColorChoose L734、handleMultiDelete L805（`removeDuplicateBlackBlocks` L949 **直接刪除**，segment 世界無意義）、handleSetLinear L866、applyBlinkEffect L881（暫維持展開成 N 個 segment，metadata 化在 Phase 6）、handleCut L1104（單 segment split，漸變中點插值進 segment util）、handleWholePaste L1215、handleBrightnessChange L1279、**applyGradientEffect L1326**（「每隔 2 格 = 色+黑」寫死假設死亡，改為 per-segment 色/alpha ramp）、executeTimeShift L1387、handleUniformSameColorAlphaChange L1502
-- [ ] **EditActionTable.jsx**：改編輯 segment 欄位；local useState history 併入 redux history（更正 #10 的殘餘項在此落地）
-- [ ] **ControlPanel** W/S 導航 → 最近 segment；audioplayer handleGoLeft/Right 的 skip-black hack 死亡
-- [ ] **最終清掃**：刪 `withKeyframeAdapter`、`selectKeyframes`、`utils/keyframe/insertColorKeyframes.js`、全部 5 處 `blackthreshold`、`ensureBlackBefore`。**`blackthreshold` / -10ms 自此在專案中不存在**
+- [x] **5a** 建立 segment 原生的色彩層（`utils/segments/color.js`）與逐部位 hook
+- [x] **5b** Armor / AccessoryPanel：點擊 → `insertColorSegment`，顯色走 `getColorAt`
+- [x] **5c** TrackToolbar：刪除 / 剪下 / 亮度 / 統一透明度 / 導航
+- [x] **5d** EffectMenu：漸變 / 頻閃 / 亮度階梯（`blockIndex + step*2` 的 stride 假設死亡）
+- [x] **5e** CopyPasteManager 與 ShiftTool
+- [x] **5f** Timeline 色塊渲染與拖曳 / resize（運算抽到 `utils/segments/gestures.js`）
+- [x] **5g** 最終清掃：`withKeyframeAdapter` / `useKeyframeActionTable` /
+      `insertColorKeyframes` / `LEGACY_BLACK_SENTINEL_MS` / 選取項目的 `blockIndex`
+      全部刪除。**黑色哨兵與陣列索引在執行路徑上完全消失**，keyframe 只剩壓平
+      輸出時存在（`segmentsToKeyframes`）
 
-#### 零 re-render 拖曳路徑約束（Phase 5 Timeline PR 的硬性驗收）
+#### 零 re-render 拖曳路徑約束（已維持）
 
-- 手勢期間維持 direct-DOM（transform + rAF），**拖曳中零 React render**（React DevTools profiler 驗證）
-- Commit = mouseup 時**恰好一次** dispatch；history 合併為一筆 undo（中間 dispatch 用 skipHistory）
-- 穩定 `seg.id` key + 逐色塊 React.memo；segment 操作只對被改動的 (armor, part) 回傳新陣列，其餘結構共享，維持 memoized selector 有效
+- 手勢期間維持 direct-DOM（transform + rAF），拖曳中零 React render
+- Commit = mouseup 時**恰好一次** dispatch；history 合併為一筆 undo
+- 穩定 `seg.id` key；segment 操作只對被改動的 (armor, part) 回傳新陣列，其餘結構共享
 
-### Phase 6 新功能（M / 低中風險 / 逐功能平行）
+### Phase 6 DAW 加強與介面（進行中）
 
-- [ ] **Blink 改 metadata**（回應 4 月驗收回饋）：`seg.effect = {type:'blink', period}`（period 為 TICK_MS 倍數）；只在 `segmentsToKeyframes` 壓平與 `getColorAt` 預覽時展開；UI 維持單一可拖曳/選取色塊；B 鍵改為對選取設定 effect
-- [ ] DAW 加強：框選（marquee）多選、多 segment 一起拖曳、snap/對齊節拍（core.js quantize）
-- [ ] UI 小修（4 月版遺留）：timeline-settings-block 與 timeline 對齊/高度、lefttool-container 與 controls 按鈕縮小
-- **Ship/回滾**：逐功能。
+- [x] **多 segment 一起拖曳**：`movableRange`（能移多遠的單一真相，像素預覽與
+      commit 共用）+ `moveSegments`。順手修掉「色塊首尾相接時拖 0 會彈開 50ms」
+      與「duration 未載入時 NaN 寫壞 start/end」
+- [x] **工作集**：`showPart` 升級成具名軌道組，可命名 / 儲存 / 一鍵切換
+      （`utils/worksets.js` + `hooks/useWorksets.js` + `WorksetBar.jsx`）
+- [x] **軌道行高可調**：像素而非百分比，全域滑桿 + 逐軌把手
+      （`utils/tracks.js`）；低於 64px 自動收起次要按鈕
+- [x] **Inspector 合併**：「裝備編輯」側欄與調色盤收成單一上下文面板
+      （`components/Inspector.jsx`），總寬 376 → 248；14 個身體部位可用點選
+- [ ] **Blink 改 metadata**：`seg.effect = {type:'blink', period}`，只在
+      `segmentsToKeyframes` 壓平與 `getColorAt` 預覽時展開；UI 維持單一可拖曳色塊
+- [ ] **框選（marquee）多選**：讓多選能跨軌，多段拖曳的價值才完整
+- [ ] **速度軌與節拍吸附**（設計已定案，實作延後 —— 見下方）
+
+#### 速度軌（多音軌 BPM 不同的答案，2026-08-14 拍板、實作延後）
+
+節拍格線屬於**專案**，不屬於音檔。專案維護一串速度區段
+`{start, bpm, beatsPerBar, anchor}`，音檔只是擺在時間軸上的素材。
+
+- `anchor` 是第一拍落在哪一毫秒。**只有 BPM 定不出格線**，還需要相位——
+  第二首歌的第一拍幾乎不會剛好落在 clip 的起點
+- 形狀就是 `Segment<{bpm}>`（已排序、不重疊、有 payload），
+  `findSegmentAt(tempoMap, ms)` 直接可用，`core.js` 一行都不必改
+- 空隙沿用前一段的速度，最後一段延伸到底
+- ⚠️ **50ms 網格才是真相**：韌體吃 `floor(ms/50)`，而 128 BPM 一拍是 468.75ms、
+  八分之一拍 58.59ms，都不是 50 的倍數。吸附順序是「先吸到拍，再 `roundToTick`」，
+  最後那一步最多挪 25ms。節拍格線只能是輔助線
+- BPM 來源傾向**手動輸入 + 敲拍取平均**，不做自動偵測（歪掉時使用者不知道該信誰）
 
 ### Phase 7 多軌音訊（遠期，只記介面決策，不 block 燈光重構）
 
@@ -283,6 +311,23 @@ segment 壓平回 keyframe 之後**緊鄰的色塊之間沒有黑點**，這個�
 - Phase 3 拆件不得把單一 `sourceNode` 假設更深綁進新元件；多軌時 waveform 改寫為一個 AudioContext + N 個 AudioBufferSourceNode + 每軌 gain node
 
 ---
+
+## 🐛 已知待修
+
+- [ ] **Inspector 的部位清單在小視窗下很擠**。`.panel` 固定 35%，1280×800 下扣掉
+      header 只剩 220px，調色盤佔掉 150px，部位清單只剩 ~72px（三列）並自己捲。
+      可能的方向：調色盤做成可收合、把面板高度改成可拖曳的分隔線、或部位改成
+      橫向排的 chip。**先觀察實際用起來擠不擠再決定**，不要為了看起來寬敞而
+      犧牲時間軸的高度。
+
+- [ ] **工作集列與下方工具列的左緣沒對齊**（2026-08-14 回報，窄視窗最明顯）。
+      `.workset-bar` 有自己的 `padding: 0 var(--space-3)`，而下面的
+      `.lefttool-container` 與軌名列各自從 0 或別的內縮開始，三排的內容左緣是
+      三個不同的 x。
+      修法：把左欄寬與內縮收成 `.control-panel` 層的變數（比照
+      `pages/Home.css` 的 `--page-inset` / `--palette-w`），三排共用。
+      **修完要在 `npm run audit:layout` 加第六項**守住「下半部各排的內容左緣
+      在同一條線上」——第五項只比容器的右緣，抓不到這個。
 
 ## ⚠️ 風險總覽
 

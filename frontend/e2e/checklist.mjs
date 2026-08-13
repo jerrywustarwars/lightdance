@@ -506,6 +506,37 @@ const run = async () => {
     record("Move Mode 整批一起搬", false, `只有 ${dragBefore.length} 個色塊`);
   }
 
+  // ── Inspector ─────────────────────────────────────────
+  //
+  // 合併的主要價值是「部位可以用點選的」：14 個身體部位先前只能在光衣 SVG 上點，
+  // 而那些形狀縮到卡片大小之後只有十幾像素寬。清單是文字，點得到。
+  await page.locator(".personBackGround").nth(1).click();
+  await page.waitForTimeout(400);
+
+  const partButtons = page.locator(".inspector__part");
+  const partCount = await partButtons.count();
+  record("Inspector 列出選取舞者的身體部位", partCount === 14, `${partCount} 個`);
+
+  if (partCount > 0) {
+    const beforeParts = await coloredBlocks(page, 0);
+    // 點「左手臂」（索引 4）——在光衣上那是一個很窄的長方形
+    await page.locator('.inspector__part[data-part="4"]').click();
+    await page.waitForTimeout(500);
+
+    const dotColor = await page.evaluate(
+      () =>
+        document.querySelector('.inspector__part[data-part="4"] .inspector__dot')
+          ?.style.backgroundColor ?? "",
+    );
+    record(
+      "點部位清單就能放色，顏色點跟著亮",
+      !/rgba?\(\s*0,\s*0,\s*0/.test(dotColor) && dotColor !== "",
+      dotColor || "沒有顏色",
+    );
+    void beforeParts;
+    await shot(page, "inspector");
+  }
+
   // ── 工作集 ────────────────────────────────────────────
   //
   // 切換工作集要真的換掉軌道清單，而且**存得住**——這一項最容易壞的地方是

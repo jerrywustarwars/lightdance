@@ -1,6 +1,5 @@
 import React, { useEffect } from "react";
 import Armor from "./Armor.jsx";
-import AccessoryPanel from "./AccessoryPanel.jsx";
 import { useDispatch, useSelector } from "react-redux";
 import { updateActionTable } from "../redux/actions.js";
 import { PLAYER_INDICES, createEmptyActionTable } from "../constants/parts.js";
@@ -47,7 +46,6 @@ function People() {
           );
         })}
       </div>
-      <AccessoryPanel />
     </>
   );
 }

@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import "./Home.css";
 import ControlPanel from "../components/ControlPanel.jsx";
-import Palette from "../components/Palette.jsx";
+import Inspector from "../components/Inspector.jsx";
 import People from "../components/People.jsx";
 import DancerToggle from "../components/DancerToggle.jsx";
 import { MdOutput, MdInput, MdKeyboard } from "react-icons/md";
@@ -347,7 +347,10 @@ function Home({ rgba, setRgba, setButtonState }) {
     setShowNewProjectMenu(false);
   };
 
-  const listitem = [<Palette key="palette-1" rgba={rgba} setRgba={setRgba} />]; // 添加 key
+  // 上半部右側唯一的欄：調色盤 + 目前舞者的部位與飾品（見 components/Inspector.jsx）
+  const listitem = [
+    <Inspector key="inspector" rgba={rgba} setRgba={setRgba} />,
+  ];
 
   return (
     <div>

@@ -136,6 +136,7 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 | `CopyPasteManager.jsx` | `useCopyPaste` | 五種複製貼上 + 複製模式 |
 | `hooks/useKeyboardShortcuts.js` | — | 全站唯一的 keydown 註冊點（宣告式 keymap） |
 | `WorksetBar.jsx` | `useWorksets` | 工作集：具名軌道組的切換 / 新增 / 改名 / 刪除 |
+| `Inspector.jsx` | — | 右側唯一的上下文面板：調色盤 + 目前舞者的部位與飾品 |
 
 `Timeline.jsx` 的拖曳/resize 運算已在 Phase 5f 抽到
 `utils/segments/gestures.js`（`movableRange` / `moveSegments` / `resizeSegment`
@@ -182,9 +183,9 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 ```bash
 cd frontend
 npm run dev            # 另一個終端機
-npm run e2e            # 31 項：放色 / 選取 / 剪下 / undo / 快捷鍵 / 重新整理 /
-                       #        拖曳 resize / 多段一起搬 / 刻度尺 / 工作集 /
-                       #        行高 / Output / /edit
+npm run e2e            # 33 項：放色 / 選取 / 剪下 / undo / 快捷鍵 / 重新整理 /
+                       #        拖曳 resize / 多段一起搬 / 刻度尺 / Inspector /
+                       #        工作集 / 行高 / Output / /edit
 npm run audit:layout   # 5 項：控制項被蓋住 / 元素溢出容器 / 提示被裁掉 /
                        #      成對元素沒對齊 / 上下兩塊的邊緣沒對齊
 ```
@@ -218,8 +219,8 @@ Edit/Logout 被橫幅蓋住、舞者開關蓋掉 12 個光衣部位、按鈕階�
 改視覺時只動 token 的值，不要回頭在元件的 CSS 裡寫死顏色。入口頁
 （Welcome / Dashboard）保留自己的品牌色，但一樣收成各自的區域 token。
 
-**欄寬只定義在 `pages/Home.css` 的 `.homepage`**（`--page-inset` / `--palette-w`
-/ `--accessory-w`）。上下兩塊的左右邊緣要在同一條線上，而它們的欄寬先前散在三個
+**欄寬只定義在 `pages/Home.css` 的 `.homepage`**（`--page-inset` / `--inspector-w`）。
+上下兩塊的左右邊緣要在同一條線上，而它們的欄寬先前散在三個
 CSS 檔各寫各的，右緣一個停 1427、一個停 1595——版面稽核的第五項就是在守這件事。
 
 **光衣的幾何在 `config/armorShapes.js`**，圖形與選取高亮吃同一組座標（先前兩份
@@ -246,6 +247,20 @@ Timeline 有機會顯示不同組——而且畫面看起來都正常，只是�
 沒有工作集的話畫面上一條軌道都沒有），`activeId` 永遠指得到東西（指不到時
 退回第一組而不是回傳 null）。舊的 `showPart` 由 persist 的 outbound transform
 收成「未命名」那一組，靠形狀辨認、不看版本號。
+
+### Inspector（右側上下文面板）
+
+上半部右側先前是兩欄：「裝備編輯」列飾品、調色盤選顏色。它們回答的是同一句話
+（你正在編輯誰的哪個部位、要塗什麼顏色），分開只是讓視線來回跳，而且兩欄各佔
+一段寬度（200 + 168）把光衣擠窄。合併成 `Inspector.jsx` 之後總寬 376 → 248。
+
+合併同時解掉一件事：**14 個身體部位現在可以用點選的**。先前它們只能在光衣 SVG
+上點，而那些形狀縮到卡片大小之後只有十幾像素寬。
+
+⚠️ 這一欄的高度很緊（`.panel` 是 35%，1280×800 下扣掉 header 只剩 220px），
+所以調色盤是**橫排**的：調色器與 HEX／亮度並排、最愛色一列六格。改回直排的話
+光是調色盤就 272px，部位清單會整個掉到可視範圍外——那正是合併要解決的問題。
+`.inspector__parts` 的 `min-height` 是底線，保證不管欄位多矮都露得出三列。
 
 ### 軌道行高
 
@@ -358,6 +373,16 @@ Timeline 有機會顯示不同組——而且畫面看起來都正常，只是�
 - 確保安全性問題沒有被引入
 
 ## 更新記錄
+
+- **2026-08-14（晚）**：**Inspector 合併**。上半部右側的「裝備編輯」與調色盤
+  兩欄收成單一上下文面板（`components/Inspector.jsx`），總寬 376 → 248，
+  多出來的都還給光衣。順帶讓 14 個身體部位可以用點選的——先前它們只能在光衣
+  SVG 上點，縮到卡片大小之後只有十幾像素寬。調色盤改橫排（調色器與 HEX／亮度
+  並排、最愛色一列六格）：直排時它自己就 272px，而這一欄在 1280×800 下只有
+  220px，部位清單會整個掉出可視範圍。版面稽核抓到 header 在 1280 寬被擠到
+  溢出（六顆按鈕放不下，flex 不自己裁切，最後一顆跑到右欄底下被蓋住）——
+  修法是讓 Inspector 從 header 下方才開始，header 拿回整個寬度，解耦而不是
+  調數字。e2e 31 → 33。測試 395 passed
 
 - **2026-08-14（下午）**：**軌道行高可調**。高度從「`100 / 軌道數 %`，超過 7 條
   改寫死 14%」換成使用者指定的像素（`utils/tracks.js`）。舊模型有兩個問題：

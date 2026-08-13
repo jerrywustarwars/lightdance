@@ -91,7 +91,7 @@ npm run build
 
 ```bash
 npm run dev            # 另一個終端機
-npm run e2e            # 31 項功能驗收
+npm run e2e            # 33 項功能驗收
 npm run audit:layout   # 版面稽核
 ```
 

@@ -35,7 +35,7 @@ const Armor = (props) => {
   // 根據部位和當前時間計算顏色。
   //
   // 舊版在這裡自己走一遍「找前後關鍵格、判斷是不是漸變、插值」的邏輯
-  // （AccessoryPanel 還有一份幾乎相同的複本）。segment 模型把這件事收斂成
+  // （飾品面板還有一份幾乎相同的複本）。segment 模型把這件事收斂成
   // `getColorAt`：空隙回傳黑色、漸變段內回傳插值，兩個元件共用同一份。
   const getColorForPart = (part) => {
     const { R, G, B, A } = getColorAt(armorSegments[part], time);

@@ -11,9 +11,16 @@ import {
   updateFavoriteColor,
 } from "../redux/actions";
 
-/** 最愛色盤的格數：2 列 × 3 欄 = 6 格 */
-const FAVORITE_ROWS = 2;
-const FAVORITE_COLS = 3;
+/**
+ * 最愛色盤的格數：1 列 × 6 欄。
+ *
+ * 這個數字動過兩次，都是被欄位高度逼的。最早是 4 列 × 2 欄（8 格），面板只有
+ * 170px 寬時後兩列會被捲出可視範圍——存進去就找不到了；接著收成 2 列 × 3 欄；
+ * 合併成 Inspector 之後這一欄要同時容納調色盤與部位清單，兩列色票（72px）
+ * 會把部位清單推出去，所以攤成一列。
+ */
+const FAVORITE_ROWS = 1;
+const FAVORITE_COLS = 6;
 
 /** `#RRGGBB`（大小寫皆可）才算合法，避免半途輸入就去改顏色 */
 const HEX_PATTERN = /^#[0-9a-fA-F]{6}$/;
@@ -196,6 +203,12 @@ function Palette({ rgba, setRgba }) {
 
   return (
     <div className="palette">
+      {/*
+        調色器與 HEX/亮度並排成一列。
+        直排的話光是調色盤就 272px，而 Inspector 這一欄在 1280×800 下只有
+        220px——部位清單會整個掉到可視範圍外，那正是合併要解決的問題。
+      */}
+      <div className="palette-row">
       <input
         className="palette-color-picker"
         type="color"
@@ -203,6 +216,7 @@ function Palette({ rgba, setRgba }) {
         id="colorWell"
         onChange={handleColorChange}
       />{" "}
+      <div className="palette-row__fields">
       {/*
         原本這個位置顯示的是打包後的 32-bit RGBA 整數（例如 84215140）——
         那是 debug 產物，對使用者沒有意義。位置本來就該回答「目前顏色是什麼」，
@@ -222,6 +236,8 @@ function Palette({ rgba, setRgba }) {
         />
       </div>
       <TransparentButton rgba={rgba} setRgba={setRgba} />
+      </div>
+      </div>
       <div className="favorite_color_background">
         {favoriteColor.map((colorArray, lineId) => (
           <div key={lineId} className="favorite_color_line">

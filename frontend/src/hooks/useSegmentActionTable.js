@@ -16,7 +16,7 @@ import { updateActionTable } from "../redux/actions.js";
  * | hook | 訂閱範圍 | 用在 |
  * |---|---|---|
  * | `useSegmentPartTimeline` | 一個部位 | Timeline |
- * | `useSegmentArmorTimelines` | 一位舞者的所有部位 | Armor、AccessoryPanel |
+ * | `useSegmentArmorTimelines` | 一位舞者的所有部位 | Armor、Inspector |
  * | `useSegmentActionTable` | 整張表 | 跨部位的操作（複製貼上、平移） |
  *
  * 粒度不是潔癖：訂閱整張表的元件，任何地方的一次編輯都會讓它重算。實測
@@ -109,7 +109,7 @@ export function useSegmentPartTimeline(armorIndex, partIndex) {
 /**
  * 一位舞者所有部位的 segments。
  *
- * Armor 與 AccessoryPanel 要同時顯示整套光衣，所以粒度是「舞者」而非「部位」。
+ * Armor 與 Inspector 要同時顯示整套光衣，所以粒度是「舞者」而非「部位」。
  */
 export function useSegmentArmorTimelines(armorIndex) {
   const dispatch = useDispatch();
