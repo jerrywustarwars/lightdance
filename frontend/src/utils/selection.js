@@ -4,26 +4,16 @@
  * `multiSelectedBlocks` 裡的每一筆長這樣：
  *
  * ```js
- * { armorIndex, partIndex, segmentId, blockIndex }
+ * { armorIndex, partIndex, segmentId }
  * ```
  *
- * ## segmentId 是目標，blockIndex 是遷移期的殘留
+ * ## 為什麼是 id 而不是索引
  *
- * | 欄位 | 狀態 | 說明 |
- * |---|---|---|
- * | `segmentId` | ✅ 目標形狀 | 穩定識別。鄰居被編輯、色塊被切開、undo 之後都還指向同一個色塊 |
- * | `blockIndex` | ⚠️ 待刪除 | keyframe 陣列的索引，只給還沒原生化的消費者用 |
- *
- * **新程式碼一律只讀 `segmentId`。** `blockIndex` 會在最後一個消費者
- * （TrackToolbar / EffectMenu / CopyPasteManager / ControlPanel /
- * EditActionTable）改完之後從這個檔案與 Timeline 一起刪掉。
- *
- * ## 為什麼非換不可
- *
- * 索引會位移。Phase 4 期間連續踩到三次同一類 bug——`blockIndex + 2`
- * 假設中間一定有黑哨兵、亮度階梯用 stride 2 找下一個色塊、剪下後選取
- * 落在隔壁色塊——根因都是「用位置當識別」。色塊被切開或鄰居被刪除時，
- * 索引指向的東西就換人了，而且不會報錯，只是靜默選錯。
+ * 這裡曾經還帶著一個 `blockIndex`（色塊在 keyframe 陣列裡的位置），Phase 5g
+ * 隨最後一個消費者一起刪掉了。索引會位移：Phase 4 期間連續踩到三次同一類
+ * bug——`blockIndex + 2` 假設中間一定有黑哨兵、亮度階梯用 stride 2 找下一個
+ * 色塊、剪下後選取落在隔壁色塊——根因都是「用位置當識別」。色塊被切開或鄰居
+ * 被刪除時，索引指向的東西就換人了，而且不會報錯，只是靜默選錯。
  *
  * id 沒有這個問題：找不到就是找不到（回傳 null），可以明確處理。
  */
@@ -32,20 +22,12 @@
  * 建立一筆選取項目。
  *
  * @param {object} params
- *   armorIndex / partIndex: 位置
- *   segment: 被選中的 segment（要有 id）
- *   blockIndex: 遷移期相容欄位，見上方說明；原生化的呼叫端可以不傳
+ *   armorIndex / partIndex: 位置；segment: 被選中的 segment（要有 id）
  */
-export const makeSelection = ({
-  armorIndex,
-  partIndex,
-  segment,
-  blockIndex,
-}) => ({
+export const makeSelection = ({ armorIndex, partIndex, segment }) => ({
   armorIndex,
   partIndex,
   segmentId: segment?.id ?? null,
-  blockIndex,
 });
 
 /** 以 id 找出 segment；找不到回傳 null（呼叫端必須處理這個情況） */
@@ -105,26 +87,3 @@ export const resolveSelections = (selections, segments) => {
     .sort((a, b) => a.segment.start - b.segment.start);
 };
 
-/**
- * 某個 segment 在 keyframe 視圖裡的索引 —— **遷移期專用**。
- *
- * 壓平成 keyframe 之後，一個 segment 的起點會變成「時間等於 segment.start
- * 的那個非黑關鍵格」。要排除黑點是因為空隙結束時也會在同一個網格點發一個
- * 黑關鍵格，只比時間會取到錯的那一個。
- *
- * 這個函式存在的唯一理由是餵給還沒原生化的消費者，會和 `blockIndex`
- * 一起刪除。
- */
-export const keyframeIndexOfSegment = (timeline, segment) => {
-  if (!Array.isArray(timeline) || !segment) return -1;
-
-  return timeline.findIndex(
-    (entry) =>
-      entry?.time === segment.start &&
-      !(
-        (entry?.color?.R ?? 0) === 0 &&
-        (entry?.color?.G ?? 0) === 0 &&
-        (entry?.color?.B ?? 0) === 0
-      ),
-  );
-};

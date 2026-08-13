@@ -10,10 +10,18 @@
  * 唯一證據，光看畫面看不出差別。
  */
 import { describe, it, expect } from "vitest";
-import { TICK_MS, LEGACY_BLACK_SENTINEL_MS } from "../../../constants/time.js";
+import { TICK_MS } from "../../../constants/time.js";
 import { segmentsToKeyframes } from "../convert.js";
 
 const DURATION = 10_000;
+
+/**
+ * 舊模型的黑色哨兵offset：色塊結束前 10ms 插一個純黑關鍵格。
+ *
+ * 這個數字在 Phase 5g 已經從專案裡消失，只留在這裡當作**比對基準**——
+ * 沒有它就沒辦法證明新舊兩版壓平出來的東西韌體看起來一樣。
+ */
+const LEGACY_BLACK_SENTINEL_MS = 10;
 const RED = { R: 255, G: 0, B: 0, A: 1 };
 const BLACK = { R: 0, G: 0, B: 0, A: 1 };
 

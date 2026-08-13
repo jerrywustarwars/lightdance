@@ -5,8 +5,8 @@ import { render } from "@testing-library/react";
 import profiles from "../redux/reducers/profiles.js";
 import { normalizeActionTable } from "../utils/actionTable/normalizeActionTable.js";
 import { toSegmentTable } from "../utils/migration/loadProjectData.js";
-import { toKeyframeTable } from "../utils/segments/withKeyframeAdapter.js";
-import { keyframeIndexOfSegment, makeSelection } from "../utils/selection.js";
+import { segmentsToKeyframes } from "../utils/segments/convert.js";
+import { makeSelection } from "../utils/selection.js";
 
 /**
  * 元件測試的共用掛載工具。
@@ -15,15 +15,16 @@ import { keyframeIndexOfSegment, makeSelection } from "../utils/selection.js";
  * 「按鍵/點擊 → dispatch → state 真的變了」這條完整路徑，用 mock store
  * 只會驗證到有沒有呼叫 dispatch，抓不到 reducer 或選取邏輯的漂移。
  *
- * ## Phase 4 之後：store 存 segments，測試仍用 keyframe 描述
+ * ## store 存 segments，但測試可以用 keyframe 描述
  *
- * 測試裡描述光表最直覺的方式還是「幾點幾分是什麼顏色」，而編輯器的寫入者
- * 也都還透過 `useKeyframeActionTable` 用 keyframe 思考。所以這裡：
+ * 「幾點幾分是什麼顏色」是描述光表最直覺的方式，也正是韌體看到的形式。所以：
  *
  * - `makeTestActionTable()` 用 keyframe 寫，掛載前轉成 segments 進 store
- * - `timelineOf()` 把 store 的 segments 轉回 keyframe 再回傳
+ * - `timelineOf()` 把 store 的 segments 壓平回 keyframe 再回傳
+ * - `segmentsOf()` 直接給 store 裡的 segments，斷言 segment 層的行為
  *
- * 斷言因此可以維持原樣，同時真的走過一次 segment ↔ keyframe 的來回。
+ * 兩種斷言各有用處：keyframe 那份等於「韌體會收到什麼」，segment 那份等於
+ * 「編輯器的資料長什麼樣」。改資料形狀時前者不該變，後者會變。
  */
 
 const DURATION = 10000;
@@ -79,7 +80,9 @@ export function renderWithStore(ui, { store = createTestStore() } = {}) {
  */
 export const timelineOf = (store, armor = 0, part = 0) => {
   const state = store.getState().profiles;
-  return toKeyframeTable(state.data.actionTable, state.duration)[armor][part];
+  return segmentsToKeyframes(state.data.actionTable[armor][part], {
+    duration: state.duration,
+  });
 };
 
 /** 取得 store 裡真正的 segments，用來斷言 segment 層的行為 */
@@ -90,8 +93,8 @@ export const segmentsOf = (store, armor = 0, part = 0) =>
  * 選取某個部位的第 N 個 segment。
  *
  * 選取項目要帶 `segmentId`，而 id 是建立 store 時才產生的（`createId()`），
- * 測試沒辦法先寫死。所以選取一律**從 store 反查**，不要在測試裡手工組
- * `{armorIndex, partIndex, blockIndex}` —— 那等於把實作細節抄進斷言裡。
+ * 測試沒辦法先寫死。所以選取一律**從 store 反查**，不要在測試裡手工組選取項目
+ * —— 那等於把實作細節抄進斷言裡。
  *
  * @param segmentIndex 依時間排序的第幾個色塊（0 起算）
  */
@@ -101,7 +104,6 @@ export const selectSegment = (store, armor = 0, part = 0, segmentIndex = 0) => {
     armorIndex: armor,
     partIndex: part,
     segment,
-    blockIndex: keyframeIndexOfSegment(timelineOf(store, armor, part), segment),
   });
 
   store.dispatch({
@@ -113,16 +115,13 @@ export const selectSegment = (store, armor = 0, part = 0, segmentIndex = 0) => {
 
 /** 同時選取多個 segment（Shift 多選的結果） */
 export const selectSegments = (store, armor, part, segmentIndexes) => {
-  const timeline = timelineOf(store, armor, part);
-  const selections = segmentIndexes.map((index) => {
-    const segment = segmentsOf(store, armor, part)[index];
-    return makeSelection({
+  const selections = segmentIndexes.map((index) =>
+    makeSelection({
       armorIndex: armor,
       partIndex: part,
-      segment,
-      blockIndex: keyframeIndexOfSegment(timeline, segment),
-    });
-  });
+      segment: segmentsOf(store, armor, part)[index],
+    }),
+  );
 
   store.dispatch({
     type: "UPDATE_MULTI_SELECTED_BLOCKS",

@@ -20,20 +20,22 @@ import {
 } from "./TrackToolbar.jsx";
 import Timeline from "./Timeline.jsx";
 import TimeRuler from "./TimeRuler.jsx";
-import { produce } from "immer";
 import { updateChosenColor, updateCurrentTime } from "../../redux/actions.js";
-import { TICK_MS, LEGACY_BLACK_SENTINEL_MS } from "../../constants/time.js";
-import { insertColorKeyframes } from "../../utils/actionTable/insertColorKeyframes.js";
+import { TICK_MS } from "../../constants/time.js";
+import {
+  insertColorSegment,
+  cloneColor,
+  sameColor,
+} from "../../utils/segments/color.js";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts.js";
-import { useKeyframeActionTable } from "../../hooks/useKeyframeActionTable.js";
+import { useSegmentActionTable } from "../../hooks/useSegmentActionTable.js";
 
 function AudioPlayer({ setButtonState, timelineRef }) {
   const dispatch = useDispatch();
   const showPart = useSelector((state) => state.profiles.showPart);
   const currentTime = useSelector((state) => state.profiles.currentTime);
   const duration = useSelector((state) => state.profiles.duration); // 音樂總長度
-  // Phase 4 過渡橋：store 存 segments，這裡取得 keyframe 視圖 + 寫回用的 commit
-  const { actionTable, commit } = useKeyframeActionTable();
+  const { segmentTable, commit, commitPart } = useSegmentActionTable();
   const chosenColor = useSelector((state) => state.profiles.chosenColor);
   const favoriteColor = useSelector((state) => state.profiles.favoriteColor);
   const isColorChangeActive = useSelector(
@@ -72,32 +74,77 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     elRefs.current = showPart.map((_, i) => elRefs.current[i] || createRef());
   }, [showPart]);
 
+  /**
+   * 把一個顏色套到所有選取的色塊上。
+   *
+   * 調色盤與最愛色（1~8）走的是同一件事，所以只留這一份。
+   *
+   * 兩個細節：
+   *
+   * 固定色的 `colorEnd` 要跟著改，否則之後切成漸變時會漸變到一個使用者從沒
+   * 指定過的舊顏色；漸變段則只改起始色，維持「改的是這一段的顏色」的語意。
+   *
+   * 沒有任何一段真的變色時要回傳**原本那張表**。調色盤的 effect 會在
+   * `segmentTable` 變動後再跑一次，每次都給新陣列的話會不斷推進 history，
+   * 使用者按 Ctrl+Z 要按很多次才回得去。
+   */
+  const applyColorToSelection = (color) => {
+    if (!color || multiSelectedBlocks.length === 0) return;
+
+    // 一次選取原則上不跨軌，但 API 沒有這個保證，所以照部位分組處理
+    const byPart = new Map();
+    for (const { armorIndex, partIndex, segmentId } of multiSelectedBlocks) {
+      const key = `${armorIndex}-${partIndex}`;
+      if (!byPart.has(key)) byPart.set(key, { armorIndex, partIndex, ids: new Set() });
+      byPart.get(key).ids.add(segmentId);
+    }
+
+    let nextTable = segmentTable;
+
+    for (const { armorIndex, partIndex, ids } of byPart.values()) {
+      const segments = nextTable?.[armorIndex]?.[partIndex];
+      if (!segments) continue;
+
+      let changed = false;
+      const nextSegments = segments.map((segment) => {
+        if (!ids.has(segment.id)) return segment;
+
+        const next = cloneColor(color);
+        const keepEnd = segment.linear === 1;
+        // 已經是這個顏色就原樣回傳。少了這道判斷，下面的 effect 會在自己
+        // 寫入之後再跑一次、再產生一份新陣列，然後無限迴圈。
+        if (
+          sameColor(segment.colorStart, next) &&
+          (keepEnd || sameColor(segment.colorEnd, next))
+        ) {
+          return segment;
+        }
+
+        changed = true;
+        return {
+          ...segment,
+          colorStart: next,
+          colorEnd: keepEnd ? segment.colorEnd : next,
+        };
+      });
+      if (!changed) continue;
+
+      nextTable = nextTable.map((armor, a) =>
+        a === armorIndex
+          ? armor.map((segs, p) => (p === partIndex ? nextSegments : segs))
+          : armor,
+      );
+    }
+
+    commit(nextTable); // 相同 reference 時 commit 自己會短路
+  };
+
   useEffect(() => {
     if (isColorChangeActive && multiSelectedBlocks.length > 0 && chosenColor) {
-      // 使用 Immer 深拷贝并更新
-      const updatedActionTable = produce(actionTable, (draft) => {
-        multiSelectedBlocks.forEach(({ armorIndex, partIndex, blockIndex }) => {
-          const timeline = draft[armorIndex][partIndex];
-          if (timeline && timeline[blockIndex]) {
-            timeline[blockIndex].color = chosenColor; // 更新 block 的颜色
-          }
-        });
-      });
-
-      // 通过 Redux 更新 actionTable
-      commit(updatedActionTable);
-
-      console.log("Updated actionTable with new color:", chosenColor);
-
-      // 重置调色状态
+      applyColorToSelection(chosenColor);
     }
-  }, [
-    isColorChangeActive,
-    chosenColor,
-    multiSelectedBlocks,
-    actionTable,
-    dispatch,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isColorChangeActive, chosenColor, multiSelectedBlocks, segmentTable]);
 
   // P0: 進度條改由 waveform.jsx 的 rAF 透過 onTimeUpdate callback 直接操作 DOM（60fps）
   // 移除了 setProgressWidth 的 useEffect，避免播放期間不必要的 re-render
@@ -120,6 +167,13 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     insertFavoriteColorArray(color);
   };
 
+  /**
+   * 在播放位置放一個最愛色的色塊（放在目前選取所在的那條時間軸上）。
+   *
+   * 舊版走 `insertColorKeyframes`，要判斷前後鄰居是不是黑的來決定補幾個哨兵，
+   * 還得守著「時間太靠近 0 就不插入」——因為哨兵在色塊前 10ms，會落到負時間。
+   * segment 模型沒有哨兵也就沒有這個限制，時間 0 一樣放得下去。
+   */
   const insertFavoriteColorArray = (color) => {
     if (multiSelectedBlocks.length === 0) {
       console.warn("No block selected.");
@@ -132,24 +186,12 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     const nowTime = Math.floor(currentTime / TICK_MS) * TICK_MS;
     dispatch(updateCurrentTime(nowTime));
 
-    // 保留原本的守衛：時間太靠近 0 時不插入（黑色斷點會落到負時間）
-    if (nowTime - LEGACY_BLACK_SENTINEL_MS <= 0) return;
-
-    // 容器維持 array（見 utils/actionTable/toNestedArray.js）
-    const updatedActionTable = Array.from(actionTable).map(
-      (player, playerIdx) => {
-        if (playerIdx !== armorIndex) return player;
-        const updatedPlayer = Array.from(player);
-        updatedPlayer[partIndex] = insertColorKeyframes(player[partIndex], {
-          time: nowTime,
-          color,
-          duration,
-        });
-        return updatedPlayer;
-      },
+    const segments = segmentTable?.[armorIndex]?.[partIndex] ?? [];
+    commitPart(
+      armorIndex,
+      partIndex,
+      insertColorSegment(segments, { time: nowTime, color, duration }),
     );
-
-    commit(updatedActionTable); // 更新 Redux
   };
 
   /** B 鍵與效果選單共用的頻閃流程 */
@@ -173,22 +215,11 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     }
   };
 
+  /** 1~8：把最愛色套到選取的色塊上 */
   const handleFavoriteColorChoose = (index) => {
-    if (multiSelectedBlocks.length === 0) return;
-
     const newColor = favoriteColorAt(index);
     if (!newColor) return; // 顏色盤還沒載入
-
-    const updatedActionTable = produce(actionTable, (draft) => {
-      multiSelectedBlocks.forEach(({ armorIndex, partIndex, blockIndex }) => {
-        const timeline = draft[armorIndex]?.[partIndex];
-        if (timeline && timeline[blockIndex]) {
-          timeline[blockIndex].color = { ...newColor };
-        }
-      });
-    });
-
-    commit(updatedActionTable);
+    applyColorToSelection(newColor);
   };
 
   /**

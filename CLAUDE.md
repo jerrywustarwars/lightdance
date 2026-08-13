@@ -181,8 +181,8 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 ```bash
 cd frontend
 npm run dev            # 另一個終端機
-npm run e2e            # 20 項：放色 / 選取 / 剪下 / undo / 快捷鍵 / 重新整理 /
-                       #        拖曳 resize / 刻度尺跳時間 / Output
+npm run e2e            # 22 項：放色 / 選取 / 剪下 / undo / 快捷鍵 / 重新整理 /
+                       #        拖曳 resize / 刻度尺跳時間 / Output / /edit 表格
 npm run audit:layout   # 4 項：控制項被蓋住 / 元素溢出容器 / 提示被裁掉 /
                        #      成對元素沒對齊
 ```
@@ -308,6 +308,17 @@ Edit/Logout 被橫幅蓋住、舞者開關蓋掉 12 個光衣部位、按鈕階�
 
 ## 更新記錄
 
+- **2026-08-13**：**Phase 5g 完成，黑色哨兵從執行路徑消失**。刪掉
+  `withKeyframeAdapter.js` / `useKeyframeActionTable.js` /
+  `insertColorKeyframes.js` / `LEGACY_BLACK_SENTINEL_MS`，以及選取項目上的
+  `blockIndex`——現在 `multiSelectedBlocks` 只帶 `{armorIndex, partIndex, segmentId}`。
+  最後兩個轉接橋使用者原生化：audioplayer 的調色盤／最愛色改走
+  `insertColorSegment`，`EditActionTable` 從關鍵格表格改寫成 segment 表格
+  （start / end / 兩端顏色 / linear），本地那份 JSON 深拷貝歷史換成全域 undo。
+  補上時抓到兩個真的 bug：調色盤 effect 少了「顏色沒變就回傳原陣列」的判斷會
+  **無限重繪**（舊版靠 immer 的結構共享矇混過去）；`EditActionTable.css` 有裸的
+  `button` / `table` 選擇器，一 import 就把首頁標題撐出容器 1237px。
+  e2e 新增 `/edit` 兩項（20 → 22）。測試 336 passed
 - **2026-08-12（晚）**：**UI 設計系統**。CSS 寫死顏色 **287 → 0**（新增
   `styles/tokens.css` 42 個 token + `tokens.test.js` 防腐測試）。編輯器介面
   全面無彩色化：波形去綠、舞者標籤去藍、未儲存橫幅去橘，色塊選取改白色雙層
@@ -402,12 +413,12 @@ actionTable[armor][part] = [
 1. **Phase 0**：vitest + `buildPlayers` 抽出 + golden fixtures（真實本地備份/mongo 指定 timestamp/合成邊界）+ 結構化 diff 比對器——專案零測試，此為動 shape 前提
 2. **Phase 2**：轉換器 `keyframesToSegments`（黑點上網格後丟棄）/ `segmentsToKeyframes`（空隙在網格點熄滅），round-trip 冪等 + 全 fixture 結構化 diff 全綠 = 閘門
 3. **Phase 4 單一原子 PR**：store 換 segments；舊寫入者包 `withKeyframeAdapter`、舊渲染讀 memoized `selectKeyframes`，既有程式碼零改動；三條載入路徑（redux-persist / 遠端 raw_data / IndexedDB 本地備份）走單一遷移入口；persist key bump（root→root_v2）保 deploy 回滾
-4. **Phase 5（5a–5f 已完成）**：逐寫入者 segment 原生化並拆橋。放色、工具列、
-   效果選單、複製貼上、區間平移、拖曳與 resize 全部改成直接操作 segments，
-   `blackSentinel.js`（`ensureBlackBefore` / `removeDuplicateBlackBlocks`）
-   整個檔案已刪除。**5g 尚未做**：`blockIndex`、`withKeyframeAdapter`、
-   `insertColorKeyframes`、`LEGACY_BLACK_SENTINEL_MS` 還在，最後兩個轉接橋
-   使用者是 audioplayer 的最愛色插入與 `EditActionTable`
+4. **Phase 5（5a–5g 全部完成）**：逐寫入者 segment 原生化並拆橋。放色、工具列、
+   效果選單、複製貼上、區間平移、拖曳與 resize 全部改成直接操作 segments。
+   5g 收尾刪掉 `blackSentinel.js`、`withKeyframeAdapter.js`、
+   `useKeyframeActionTable.js`、`insertColorKeyframes.js`、`LEGACY_BLACK_SENTINEL_MS`
+   與選取項目上的 `blockIndex`——**黑色哨兵與陣列索引在執行路徑上完全消失**，
+   keyframe 只剩壓平輸出時存在（`segmentsToKeyframes`）
 5. **Phase 6**：blink 改 `seg.effect` metadata（壓平才展開）、框選、多 segment 拖曳、對齊節拍
 
 ### 注意事項

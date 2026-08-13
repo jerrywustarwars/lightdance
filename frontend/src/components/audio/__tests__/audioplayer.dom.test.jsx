@@ -3,7 +3,11 @@ import { fireEvent, act } from "@testing-library/react";
 import { createRef } from "react";
 
 import AudioPlayer from "../audioplayer.jsx";
-import { updateCurrentTime } from "../../../redux/actions.js";
+import {
+  updateChosenColor,
+  updateCurrentTime,
+  updateIsColorChangeActive,
+} from "../../../redux/actions.js";
 import {
   renderWithStore,
   createTestStore,
@@ -80,7 +84,7 @@ describe("快捷鍵", () => {
   it("P 開啟改色流程（需先有選取）", () => {
     store.dispatch({
       type: "UPDATE_MULTI_SELECTED_BLOCKS",
-      payload: [{ armorIndex: 0, partIndex: 0, blockIndex: 1 }],
+      payload: [{ armorIndex: 0, partIndex: 0, segmentId: null }],
     });
     pressKey("p");
     // 改色流程會把 isColorChangeActive 打開，或至少不應該炸掉
@@ -182,7 +186,7 @@ describe("色塊工具列", () => {
   /**
    * 測試光表的部位 0 有兩個色塊：紅 1000~2000、綠 2000~10000
    * （見 renderEditor.jsx）。選取一律用 selectSegment 從 store 反查，
-   * 不要手工組 `{armorIndex, partIndex, blockIndex}`——segmentId 是
+   * 不要手工組選取項目——segmentId 是
    * 建 store 時才產生的，寫死等於把實作細節抄進斷言。
    */
   const RED_BLOCK = 0;
@@ -374,7 +378,7 @@ describe("Shift + 數字：插入最愛顏色", () => {
           { R: 4, G: 5, B: 6, A: 1 },
         ],
       ],
-      multiSelectedBlocks: [{ armorIndex: 0, partIndex: 0, blockIndex: 1 }],
+      multiSelectedBlocks: [{ armorIndex: 0, partIndex: 0, segmentId: null }],
     });
 
   it("在播放位置插入最愛顏色", () => {
@@ -395,13 +399,56 @@ describe("Shift + 數字：插入最愛顏色", () => {
     // favoriteColor 預設是空陣列，原本的 favoriteColor[0].length 會直接 throw
     const store = createTestStore({
       currentTime: 5000,
-      multiSelectedBlocks: [{ armorIndex: 0, partIndex: 0, blockIndex: 1 }],
+      multiSelectedBlocks: [{ armorIndex: 0, partIndex: 0, segmentId: null }],
     });
     mount(store);
 
     const before = JSON.stringify(timelineOf(store));
     pressKey("!", { shiftKey: true, code: "Digit1" });
     expect(JSON.stringify(timelineOf(store))).toBe(before);
+  });
+});
+
+describe("調色盤改色", () => {
+  /**
+   * 調色盤是靠一個 effect 生效的：`isColorChangeActive` 打開時，把
+   * `chosenColor` 套到選取的色塊上。effect 的依賴裡有光表本身，所以它會在
+   * 自己寫入之後**再跑一次**——第二次必須算出「什麼都沒變」並回傳原陣列，
+   * 否則每次改色都會多推一筆 history，使用者按 Ctrl+Z 要按兩次才回得去。
+   */
+  const CYAN = { R: 0, G: 200, B: 200, A: 1 };
+
+  const storeWithPalette = () => {
+    const store = createTestStore();
+    selectSegment(store, 0, 0, 0); // 紅 1000~2000
+    store.dispatch(updateChosenColor(CYAN));
+    store.dispatch(updateIsColorChangeActive(true));
+    return store;
+  };
+
+  it("把選取的色塊改成調色盤的顏色", () => {
+    const store = storeWithPalette();
+    mount(store);
+
+    const segment = segmentsOf(store)[0];
+    expect(segment.colorStart).toMatchObject({ R: 0, G: 200, B: 200 });
+    // 固定色的兩端要一起改，否則之後切成漸變會漸變到舊顏色
+    expect(segment.colorEnd).toMatchObject({ R: 0, G: 200, B: 200 });
+  });
+
+  it("effect 再跑一次不會多佔一格 history", () => {
+    const store = storeWithPalette();
+    const { rerender } = mount(store);
+
+    const afterFirst = store.getState().profiles.history.length;
+    const segments = segmentsOf(store);
+
+    act(() => {
+      rerender(<div />); // 觸發一輪 render/effect
+    });
+
+    expect(store.getState().profiles.history.length).toBe(afterFirst);
+    expect(segmentsOf(store)).toBe(segments); // reference 都沒換
   });
 });
 
@@ -673,7 +720,7 @@ describe("效果選單與亮度階梯", () => {
 
   it("選取一個色塊後 Apply 會依階梯逐個色塊改透明度", () => {
     const store = createTestStore();
-    // 選第一個色塊（紅 1000~2000）。不要手工組 blockIndex——segmentId 是
+    // 選第一個色塊（紅 1000~2000）。不要手工組選取項目——segmentId 是
     // 建 store 時才產生的，而 Phase 5d 之後效果是靠 segmentId 找目標。
     selectSegment(store, 0, 0, 0);
     mount(store);
@@ -756,7 +803,7 @@ describe("Shift+←/→ 的重疊鍵位（刻意保留）", () => {
     // 測試光表在 2000ms 有綠色塊；從 1000ms 出發
     const store = createTestStore({
       currentTime: 1000,
-      multiSelectedBlocks: [{ armorIndex: 0, partIndex: 0, blockIndex: 1 }],
+      multiSelectedBlocks: [{ armorIndex: 0, partIndex: 0, segmentId: null }],
     });
     mount(store);
 

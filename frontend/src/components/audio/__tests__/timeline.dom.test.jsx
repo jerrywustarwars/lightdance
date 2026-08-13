@@ -140,23 +140,22 @@ describe("選取", () => {
     expect(segment.colorStart).toMatchObject({ R: 0, G: 255, B: 0 });
   });
 
-  it("遷移期仍附上 blockIndex，指向 keyframe 視圖裡的同一格", () => {
+  it("選取項目只帶 segmentId，不帶任何索引", () => {
     /**
-     * `blockIndex` 是給還沒原生化的消費者用的相容欄位（見 utils/selection.js）。
-     * 最後一個消費者改讀 segmentId 之後，這則測試會和欄位一起刪掉。
+     * Phase 5g 之前這裡還有一個 `blockIndex`。索引會位移（鄰居被刪、色塊被
+     * 切開），而且錯了不會報錯只會靜默選錯——鎖住「不准長回來」。
      */
     const store = createTestStore();
     mount(store);
 
-    const colored = blocks().find((el) => bgOf(el).includes("0, 255, 0"));
-    fireEvent.mouseDown(colored);
+    fireEvent.mouseDown(blocks().find((el) => bgOf(el).includes("0, 255, 0")));
 
-    const { blockIndex } = store.getState().profiles.multiSelectedBlocks[0];
-    expect(timelineOf(store)[blockIndex].color).toMatchObject({
-      R: 0,
-      G: 255,
-      B: 0,
-    });
+    const selection = store.getState().profiles.multiSelectedBlocks[0];
+    expect(Object.keys(selection).sort()).toEqual([
+      "armorIndex",
+      "partIndex",
+      "segmentId",
+    ]);
   });
 
   it("點擊空隙不會選取，而且會清空既有選取", () => {
@@ -220,7 +219,7 @@ describe("選取", () => {
 describe("只重算自己的部位", () => {
   it("改動 (0,0) 不會動到 (1,3) 的 segments reference", () => {
     /**
-     * 這是逐部位訂閱的前提：轉接橋必須讓沒被改動的部位沿用原本的 reference，
+     * 這是逐部位訂閱的前提：沒被改動的部位必須沿用原本的 reference，
      * Timeline 才可能只在自己那條變動時重繪。
      */
     const store = createTestStore();
@@ -228,7 +227,7 @@ describe("只重算自己的部位", () => {
 
     store.dispatch({
       type: "UPDATE_MULTI_SELECTED_BLOCKS",
-      payload: [{ armorIndex: 0, partIndex: 0, blockIndex: 1 }],
+      payload: [{ armorIndex: 0, partIndex: 0, segmentId: null }],
     });
     mount(store);
 

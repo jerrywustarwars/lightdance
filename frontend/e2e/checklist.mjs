@@ -448,6 +448,38 @@ const run = async () => {
     await shot(page, "output");
   }
 
+  // ── 原始表格編輯器（/edit）─────────────────────────────
+  // 這頁在 Phase 5g 從 keyframe 整個改寫成 segment，而它沒有元件測試
+  // （唯一的路由入口是網址列）。至少要確認它打得開、看得到資料、改得動。
+  await page.goto(`${BASE}/edit`, { waitUntil: "networkidle" });
+  await page.waitForTimeout(800);
+
+  const rowCount = await page.locator(".edit-container tbody tr").count();
+  record("/edit 列出目前部位的色塊", rowCount > 0, `${rowCount} 列`);
+
+  if (rowCount > 0) {
+    const startInput = page
+      .locator(".edit-container tbody tr input[type='number']")
+      .first();
+    const before = Number(await startInput.inputValue());
+    await startInput.fill(String(before + 500));
+    await startInput.blur();
+    await page.waitForTimeout(400);
+
+    const after = Number(
+      await page
+        .locator(".edit-container tbody tr input[type='number']")
+        .first()
+        .inputValue(),
+    );
+    record(
+      "/edit 改起始時間會寫回 store",
+      after === before + 500,
+      `${before} → ${after}`,
+    );
+    await shot(page, "edit-table");
+  }
+
   writeFileSync(join(OUT, "console-errors.txt"), errors.join("\n") || "(無)");
   const unexpected = errors.filter(
     // Dashboard 那則是導航中斷造成的，音訊相關的是 headless 環境限制

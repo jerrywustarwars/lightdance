@@ -4,11 +4,12 @@ import { useDispatch, useSelector, useStore } from "react-redux";
 import { updateActionTable } from "../redux/actions.js";
 
 /**
- * segment 原生的光表存取 —— **Phase 5 的目標形狀**。
+ * segment 原生的光表存取 —— **全專案唯一的光表讀寫入口**。
  *
- * 和 `useKeyframeActionTable` 的差別：那個是過渡橋，每次讀寫都要在 segment 與
- * keyframe 之間來回轉一趟；這裡直接給 store 裡的東西，寫回也直接寫 segments。
- * 轉換成本歸零，而且不會因為來回轉換而讓 id 或索引漂移。
+ * Phase 4 到 5f 之間還有一個 `useKeyframeActionTable` 轉接橋，讓還在用
+ * keyframe 思考的舊程式碼能繼續運作；每次讀寫都要在兩種形狀之間來回轉一趟，
+ * 而來回轉換會讓 segment 的 id 漂移。5g 把最後兩個使用者改完之後那個檔案
+ * 已經刪除，現在讀寫都是 store 裡原本的東西，轉換成本歸零。
  *
  * 三種粒度，選最小的那個：
  *

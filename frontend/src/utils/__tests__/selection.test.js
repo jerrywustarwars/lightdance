@@ -4,7 +4,6 @@ import {
   findSegmentById,
   isSameSelection,
   isSelectionOnPart,
-  keyframeIndexOfSegment,
   makeSelection,
   resolveSelections,
   selectedIdsOnPart,
@@ -31,15 +30,10 @@ const segment = (id, start, end) => ({
 const SEGMENTS = [segment("a", 0, 1000), segment("b", 2000, 3000)];
 
 describe("makeSelection", () => {
-  it("帶上 segmentId 與遷移期的 blockIndex", () => {
+  it("只帶 segmentId，不帶任何索引", () => {
     expect(
-      makeSelection({
-        armorIndex: 1,
-        partIndex: 2,
-        segment: SEGMENTS[0],
-        blockIndex: 5,
-      }),
-    ).toEqual({ armorIndex: 1, partIndex: 2, segmentId: "a", blockIndex: 5 });
+      makeSelection({ armorIndex: 1, partIndex: 2, segment: SEGMENTS[0] }),
+    ).toEqual({ armorIndex: 1, partIndex: 2, segmentId: "a" });
   });
 
   it("沒有 segment 時 segmentId 是 null，而不是 undefined", () => {
@@ -67,13 +61,11 @@ describe("id 不會因為鄰居被編輯而指錯人", () => {
       armorIndex: 0,
       partIndex: 0,
       segment: before[1],
-      blockIndex: 1,
     });
 
     const after = before.slice(1); // 刪掉 "a"
 
-    // 索引 1 現在指向不存在的東西，但 id 還是對的
-    expect(after[selection.blockIndex]).toBeUndefined();
+    // 這一段從索引 1 變成索引 0，但 id 沒動
     expect(findSegmentById(after, selection.segmentId)).toBe(after[0]);
   });
 
@@ -151,37 +143,5 @@ describe("resolveSelections", () => {
 
     expect(resolved).toHaveLength(1);
     expect(resolved[0].segment.id).toBe("a");
-  });
-});
-
-describe("keyframeIndexOfSegment（遷移期相容）", () => {
-  // 空隙結束時會在網格點發一個黑關鍵格，可能與下一段的起點同時間
-  const timeline = [
-    { time: 0, color: { R: 0, G: 0, B: 0, A: 1 }, linear: 0 },
-    { time: 2000, color: RED, linear: 0 },
-    { time: 3000, color: { R: 0, G: 0, B: 0, A: 1 }, linear: 0 },
-  ];
-
-  it("找出 segment 起點對應的關鍵格", () => {
-    expect(keyframeIndexOfSegment(timeline, segment("b", 2000, 3000))).toBe(1);
-  });
-
-  it("同時間的黑關鍵格不會被誤選", () => {
-    const withBlackAtSameTime = [
-      { time: 2000, color: { R: 0, G: 0, B: 0, A: 1 }, linear: 0 },
-      { time: 2000, color: RED, linear: 0 },
-    ];
-
-    expect(
-      keyframeIndexOfSegment(withBlackAtSameTime, segment("b", 2000, 3000)),
-    ).toBe(1);
-  });
-
-  it("找不到回傳 -1", () => {
-    expect(keyframeIndexOfSegment(timeline, segment("x", 9999, 10000))).toBe(
-      -1,
-    );
-    expect(keyframeIndexOfSegment(undefined, SEGMENTS[0])).toBe(-1);
-    expect(keyframeIndexOfSegment(timeline, null)).toBe(-1);
   });
 });

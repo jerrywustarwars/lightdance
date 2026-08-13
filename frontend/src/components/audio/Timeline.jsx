@@ -7,7 +7,6 @@ import {
   updateMoveMode,
   updateCurrentTime,
 } from "../../redux/actions";
-import { useKeyframePartTimeline } from "../../hooks/useKeyframeActionTable.js";
 import { useSegmentPartTimeline } from "../../hooks/useSegmentActionTable.js";
 import { buildTimelineBlocks } from "../../utils/segments/blocks.js";
 import {
@@ -16,11 +15,7 @@ import {
   MIN_BLOCK_GAP_MS,
   MIN_SEGMENT_MS,
 } from "../../utils/segments/gestures.js";
-import {
-  keyframeIndexOfSegment,
-  makeSelection,
-  selectedIdsOnPart,
-} from "../../utils/selection.js";
+import { makeSelection, selectedIdsOnPart } from "../../utils/selection.js";
 
 // cloneDeep 已移除：tempActionTable cascade 已合併，drag 復原時再加回
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -66,16 +61,7 @@ const Timeline = forwardRef(
     // 只訂閱**自己這一個部位**。訂閱整張表的話，任何地方的編輯都會換掉
     // reference，154 條 Timeline 全部重算 blocks 並各自 dispatch 一次——
     // 現在只有真的被改到的那條會動。
-    //
-    // 兩份視圖並存是**遷移期的暫時狀態**（見 utils/selection.js）：
-    //   - segments：渲染、選取、拖曳與 resize 都走這一份
-    //   - partTimeline：只剩 selection 的 `blockIndex` 相容欄位要用（Phase 5g 會刪）
-    // 兩者來自同一個 store slice，keyframe 那份是逐部位快取的，成本可忽略。
     const { segments, commitPart: commitSegments } = useSegmentPartTimeline(
-      armorIndex,
-      partIndex,
-    );
-    const { timeline: partTimeline, commitPart } = useKeyframePartTimeline(
       armorIndex,
       partIndex,
     );
@@ -96,10 +82,8 @@ const Timeline = forwardRef(
     const moveDragPixelsRef = useRef(0);     // 目前拖曳偏移像素
     const blockDomRefs = useRef({});         // index → DOM element
     // 用 ref 保持最新值供 useEffect 閉包使用
-    const partTimelineRef = useRef(partTimeline);
     const segmentsRef = useRef(segments);
     const durationRef = useRef(duration);
-    useEffect(() => { partTimelineRef.current = partTimeline; }, [partTimeline]);
     useEffect(() => { segmentsRef.current = segments; }, [segments]);
     useEffect(() => { durationRef.current = duration; }, [duration]);
 
@@ -309,23 +293,12 @@ const Timeline = forwardRef(
         ? (segments.find((s) => s.id === block.segmentId) ?? null)
         : null;
 
-    /**
-     * 把一個 block 包成選取項目。
-     *
-     * `blockIndex` 是遷移期欄位，給還沒原生化的消費者用（TrackToolbar、
-     * EffectMenu、CopyPasteManager…）。等它們都改讀 `segmentId` 之後，
-     * 這裡連同 `keyframeIndexOfSegment` 一起刪掉。
-     */
+    /** 把一個 block 包成選取項目（空隙回傳 null） */
     const selectionForBlock = (block) => {
       const segment = segmentOfBlock(block);
       if (!segment) return null;
 
-      return makeSelection({
-        armorIndex,
-        partIndex,
-        segment,
-        blockIndex: keyframeIndexOfSegment(partTimeline, segment),
-      });
+      return makeSelection({ armorIndex, partIndex, segment });
     };
 
     /** 目前這條時間軸上被選中的 segmentId（渲染時逐 block 判斷用） */
@@ -465,14 +438,9 @@ const Timeline = forwardRef(
 
         dispatch(
           updateMultiSelectedBlocks(
-            segments.slice(from, to + 1).map((segment) =>
-              makeSelection({
-                armorIndex,
-                partIndex,
-                segment,
-                blockIndex: keyframeIndexOfSegment(partTimeline, segment),
-              }),
-            ),
+            segments
+              .slice(from, to + 1)
+              .map((segment) => makeSelection({ armorIndex, partIndex, segment })),
           ),
         );
       } else {
