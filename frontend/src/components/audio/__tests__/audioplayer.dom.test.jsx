@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { fireEvent } from "@testing-library/react";
+import { fireEvent, act } from "@testing-library/react";
 import { createRef } from "react";
 
 import AudioPlayer from "../audioplayer.jsx";
+import { updateCurrentTime } from "../../../redux/actions.js";
 import {
   renderWithStore,
   createTestStore,
@@ -94,25 +95,30 @@ describe("快捷鍵", () => {
 });
 
 describe("複製貼上", () => {
-  const selected = (blockIndex = 1, armorIndex = 0, partIndex = 0) => [
-    { armorIndex, partIndex, blockIndex },
-  ];
+  /*
+   * Phase 5e：剪貼簿存的是 segments（`clipboard.segments`），不再是壓平的
+   * keyframe 陣列。選取一律用 selectSegment 從 store 反查 id。
+   */
 
   it("Ctrl+C 存入剪貼簿並進入複製模式", () => {
-    const store = createTestStore({ multiSelectedBlocks: selected() });
+    const store = createTestStore();
+    selectSegment(store, 0, 0, 0);
     mount(store);
 
     expect(document.querySelector(".copy-mode-banner")).toBeFalsy();
     pressKey("c", { ctrlKey: true });
 
-    expect(store.getState().profiles.clipboard?.data.length).toBeGreaterThan(0);
+    const clipboard = store.getState().profiles.clipboard;
+    expect(clipboard.kind).toBe("segments");
+    expect(clipboard.segments.length).toBeGreaterThan(0);
     expect(document.querySelector(".copy-mode-banner")).toBeTruthy();
   });
 
   it("Esc 離開複製模式並清空選取", () => {
     vi.useFakeTimers();
     try {
-      const store = createTestStore({ multiSelectedBlocks: selected() });
+      const store = createTestStore();
+      selectSegment(store, 0, 0, 0);
       mount(store);
 
       pressKey("c", { ctrlKey: true });
@@ -128,23 +134,47 @@ describe("複製貼上", () => {
   });
 
   it("Shift+C 複製整個部位、Shift+V 覆蓋到另一個部位", () => {
-    const store = createTestStore({ multiSelectedBlocks: selected() });
+    const store = createTestStore();
+    selectSegment(store, 0, 0, 0);
     mount(store);
 
     pressKey("C", { shiftKey: true });
-    const copied = store.getState().profiles.clipboard.data;
-    expect(copied.length).toBe(timelineOf(store, 0, 0).length);
+    const copied = store.getState().profiles.clipboard.segments;
+    expect(copied.length).toBe(segmentsOf(store, 0, 0).length);
 
     // 換選到另一個部位再貼上（防彈跳需等 100ms 以上，這裡直接改 store）
-    store.dispatch({
-      type: "UPDATE_MULTI_SELECTED_BLOCKS",
-      payload: selected(0, 1, 0),
-    });
+    selectSegment(store, 1, 0, 0);
     // 重新掛載讓 handler 讀到新的選取
     mount(store);
     pressKey("V", { shiftKey: true });
 
-    expect(timelineOf(store, 1, 0).length).toBe(copied.length);
+    const pasted = segmentsOf(store, 1, 0);
+    expect(pasted.length).toBe(copied.length);
+    // 貼上的是**副本**：時間與顏色一樣，但 id 全部換新，
+    // 否則選取與 undo diff 會同時指到兩個部位
+    expect(pasted.map((s) => s.start)).toEqual(copied.map((s) => s.start));
+    expect(pasted.some((s) => copied.some((c) => c.id === s.id))).toBe(false);
+  });
+
+  it("Ctrl+V 以選取色塊的起點對齊貼上，覆蓋掉衝突區間", () => {
+    const store = createTestStore();
+    selectSegment(store, 0, 0, 0); // 紅 1000~2000
+    mount(store);
+    pressKey("c", { ctrlKey: true });
+
+    // 貼到第二段（綠 2000~10000）的起點
+    selectSegment(store, 0, 0, 1);
+    mount(store);
+    pressKey("v", { ctrlKey: true });
+
+    const segments = segmentsOf(store, 0, 0);
+    // 紅色副本落在 2000，長度不變（1000ms）
+    const pastedRed = segments.find((s) => s.start === 2000);
+    expect(pastedRed.colorStart.R).toBe(255);
+    expect(pastedRed.end).toBe(3000);
+    // 原本佔著 2000~10000 的綠色被裁掉前段，從 3000 開始
+    const green = segments.find((s) => s.colorStart.G === 255);
+    expect(green.start).toBe(3000);
   });
 });
 
@@ -394,6 +424,69 @@ describe("區間平移工具", () => {
       "[2/3]",
     );
     expect(document.querySelector(".shift-marker.start-marker")).toBeTruthy();
+  });
+
+  /**
+   * Phase 5e：平移搬的是**整個色塊**，不再是壓平出來的關鍵格。
+   *
+   * 舊版搬「點」可以把一個色塊拆開（搬走開頭、留下結尾的黑點），
+   * 這裡守住「整段一起走、落點的舊色塊讓位」。
+   */
+  it("整段一起搬，落點的舊色塊讓位", () => {
+    const store = createTestStore({ currentTime: 0 });
+    mount(store);
+
+    // 測試光表：紅 1000~2000、綠 2000~10000
+    const before = segmentsOf(store, 0, 0);
+    expect(before.map((s) => s.start)).toEqual([1000, 2000]);
+
+    // 三步驟：起點 1000 → 終點 1500 → 目標 5000
+    const openWizard = () =>
+      fireEvent.click(
+        document.querySelector(".shift-tool-wrapper .shift-main-button"),
+      );
+    const confirm = () =>
+      fireEvent.click(document.querySelector(".shift-confirm-btn"));
+
+    // 播放位置就是這個精靈的游標，每一步都要讓元件真的重繪後再按下一步，
+    // 否則 handler 讀到的還是上一輪的 currentTime
+    // 用 action creator 而不是手打 type 字串——reducer 的命名並不一致
+    // （UPDATECURRENTTIME 沒有底線、UPDATE_MULTI_SELECTED_BLOCKS 有），
+    // 打錯的話 dispatch 會靜靜地什麼都不做，測試就會為了錯誤的理由變綠或變紅。
+    const seek = (ms) =>
+      act(() => {
+        store.dispatch(updateCurrentTime(ms));
+      });
+
+    openWizard();
+    seek(1000);
+    confirm(); // 記下起點
+    seek(1500);
+    confirm(); // 記下終點
+    seek(5000);
+    confirm(); // 執行
+
+    const after = segmentsOf(store, 0, 0);
+    const red = after.find((s) => s.colorStart.R === 255);
+    const green = after.find((s) => s.colorStart.G === 255);
+
+    // 紅色整段搬到 5000，長度保持 1000ms（不會只搬開頭）
+    expect(red.start).toBe(5000);
+    expect(red.end).toBe(6000);
+
+    // 原本佔著 2000~10000 的綠色在落點區間讓位，被切成兩段
+    const greens = after.filter((s) => s.colorStart.G === 255);
+    expect(greens).toHaveLength(2);
+    expect(greens[0]).toMatchObject({ start: 2000, end: 5000 });
+    expect(greens[1]).toMatchObject({ start: 6000, end: 10000 });
+    expect(green).toBeTruthy();
+
+    // 沒有任何純黑 segment——熄滅是空隙，不是資料
+    expect(
+      after.filter(
+        (s) => !s.colorStart.R && !s.colorStart.G && !s.colorStart.B,
+      ),
+    ).toHaveLength(0);
   });
 
   it("結束點不大於起始點時擋下並留在原步驟", () => {

@@ -808,14 +808,14 @@ const Timeline = forwardRef(
         // A. 判斷是否為「貼上目標」(綠色)：在複製模式下且被點擊選中
         const isPasteTarget = isCopying && isCurrentlyInMultiSelect;
 
-        // B. 判斷是否為「複製來源」(橘色)：從剪貼簿讀取當初 Ctrl+C 的位置
+        // B. 判斷是否為「複製來源」（白色虛線 ring）：從剪貼簿讀取當初 Ctrl+C 的位置
         const isCopySource = isCopying && !!block.segmentId && clipboard?.sourceBlocks?.some(b =>
           b.armorIndex === armorIndex &&
           b.partIndex === partIndex &&
           b.segmentId === block.segmentId
         );
 
-        // C. 判斷是否為「普通選取」(橘色)：非複製模式下的正常選取
+        // C. 判斷是否為「普通選取」（白色實線 ring）：非複製模式下的正常選取
         const isNormalSelected = !isCopying && isCurrentlyInMultiSelect;
 
         // --- 2. 顏色與樣式邏輯 ---

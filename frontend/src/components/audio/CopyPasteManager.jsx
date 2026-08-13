@@ -1,17 +1,13 @@
 import { useState } from "react";
-import { useDispatch, useSelector, useStore } from "react-redux";
-import { produce } from "immer";
+import { useDispatch, useSelector } from "react-redux";
 
 import {
   updateClipboard,
   updateMultiSelectedBlocks,
 } from "../../redux/actions.js";
-import { TICK_MS } from "../../constants/time.js";
-import {
-  ensureBlackBefore,
-  removeDuplicateBlackBlocks,
-} from "../../utils/actionTable/blackSentinel.js";
-import { useKeyframeActionTable } from "../../hooks/useKeyframeActionTable.js";
+import { roundToTick, clearRange, createId } from "../../utils/segments/core.js";
+import { makeSelection, resolveSelections } from "../../utils/selection.js";
+import { useSegmentActionTable } from "../../hooks/useSegmentActionTable.js";
 
 /**
  * 複製貼上：兩種粒度、兩種貼上對齊方式。
@@ -19,222 +15,156 @@ import { useKeyframeActionTable } from "../../hooks/useKeyframeActionTable.js";
  * | 操作 | 快捷鍵 | 行為 |
  * |---|---|---|
  * | 複製區間 | Ctrl+C | 把選取的色塊範圍存進剪貼簿，並進入「複製模式」 |
- * | 貼到選取處 | Ctrl+V | 以選取色塊的時間為基準對齊貼上 |
+ * | 貼到選取處 | Ctrl+V | 以選取色塊的起點為基準對齊貼上 |
  * | 原時間貼上 | Ctrl+Shift+V | 保持原本的時間位置貼上（貼到另一個部位用） |
  * | 複製整個部位 | Shift+C | 整條 timeline 存進剪貼簿 |
  * | 覆蓋整個部位 | Shift+V | 整條 timeline 覆蓋過去 |
  *
  * `isCopying`（複製模式）是純 UI 狀態——Timeline 靠它顯示來源標記、
  * 頂端顯示提示橫幅——所以留在元件裡用 hook 傳遞，不進 Redux。
+ *
+ * ## Phase 5e：改成 segment 原生
+ *
+ * 舊版在壓平出來的 keyframe 陣列上操作，貼上一次要做四件跟黑點有關的事：
+ * 平移時「有色點對齊網格、黑點保持原偏移」、清衝突時「衝突結束後緊跟的黑塊
+ * 也要刪」、插入後「檢查起點前方需不需要補黑點」（`ensureBlackBefore`）、
+ * 最後再跑一次 `removeDuplicateBlackBlocks` 收拾殘留。
+ *
+ * segment 模型裡這四件事全部消失：熄滅就是段與段之間的空隙，貼上就是
+ * 「把要貼的區間清空，再把平移過的段放進去」。`clearRange` 連被切成兩半的
+ * 情況都處理好了。
  */
 
-const isBlack = (point) =>
-  (point.color?.R ?? 0) === 0 &&
-  (point.color?.G ?? 0) === 0 &&
-  (point.color?.B ?? 0) === 0;
+/** 剪貼簿內容的格式標記。舊格式（keyframe 陣列）一律視為空。 */
+const CLIPBOARD_KIND = "segments";
 
 export function useCopyPaste() {
   const dispatch = useDispatch();
-  const store = useStore();
-  // Phase 4 過渡橋：store 存 segments，這裡取得 keyframe 視圖 + 寫回用的 commit
-  const { actionTable, commit } = useKeyframeActionTable();
-  const duration = useSelector((state) => state.profiles.duration);
+  const { segmentTable, commitPart } = useSegmentActionTable();
   const clipboard = useSelector((state) => state.profiles.clipboard);
   const multiSelectedBlocks = useSelector(
     (state) => state.profiles.multiSelectedBlocks,
   );
 
-  // `data.selectedBlock` 與 `timelineBlocks` 只有在按下複製時才會用到，
-  // 訂閱它們純粹是浪費：每次編輯都會 dispatch 好幾次 UPDATETIMELINEBLOCKS
-  //（一個可見的 Timeline 一次），訂閱整包等於讓整個 audioplayer 跟著重繪。
-  // 改成呼叫時才從 store 現讀。
-
   // 複製模式：Timeline 靠它顯示來源標記，純 UI 狀態不進 Redux
   const [isCopying, setIsCopying] = useState(false);
 
+  /** 選取所在的部位與它的 segments */
+  const activePart = multiSelectedBlocks[0] ?? null;
+  const activeSegments = activePart
+    ? (segmentTable?.[activePart.armorIndex]?.[activePart.partIndex] ?? [])
+    : [];
+
+  /** 剪貼簿裡有沒有這個版本認得的資料 */
+  const hasClipboard =
+    clipboard?.kind === CLIPBOARD_KIND && clipboard.segments?.length > 0;
+
   /** Ctrl+C：複製選取的區間 */
   const copyRange = () => {
-    let startTime, endTime, armorIndex, partIndex;
-    let sourceBlocksInfo = [];
-
-    // 1. 優先檢查是否有多選 (Shift 多選)
-    if (multiSelectedBlocks && multiSelectedBlocks.length > 0) {
-      const firstBlockPos = multiSelectedBlocks[0];
-      armorIndex = firstBlockPos.armorIndex;
-      partIndex = firstBlockPos.partIndex;
-      sourceBlocksInfo = multiSelectedBlocks;
-
-      const timelineDataForCopy = actionTable[armorIndex][partIndex];
-      const selectedIndices = multiSelectedBlocks.map((b) => b.blockIndex);
-      const minIdx = Math.min(...selectedIndices);
-      const maxIdx = Math.max(...selectedIndices);
-
-      startTime = timelineDataForCopy[minIdx].time;
-      endTime = timelineDataForCopy[maxIdx + 1]?.time ?? duration;
-    }
-    // 2. 如果沒有多選，檢查是否有單選 (點擊單個 Block)
-    else if (
-      multiSelectedBlocks.length === 0 &&
-      store.getState().profiles.data?.selectedBlock?.armorIndex !== undefined
-    ) {
-      const sBlock = store.getState().profiles.data.selectedBlock;
-      armorIndex = sBlock.armorIndex;
-      partIndex = sBlock.partIndex;
-      sourceBlocksInfo = [sBlock]; // 單選包裝成陣列，讓渲染邏輯統一
-
-      const block =
-        store.getState().profiles.timelineBlocks?.[armorIndex]?.[partIndex]?.[
-          sBlock.blockIndex
-        ];
-      if (!block) {
-        console.warn("找不到選中的方塊資料");
-        return;
-      }
-
-      startTime = block.startTime;
-      endTime = block.startTime + block.durationTime;
-    } else {
-      console.warn("請先選取方塊再進行複製。");
+    const selected = resolveSelections(multiSelectedBlocks, activeSegments);
+    if (selected.length === 0) {
+      console.warn("請先選取色塊再進行複製。");
       return;
     }
 
-    // 3. 從 actionTable 提取資料
-    const timelineData = actionTable[armorIndex][partIndex];
-    const copiedPoints = timelineData.filter(
-      (p) => p.time >= startTime && p.time <= endTime,
-    );
+    const segments = selected.map((entry) => entry.segment);
+    const startTime = segments[0].start;
+    const endTime = segments[segments.length - 1].end;
 
-    if (copiedPoints.length === 0) return;
-
-    // 4. 存入剪貼簿
     dispatch(
       updateClipboard({
-        type: "range_fixed_time",
-        data: JSON.parse(JSON.stringify(copiedPoints)),
+        kind: CLIPBOARD_KIND,
+        segments: segments.map((segment) => ({ ...segment })),
         startTime,
         endTime,
-        sourceBlocks: sourceBlocksInfo,
+        sourceArmorIndex: activePart.armorIndex,
+        sourcePartIndex: activePart.partIndex,
+        // Timeline 靠這個畫「來源」標記
+        sourceBlocks: multiSelectedBlocks,
+        timestamp: Date.now(),
       }),
     );
 
     setIsCopying(true); // 進入模式，讓 Timeline 顯示標記
   };
 
-  /** 把剪貼簿內容平移 `offset` 後貼進目標部位，覆蓋衝突區間 */
-  const executePaste = (targetArmor, targetPart, offset, copiedData) => {
-    const updatedActionTable = produce(actionTable, (draft) => {
-      const timeline = draft[targetArmor][targetPart];
-      if (!Array.isArray(timeline)) return;
+  /**
+   * 把剪貼簿內容平移 `offset` 後貼進目標部位，覆蓋衝突區間。
+   *
+   * 每一段都會重新產生 id：貼上的是**副本**，跟來源是不同的色塊。沿用舊 id
+   * 會讓選取、undo diff 指到兩個地方。
+   */
+  const executePaste = (targetArmor, targetPart, offset) => {
+    const moved = clipboard.segments.map((segment) => ({
+      ...segment,
+      id: createId(),
+      start: roundToTick(segment.start + offset),
+      end: roundToTick(segment.end + offset),
+    }));
 
-      // A. 產生平移後的點，有色區塊強制對齊網格（黑點保持原本的偏移）
-      const movedPoints = copiedData.map((p) => {
-        const newTime = p.time + offset;
-        return {
-          ...p,
-          time: isBlack(p) ? newTime : Math.round(newTime / TICK_MS) * TICK_MS,
-        };
-      });
-      const newStart = movedPoints[0].time;
-      const newEnd = movedPoints[movedPoints.length - 1].time;
+    const newStart = moved[0].start;
+    const newEnd = moved[moved.length - 1].end;
 
-      // B. 清理衝突區間：移除目標部位在 [newStart, newEnd] 內的所有點
-      const indicesToRemove = new Set();
-      let lastConflictIdx = -1;
-      timeline.forEach((item, idx) => {
-        if (item.time >= newStart && item.time <= newEnd) {
-          indicesToRemove.add(idx);
-          lastConflictIdx = idx;
-        }
-      });
+    const target = segmentTable?.[targetArmor]?.[targetPart] ?? [];
+    const next = [...clearRange(target, newStart, newEnd), ...moved].sort(
+      (a, b) => a.start - b.start,
+    );
 
-      // 衝突後方黑塊清理：如果衝突結束後緊跟黑塊，也刪除
-      if (lastConflictIdx !== -1 && lastConflictIdx + 1 < timeline.length) {
-        if (isBlack(timeline[lastConflictIdx + 1])) {
-          indicesToRemove.add(lastConflictIdx + 1);
-        }
-      }
-
-      let nextTimeline = timeline.filter((_, idx) => !indicesToRemove.has(idx));
-
-      // C. 插入點位並排序
-      nextTimeline = [...nextTimeline, ...movedPoints].sort(
-        (a, b) => a.time - b.time,
-      );
-
-      // D. 智慧黑點緩衝 (檢查起點前方是否需要黑點)
-      const firstColorPoint = movedPoints.find((p) => !isBlack(p));
-      if (firstColorPoint) {
-        ensureBlackBefore(nextTimeline, firstColorPoint.time);
-      }
-
-      draft[targetArmor][targetPart] = nextTimeline.sort(
-        (a, b) => a.time - b.time,
-      );
-    });
-
-    // E. 全域重複清理並更新 Redux
-    commit(removeDuplicateBlackBlocks(updatedActionTable));
+    commitPart(targetArmor, targetPart, next);
     setIsCopying(false);
-    dispatch(updateMultiSelectedBlocks([]));
+
+    // 貼上之後選取貼進去的第一段，接著可以直接繼續編輯
+    dispatch(
+      updateMultiSelectedBlocks([
+        makeSelection({
+          armorIndex: targetArmor,
+          partIndex: targetPart,
+          segment: moved[0],
+        }),
+      ]),
+    );
   };
 
-  /** Ctrl+V：以選取色塊的時間為基準對齊貼上 */
+  /** Ctrl+V：以選取色塊的起點為基準對齊貼上 */
   const pasteAlignedToTarget = () => {
-    if (!clipboard || multiSelectedBlocks.length === 0) return;
+    if (!hasClipboard) return;
+    const selected = resolveSelections(multiSelectedBlocks, activeSegments);
+    if (selected.length === 0) return;
 
-    const {
-      armorIndex: targetArmor,
-      partIndex: targetPart,
-      blockIndex: targetBlockIdx,
-    } = multiSelectedBlocks[0];
-    const targetTime =
-      actionTable[targetArmor][targetPart][targetBlockIdx]?.time ?? 0;
-
-    // 計算偏移量：使用第一個有色區塊時間，避免黑點非對齊時間污染 offset
-    const firstColorPoint = clipboard.data.find((p) => !isBlack(p));
-    const firstTime = firstColorPoint
-      ? firstColorPoint.time
-      : clipboard.data[0].time;
-
+    const targetStart = selected[0].segment.start;
     executePaste(
-      targetArmor,
-      targetPart,
-      targetTime - firstTime,
-      clipboard.data,
+      activePart.armorIndex,
+      activePart.partIndex,
+      targetStart - clipboard.startTime,
     );
   };
 
   /** Ctrl+Shift+V：保持原本的時間位置貼上 */
   const pasteAtFixedTime = () => {
-    if (!clipboard || multiSelectedBlocks.length === 0) return;
-    executePaste(
-      multiSelectedBlocks[0].armorIndex,
-      multiSelectedBlocks[0].partIndex,
-      0,
-      clipboard.data,
-    );
+    if (!hasClipboard || !activePart) return;
+    executePaste(activePart.armorIndex, activePart.partIndex, 0);
   };
 
   /** Shift+C：複製整個部位的 timeline */
   const copyWholePart = () => {
-    if (multiSelectedBlocks.length === 0) {
-      console.warn("No block selected. Cannot copy.");
+    if (!activePart) {
+      console.warn("請先選取色塊，才知道要複製哪個部位。");
       return;
     }
-
-    const { armorIndex, partIndex } = multiSelectedBlocks[0];
-    const timeline = actionTable?.[armorIndex]?.[partIndex];
-
-    if (!timeline || timeline.length === 0) {
-      console.warn("No timeline data found for the selected block.");
+    if (activeSegments.length === 0) {
+      console.warn("這個部位沒有任何色塊。");
       return;
     }
 
     dispatch(
       updateClipboard({
-        data: JSON.parse(JSON.stringify(timeline)),
-        sourceArmorIndex: armorIndex,
-        sourcePartIndex: partIndex,
+        kind: CLIPBOARD_KIND,
+        segments: activeSegments.map((segment) => ({ ...segment })),
+        startTime: activeSegments[0].start,
+        endTime: activeSegments[activeSegments.length - 1].end,
+        sourceArmorIndex: activePart.armorIndex,
+        sourcePartIndex: activePart.partIndex,
+        sourceBlocks: [],
         timestamp: Date.now(),
       }),
     );
@@ -242,39 +172,34 @@ export function useCopyPaste() {
 
   /** Shift+V：整條 timeline 覆蓋到目標部位 */
   const pasteWholePart = () => {
-    if (!clipboard || !clipboard.data || clipboard.data.length === 0) {
-      console.warn("Clipboard is empty. Nothing to paste.");
+    if (!hasClipboard) {
+      console.warn("剪貼簿是空的。");
+      return;
+    }
+    if (!activePart) {
+      console.warn("請先選取色塊，才知道要貼到哪個部位。");
       return;
     }
 
-    if (multiSelectedBlocks.length === 0) {
-      console.warn("No block selected. Cannot determine paste target.");
-      return;
-    }
+    // 整個部位覆蓋掉，一樣要換新 id（貼上的是副本）
+    const pasted = clipboard.segments.map((segment) => ({
+      ...segment,
+      id: createId(),
+    }));
 
-    const { armorIndex: targetArmorIndex, partIndex: targetPartIndex } =
-      multiSelectedBlocks[0];
-
-    const pastedData = JSON.parse(JSON.stringify(clipboard.data));
-
-    const updatedActionTable = produce(actionTable, (draft) => {
-      // 完全覆蓋目標部位的 timeline
-      draft[targetArmorIndex][targetPartIndex] = pastedData;
-    });
-
-    commit(updatedActionTable);
-
-    // 貼上後，選中目標部位的第一個有效方塊（非黑色）
-    const firstColorIndex = pastedData.findIndex((block) => !isBlack(block));
-
+    commitPart(activePart.armorIndex, activePart.partIndex, pasted);
     dispatch(
-      updateMultiSelectedBlocks([
-        {
-          armorIndex: targetArmorIndex,
-          partIndex: targetPartIndex,
-          blockIndex: firstColorIndex === -1 ? 0 : firstColorIndex,
-        },
-      ]),
+      updateMultiSelectedBlocks(
+        pasted.length
+          ? [
+              makeSelection({
+                armorIndex: activePart.armorIndex,
+                partIndex: activePart.partIndex,
+                segment: pasted[0],
+              }),
+            ]
+          : [],
+      ),
     );
   };
 

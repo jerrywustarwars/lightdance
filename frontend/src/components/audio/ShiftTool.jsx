@@ -6,15 +6,10 @@ import {
   faCheck,
   faTimes,
 } from "@fortawesome/free-solid-svg-icons";
-import { produce } from "immer";
-
 import { updateCurrentTime } from "../../redux/actions.js";
-import { useKeyframeActionTable } from "../../hooks/useKeyframeActionTable.js";
+import { useSegmentActionTable } from "../../hooks/useSegmentActionTable.js";
 import { TICK_MS } from "../../constants/time.js";
-import {
-  ensureBlackBefore,
-  removeDuplicateBlackBlocks,
-} from "../../utils/actionTable/blackSentinel.js";
+import { clearRange } from "../../utils/segments/core.js";
 
 /**
  * 區間平移工具：把一段時間內所有舞者、所有部位的光點整批搬到別的時間。
@@ -25,17 +20,22 @@ import {
  * 狀態放在 `useTimeShift()`，因為按鈕在工具列、起訖標記在時間軸上，
  * 兩處要看同一份 step/times；外殼呼叫一次 hook，再把回傳值分別餵給
  * `<ShiftToolButton>` 和 `<ShiftMarkers>`。
+ *
+ * ## Phase 5e：改成 segment 原生
+ *
+ * 舊版在壓平的 keyframe 上搬「點」，所以會把一個色塊拆開——只搬到起始點而
+ * 留下結束用的黑點是可能的。搬完還要 `ensureBlackBefore` 補黑點、
+ * 再跑 `removeDuplicateBlackBlocks` 收拾殘留。
+ *
+ * segment 模型搬的是**整個色塊**，不會拆開；落點區間的清理交給 `clearRange`
+ * （被切一半的情況它也處理好了），黑點的兩道手續一起消失。
  */
 
 const alignToTick = (ms) => Math.floor(ms / TICK_MS) * TICK_MS;
 
-const isBlack = (point) =>
-  point.color.R === 0 && point.color.G === 0 && point.color.B === 0;
-
 export function useTimeShift() {
   const dispatch = useDispatch();
-  // Phase 4 過渡橋：store 存 segments，這裡取得 keyframe 視圖 + 寫回用的 commit
-  const { actionTable, commit } = useKeyframeActionTable();
+  const { segmentTable, commit } = useSegmentActionTable();
   const currentTime = useSelector((state) => state.profiles.currentTime);
 
   // 0: 關閉, 1: 選起始, 2: 選結束, 3: 選目標
@@ -47,7 +47,13 @@ export function useTimeShift() {
     setTimes({ start: 0, end: 0, target: 0 });
   };
 
-  /** 核心資料搬移邏輯 */
+  /**
+   * 核心資料搬移邏輯：把 `[start, end]` 內的色塊整批搬到 `target`。
+   *
+   * 「在區間內」的判準是**色塊的起點落在區間裡**——這是舊版「關鍵格的時間
+   * 落在區間裡」最直接的對應（一個色塊的起始關鍵格就在 `segment.start`）。
+   * 差別是現在整段一起搬，不會出現「搬走開頭、留下結尾」的破碎狀態。
+   */
   const executeTimeShift = (start, end, target) => {
     const safeStart = alignToTick(start);
     const safeEnd = alignToTick(end);
@@ -58,89 +64,54 @@ export function useTimeShift() {
       return;
     }
 
-    const selectedTimes = [];
+    const inRange = (segment) =>
+      segment.start >= safeStart && segment.start <= safeEnd;
 
-    Object.values(actionTable || {}).forEach((armor) => {
-      Object.values(armor || {}).forEach((timeline) => {
-        if (!Array.isArray(timeline)) return;
-
-        timeline.forEach((p) => {
-          if (
-            p &&
-            typeof p.time === "number" &&
-            p.time >= safeStart &&
-            p.time <= safeEnd
-          ) {
-            selectedTimes.push(p.time);
+    // 先看整張表裡有沒有東西可搬，並找出最早的起點
+    let globalFirstStart = Infinity;
+    for (const armor of segmentTable ?? []) {
+      for (const segments of armor ?? []) {
+        for (const segment of segments ?? []) {
+          if (inRange(segment)) {
+            globalFirstStart = Math.min(globalFirstStart, segment.start);
           }
-        });
-      });
-    });
+        }
+      }
+    }
 
-    if (selectedTimes.length === 0) {
-      alert("選取區間內沒有任何光點可以平移！");
+    if (globalFirstStart === Infinity) {
+      alert("選取區間內沒有任何色塊可以平移！");
       return;
     }
 
-    // 以整批光點的最早時間對齊到目標位置
-    const globalFirstTime = Math.min(...selectedTimes);
-    const offset = safeTarget - globalFirstTime;
+    // 以整批色塊的最早起點對齊到目標位置
+    const offset = safeTarget - globalFirstStart;
 
-    const updatedActionTable = produce(actionTable, (draft) => {
-      Object.keys(draft).forEach((armorIdx) => {
-        Object.keys(draft[armorIdx]).forEach((partIdx) => {
-          const timeline = draft[armorIdx][partIdx];
+    const nextTable = (segmentTable ?? []).map((armor) =>
+      (armor ?? []).map((segments) => {
+        if (!Array.isArray(segments)) return segments;
 
-          if (!Array.isArray(timeline)) return;
+        const moving = segments.filter(inRange);
+        if (moving.length === 0) return segments; // reference 不變，這個部位不重繪
 
-          const moveIndices = [];
+        const moved = moving.map((segment) => ({
+          ...segment,
+          start: segment.start + offset,
+          end: segment.end + offset,
+        }));
 
-          timeline.forEach((p, idx) => {
-            if (p.time >= safeStart && p.time <= safeEnd) {
-              moveIndices.push(idx);
-            }
-          });
+        const newStart = Math.min(...moved.map((s) => s.start));
+        const newEnd = Math.max(...moved.map((s) => s.end));
 
-          if (moveIndices.length === 0) return;
+        // 留下來的段裡，落點區間內的部分要讓位（clearRange 會裁切或切成兩半）
+        const staying = segments.filter((segment) => !inRange(segment));
+        return [...clearRange(staying, newStart, newEnd), ...moved].sort(
+          (a, b) => a.start - b.start,
+        );
+      }),
+    );
 
-          const movedPoints = moveIndices.map((idx) => ({
-            ...timeline[idx],
-            color: { ...timeline[idx].color },
-            time: timeline[idx].time + offset,
-          }));
-
-          const newStart = Math.min(...movedPoints.map((p) => p.time));
-          const newEnd = Math.max(...movedPoints.map((p) => p.time));
-
-          // 搬走的點，加上落點區間內原本就有的點，都要先移除
-          const toRemove = new Set(moveIndices);
-
-          timeline.forEach((p, idx) => {
-            if (p.time >= newStart && p.time <= newEnd) {
-              toRemove.add(idx);
-            }
-          });
-
-          let nextTimeline = timeline.filter((_, idx) => !toRemove.has(idx));
-
-          nextTimeline = [...nextTimeline, ...movedPoints].sort(
-            (a, b) => a.time - b.time,
-          );
-
-          const firstColorPoint = movedPoints.find((p) => !isBlack(p));
-
-          if (firstColorPoint) {
-            ensureBlackBefore(nextTimeline, firstColorPoint.time);
-          }
-
-          draft[armorIdx][partIdx] = nextTimeline.sort(
-            (a, b) => a.time - b.time,
-          );
-        });
-      });
-    });
-
-    commit(removeDuplicateBlackBlocks(updatedActionTable));
+    commit(nextTable);
     dispatch(updateCurrentTime(safeTarget));
   };
 
