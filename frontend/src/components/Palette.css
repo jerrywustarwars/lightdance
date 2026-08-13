@@ -5,10 +5,11 @@
   z-index: 10;
   flex-shrink: 0;
 }
+/* 欄寬與版面留白的定義在 pages/Home.css 的 .homepage（上下兩塊共用） */
 .palette {
-  right: 0.3%;
-  top: 0.3%;
-  width: 10%;
+  right: var(--page-inset);
+  top: var(--page-inset);
+  width: var(--palette-w);
   display: flex;
   position: absolute;
   flex-direction: column;

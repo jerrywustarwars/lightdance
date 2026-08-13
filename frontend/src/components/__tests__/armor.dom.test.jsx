@@ -18,9 +18,14 @@ import {
  */
 
 /** 點擊光衣上代表某部位的圖形。部位 0（帽子）是最上面的 path。 */
-const clickPart = (container, index) => {
-  const shapes = container.querySelectorAll("svg [fill]:not([fill='none'])");
-  fireEvent.click(shapes[index]);
+/**
+ * 點某個部位。
+ *
+ * 用 `data-part` 指名，不要用「第 N 個有 fill 的元素」——帽子與領帶各由兩個
+ * 形狀組成（見 config/armorShapes.js），位置編號和部位編號早就不是同一件事。
+ */
+const clickPart = (container, part) => {
+  fireEvent.click(container.querySelector(`svg [data-part="${part}"]`));
 };
 
 describe("Armor 放色", () => {

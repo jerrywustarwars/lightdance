@@ -8,6 +8,7 @@
  *   2. 每個元素的 bounding box 有沒有超出容器？超出 → 跑到別人的地盤上。
  *   3. 每則提示有沒有被祖先的 overflow 裁掉？被裁 → hover 之後什麼都不會出現。
  *   4. 該對齊的成對元素（舞者開關 ↔ 光衣）中心有沒有對上？
+ *   5. 上下兩塊（光表區 ↔ 工具列/時間軸/波形）的左右邊緣在不在同一條線上？
  *
  * ## 為什麼需要這個
  *
@@ -239,7 +240,44 @@ const collectProblems = () => {
     });
   }
 
-  return { unclickable, overflow, clippedTips, misaligned };
+  // ── 5. 上下兩塊的左右邊緣要在同一條線上 ────────────────
+  //
+  // 編輯器分成上下兩塊：上面是光表區（七套光衣 + 飾品 + 調色盤），下面是
+  // 工具列 / 時間軸 / 波形。兩塊各自把欄寬寫在自己的 CSS 裡，於是右緣一個
+  // 停在 1427、一個停在 1595——中間空出 168px 沒有東西的區域，看起來就是
+  // 「上面那塊短了一截」。
+  //
+  // 這種問題肉眼很難確定（一邊是深灰面板、一邊是深灰畫布），但量起來一翻兩瞪眼。
+  const edges = [];
+  const edgeOf = (sel) => {
+    const el = document.querySelector(sel);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { sel, left: Math.round(r.left), right: Math.round(r.right) };
+  };
+
+  // 上半部的外框由光表區與調色盤共同界定（調色盤是它右上角的內欄）
+  const bands = [
+    edgeOf(".people-container"),
+    edgeOf(".controls"),
+    edgeOf(".scroll-container"),
+    edgeOf(".waveform-container"),
+  ].filter(Boolean);
+
+  if (bands.length >= 2) {
+    const reference = bands[0];
+    for (const band of bands.slice(1)) {
+      const delta = band.right - reference.right;
+      if (Math.abs(delta) > 2) {
+        edges.push({
+          pair: `${band.sel} 的右緣 vs ${reference.sel}`,
+          delta,
+        });
+      }
+    }
+  }
+
+  return { unclickable, overflow, clippedTips, misaligned, edges };
 };
 
 const stubApi = (context) =>
@@ -322,7 +360,7 @@ const run = async () => {
     }
     await page.waitForTimeout(2500);
 
-    const { unclickable, overflow, clippedTips, misaligned } =
+    const { unclickable, overflow, clippedTips, misaligned, edges } =
       await page.evaluate(collectProblems);
 
     console.log(`\n===== ${vp.name} =====`);
@@ -345,11 +383,15 @@ const run = async () => {
     console.log(`沒對齊的成對元素：${misaligned.length}`);
     misaligned.forEach((m) => console.log(`  ✗ ${m.pair} 差 ${m.delta}px`));
 
+    console.log(`上下兩塊沒對齊的邊緣：${edges.length}`);
+    edges.forEach((e) => console.log(`  ✗ ${e.pair} 差 ${e.delta}px`));
+
     failed +=
       unclickable.length +
       overflow.length +
       clippedTips.length +
-      misaligned.length;
+      misaligned.length +
+      edges.length;
 
     await page.screenshot({ path: join(OUT, `layout-${vp.name}.png`) });
     await browser.close();

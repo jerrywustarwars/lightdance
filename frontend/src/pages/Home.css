@@ -1,7 +1,21 @@
 * {
   box-sizing: border-box;
 }
+/*
+ * 全站的欄位尺寸 —— 上下兩塊共用，這樣它們的左右邊緣才會對齊。
+ *
+ * 先前這三個數字散在三個檔案裡各寫各的：調色盤 `right: 0.3%; width: 10%`、
+ * 光表區 `right: calc(10.3% + 8px)`、飾品側欄 `width: 200px` 配上光表區的
+ * `padding-right: 200px`。結果是光表區的右緣停在 1427，而它下面的工具列與
+ * 時間軸一路到 1595——中間空出 168px 的缺口，看起來就是「上面那塊短了一截」。
+ *
+ * 現在只有這裡定義一次，改欄寬不必去對三個檔案。
+ */
 .homepage {
+  --page-inset: 0.3%; /* 版面右側留白，下半部的捲動區也是這個數字 */
+  --palette-w: 168px; /* 調色盤欄。內容是固定尺寸的控制項，用 px 才不會被視窗寬度擠壞 */
+  --accessory-w: 200px; /* 飾品側欄 */
+
   height: 100%;
   width: 100%;
   position: absolute;
@@ -65,13 +79,13 @@
  * （x 660..940）把 Edit（681..771）與 Logout（778..868）整個蓋住，
  * 兩顆按鈕完全點不到；1280 寬時連 Shortcuts 與 Load 也一起被蓋。
  *
- * right 留 175px 給右側的調色盤（.palette 是絕對定位、寬約 165px）。
+ * 右側讓開調色盤那一欄（.palette 是絕對定位）。
  */
 .panel-header {
   position: absolute;
   top: 0;
   left: 0;
-  right: 175px;
+  right: calc(var(--palette-w) + var(--space-2));
   height: 56px;
   display: flex;
   align-items: center;
@@ -177,24 +191,26 @@
   bottom: 0;
 
   /*
-   * 左緣對齊下半部的軌道側欄（`.timeline-setting-container` 從 0 開始）。
-   * 原本是 `left: 25px` + `width: 87.5%`，實測上半部從 x=25 開始、下半部從
-   * x=0 開始，兩塊差 25px——畫面上看起來上面那塊莫名往內縮。
+   * 左右都跟下半部同一條線：左緣 0（軌道側欄也從 0 開始）、右緣 --page-inset
+   * （下半部的捲動區與波形都停在那裡）。
    *
-   * 右緣則要停在調色盤左邊：調色盤是 `right: 0.3%; width: 10%`，
-   * 所以它的左緣在 89.7%。用 `right` 而不是 `width` 表達，換視窗尺寸時
-   * 兩者的距離才會一直是那 8px。
+   * 舊版右緣停在 `calc(10.3% + 8px)`，也就是調色盤的**左邊**，於是上半部比
+   * 下半部短了一整欄，右下角空出一塊沒有東西的區域。現在光表區延伸到底，
+   * 調色盤與飾品側欄是它右側的兩個內欄——整個上半部是一張完整的卡片。
    */
   left: 0;
-  right: calc(10.3% + 8px);
-  border-radius: 1.5%;
-  border: solid, 3px, var(--text-muted);
-  border-radius: 7px;
+  right: var(--page-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
   background: var(--bg-panel);
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  padding-right: 200px;
+
+  /* 讓開右側兩個內欄，光衣才不會被蓋住 */
+  padding-right: calc(
+    var(--palette-w) + var(--space-2) + var(--accessory-w)
+  );
 
   /*
    * 只需要疊在 panel 的背景上，不需要壓過 panel 上排的按鈕。

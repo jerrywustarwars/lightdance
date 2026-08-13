@@ -4,12 +4,14 @@ import "./Armor.css";
 import { PART_KEYS } from "../constants/parts.js";
 import { TICK_MS } from "../constants/time.js";
 import { getColorAt, insertColorSegment } from "../utils/segments/color.js";
-import {
-  updateActionTable,
-  updateCurrentTime,
-  updateSelectedDancer,
-} from "../redux/actions";
+import { updateCurrentTime, updateSelectedDancer } from "../redux/actions";
 import { useSegmentArmorTimelines } from "../hooks/useSegmentActionTable.js";
+import {
+  ARMOR_FLOOR,
+  ARMOR_SHAPES,
+  ARMOR_VIEWBOX,
+  radiusOf,
+} from "../config/armorShapes.js";
 
 const Armor = (props) => {
   const dispatch = useDispatch();
@@ -21,6 +23,9 @@ const Armor = (props) => {
   const chosenColor = useSelector((state) => state.profiles.chosenColor);
   const multiSelectedBlocks = useSelector(
     (state) => state.profiles.multiSelectedBlocks,
+  );
+  const selectedDancerId = useSelector(
+    (state) => state.profiles.selectedDancerId,
   );
   const myId = props.index;
 
@@ -59,6 +64,9 @@ const Armor = (props) => {
     );
   }
 
+  /** 這位是不是右側「裝備編輯」正在顯示的舞者 */
+  const isCurrentDancer = selectedDancerId === myId;
+
   const isSelected = (part) => {
     return multiSelectedBlocks.some(
       (b) => b.armorIndex === myId && b.partIndex === part,
@@ -70,233 +78,77 @@ const Armor = (props) => {
     insertArray(part);
   };
 
-  // 渲染高亮邊框
-  const renderHighlight = (
-    x,
-    y,
-    width,
-    height,
-    shape = "rect",
-    options = {},
-  ) => {
-    const { r = null, cx = null, cy = null } = options;
+  /**
+   * 一個形狀畫成 SVG 元素。
+   *
+   * 圖形與選取高亮吃**同一組座標**：高亮只是把 fill 換成 none、加一圈描邊。
+   * 舊版兩份座標各寫一遍，鞋子的高亮框因此比鞋子本身高 10px。
+   */
+  const renderShape = (shape, key, { highlight = false, part = 0 } = {}) => {
+    // key 不能混在 spread 裡（React 會警告並且拿不到它），所以獨立傳
+    const attrs = highlight
+      ? { fill: "none", className: "armor-highlight" }
+      : {
+          // 部位編號寫在元素上，讓測試（單元與 e2e）可以直接指名要點哪個部位。
+          // 先前兩邊都用「第 N 個有 fill 的元素」，帽子與領帶各有兩個形狀之後
+          // 位置就對不上了——而且不會報錯，只會靜默點到別的部位。
+          "data-part": part,
+          fill: colors[partNames[part]],
+          onClick: () => handleColorChange(part),
+        };
 
-    if (shape === "rect") {
+    if (shape.kind === "circle") {
       return (
-        <rect
-          x={x}
-          y={y}
-          width={width}
-          height={height}
-          fill="none"
-          stroke="white"
-          strokeWidth="2"
-        />
+        <circle key={key} {...attrs} cx={shape.cx} cy={shape.cy} r={shape.r} />
       );
     }
-
-    if (shape === "circle") {
-      return (
-        <circle
-          cx={cx}
-          cy={cy}
-          r={r}
-          fill="none"
-          stroke="white"
-          strokeWidth="2"
-        />
-      );
+    if (shape.kind === "polygon") {
+      return <polygon key={key} {...attrs} points={shape.points} />;
     }
-
-    return null;
+    return (
+      <rect
+        key={key}
+        {...attrs}
+        x={shape.x}
+        y={shape.y}
+        width={shape.width}
+        height={shape.height}
+        rx={radiusOf(shape)}
+      />
+    );
   };
+
 
   return (
     <div
-      className="armor-container"
+      // 選到的那位要看得出來——右邊的「裝備編輯」顯示的就是他，
+      // 沒有標記的話使用者只能靠記憶對應
+      className={`armor-container${isCurrentDancer ? " is-current" : ""}`}
       onClick={() => dispatch(updateSelectedDancer(myId))}
     >
-      {/* 舞者編號標籤 */}
       <div className="dancer-label">舞者 {myId + 1}</div>
-      <svg width="242" height="480" viewBox="10 0 222 480">
-        {/* 將所有 SVG 內容向下移動 35px，為標籤留出空間 */}
-        <g transform="translate(0, 35)">
-          {/*0:hat*/}
-          {isSelected(0) && (
-            <path
-              d="M 96.8 5 L 145.2 5 L 145.2 23 L 169.4 23 L 169.4 38 L 72.6 38 L 72.6 23 L 96.8 23 Z"
-              fill="none"
-              stroke="white"
-              strokeWidth="2"
-            />
-          )}
-          <path
-            d="M 96.8 5 L 145.2 5 L 145.2 23 L 169.4 23 L 169.4 38 L 72.6 38 L 72.6 23 L 96.8 23 Z"
-            fill={colors.hat}
-            onClick={() => handleColorChange(0)}
-          />
+      <svg className="armor-figure" viewBox={ARMOR_VIEWBOX}>
+        {/* 舞台地板：讓光衣看起來是站著的，而不是浮在卡片中間 */}
+        <line
+          className="armor-floor"
+          x1={ARMOR_FLOOR.x1}
+          y1={ARMOR_FLOOR.y}
+          x2={ARMOR_FLOOR.x2}
+          y2={ARMOR_FLOOR.y}
+        />
 
-          {/*1:face - 臉部*/}
-          {isSelected(1) &&
-            renderHighlight(null, null, null, null, "circle", {
-              r: 30,
-              cx: 121,
-              cy: 68,
-            })}
-          <circle
-            cx="121"
-            cy="68"
-            r="30"
-            fill={colors.face}
-            onClick={() => handleColorChange(1)}
-          />
+        {ARMOR_SHAPES.map((shapes, part) =>
+          shapes.map((shape, i) => renderShape(shape, `p${part}-${i}`, { part })),
+        )}
 
-          {/*2:chestL - 左胸（螢幕左側）*/}
-          {isSelected(2) && renderHighlight(72, 103, 28, 65)}
-          <rect
-            x="72"
-            y="103"
-            width="28"
-            height="65"
-            fill={colors.chestL}
-            onClick={() => handleColorChange(2)}
-          />
-
-          {/*3:chestR - 右胸（螢幕右側）*/}
-          {isSelected(3) && renderHighlight(142, 103, 28, 65)}
-          <rect
-            x="142"
-            y="103"
-            width="28"
-            height="65"
-            fill={colors.chestR}
-            onClick={() => handleColorChange(3)}
-          />
-
-          {/*4:armL - 左手臂（螢幕左側）*/}
-          {isSelected(4) && renderHighlight(35, 103, 32, 65)}
-          <rect
-            x="35"
-            y="103"
-            width="32"
-            height="65"
-            fill={colors.armL}
-            onClick={() => handleColorChange(4)}
-          />
-
-          {/*5:armR - 右手臂（螢幕右側）*/}
-          {isSelected(5) && renderHighlight(175, 103, 32, 65)}
-          <rect
-            x="175"
-            y="103"
-            width="32"
-            height="65"
-            fill={colors.armR}
-            onClick={() => handleColorChange(5)}
-          />
-
-          {/*6:tie - 領帶*/}
-          {isSelected(6) && renderHighlight(105, 103, 32, 50)}
-          <rect
-            x="105"
-            y="103"
-            width="32"
-            height="50"
-            fill={colors.tie}
-            onClick={() => handleColorChange(6)}
-          />
-          {/* 領帶三角形 - 與矩形完美對齊 */}
-          {isSelected(6) && (
-            <polygon
-              points="105,153 137,153 121,173"
-              fill="none"
-              stroke="white"
-              strokeWidth="2"
-            />
-          )}
-          <polygon
-            points="105,153 137,153 121,173"
-            fill={colors.tie}
-            onClick={() => handleColorChange(6)}
-          />
-
-          {/*7:belt - 腰帶*/}
-          {isSelected(7) && renderHighlight(78, 173, 86, 35)}
-          <rect
-            x="78"
-            y="173"
-            width="86"
-            height="35"
-            fill={colors.belt}
-            onClick={() => handleColorChange(7)}
-          />
-
-          {/*8:gloveL - 左手套（螢幕左側）*/}
-          {isSelected(8) && renderHighlight(35, 173, 32, 35)}
-          <rect
-            x="35"
-            y="173"
-            width="32"
-            height="35"
-            fill={colors.gloveL}
-            onClick={() => handleColorChange(8)}
-          />
-
-          {/*9:gloveR - 右手套（螢幕右側）*/}
-          {isSelected(9) && renderHighlight(175, 173, 32, 35)}
-          <rect
-            x="175"
-            y="173"
-            width="32"
-            height="35"
-            fill={colors.gloveR}
-            onClick={() => handleColorChange(9)}
-          />
-
-          {/*10:legL - 左腿（螢幕左側）*/}
-          {isSelected(10) && renderHighlight(85, 213, 28, 80)}
-          <rect
-            x="85"
-            y="213"
-            width="28"
-            height="80"
-            fill={colors.legL}
-            onClick={() => handleColorChange(10)}
-          />
-
-          {/*11:legR - 右腿（螢幕右側）*/}
-          {isSelected(11) && renderHighlight(129, 213, 28, 80)}
-          <rect
-            x="129"
-            y="213"
-            width="28"
-            height="80"
-            fill={colors.legR}
-            onClick={() => handleColorChange(11)}
-          />
-
-          {/*12:shoeL - 左鞋（螢幕左側）*/}
-          {isSelected(12) && renderHighlight(75, 298, 45, 25)}
-          <rect
-            x="75"
-            y="298"
-            width="45"
-            height="15"
-            fill={colors.shoeL}
-            onClick={() => handleColorChange(12)}
-          />
-
-          {/*13:shoeR - 右鞋（螢幕右側）*/}
-          {isSelected(13) && renderHighlight(122, 298, 45, 25)}
-          <rect
-            x="122"
-            y="298"
-            width="45"
-            height="15"
-            fill={colors.shoeR}
-            onClick={() => handleColorChange(13)}
-          />
-        </g>
+        {/* 高亮畫在最後，才不會被後面的部位蓋掉 */}
+        {ARMOR_SHAPES.map((shapes, part) =>
+          isSelected(part)
+            ? shapes.map((shape, i) =>
+                renderShape(shape, `h${part}-${i}`, { highlight: true, part }),
+              )
+            : null,
+        )}
       </svg>
     </div>
   );

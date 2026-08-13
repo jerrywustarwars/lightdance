@@ -40,20 +40,74 @@
  * 讓預覽跟實際演出一致。黑卡同時給了「一人一格」的分隔。
  */
 .armor-container {
-  position: relative;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   cursor: pointer;
   height: 100%;
   background: var(--armor-stage);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  padding: 0 var(--space-2);
+  padding: var(--space-2);
+  gap: var(--space-2);
+
+  /* 內容盒模型：卡片的高度是外面給的，圖形要能被壓縮才不會撐破 */
+  box-sizing: border-box;
+  min-height: 0;
+}
+
+/*
+ * 光衣填滿標籤以下的空間。
+ *
+ * `viewBox` 已經收緊到圖形的實際範圍（見 config/armorShapes.js），
+ * 交給 SVG 等比縮放置中即可——不必寫死 width/height，換視窗尺寸時
+ * 圖形自己跟著長大或縮小。
+ */
+.armor-figure {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: block;
+}
+
+/*
+ * 舞台地板。
+ *
+ * 沒有它的時候光衣是浮在卡片正中間的，七個人各浮在各的高度感，看起來像
+ * 隨手擺上去的圖。有一條地板之後每套光衣都「站」在同一個平面上。
+ */
+.armor-floor {
+  stroke: var(--armor-outline);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+/*
+ * 目前正在編輯裝備的那位舞者。
+ *
+ * 只加亮邊框與標籤，不動背景——背景一亮，部位的 alpha（= LED 亮度）就會跟
+ * 它合成，同一個顏色在被選到的舞者身上看起來會比較亮。預覽必須跟實際演出
+ * 一致，這是整個黑卡設計的前提。
+ */
+.armor-container.is-current {
+  border-color: var(--text-muted);
+}
+
+.armor-container.is-current .dancer-label {
+  background: var(--bg-control-active);
+  color: var(--text-primary);
+}
+
+/* 選取高亮：白色雙圈，和時間軸色塊的選取用同一個 token */
+.armor-highlight {
+  stroke: var(--ring-selected);
+  stroke-width: 2;
+  pointer-events: none;
 }
 
 /*
  * 部位描邊。
+ * （地板與選取高亮沒有 fill，不受這條影響。）
  *
  * 未點亮的部位是純黑，畫在黑卡上完全看不見——七套光衣在預設狀態是七團黑影，
  * 分不出哪塊是手臂哪塊是腿。輪廓不能靠「後面的底色」表達（見上方 alpha 合成
@@ -68,63 +122,35 @@
 }
 
 /*
- * 光衣縮放到容器內。
+ * 舞者編號：卡片的標題列。
  *
- * `Armor.jsx` 的 <svg> 寫死 height="480"，但 .people-container 只有
- * 面板高度的 85%（1600×950 視窗下是 283px）。480 塞進 283 的結果是
- * **上下各溢出約 99px**：
- *
- *   - 往上蓋住標題列與 Output / Shortcuts 按鈕
- *   - 往下蓋住整條工具列（Effect / 剪刀 / 刪除 / 亮度 / 導航）
- *
- * 而且 SVG 的元素框比畫出來的圖形大，溢出的空白區照樣攔截點擊——瀏覽器
- * 實測 `document.elementFromPoint()` 在每個工具列按鈕的中心都回傳光衣的 svg。
- *
- * viewBox 已經定義好比例，交給瀏覽器等比縮放即可。
+ * 原本是 `position: absolute` 的膠囊，浮在光衣的頭上——為了不擋到圖形，
+ * SVG 還得整個往下平移 35px 讓位。那個平移就是 viewBox 底下空一大塊的
+ * 原因之一。改成佔一行之後圖形拿回全部的空間，標籤也不會壓在帽子上。
  */
-.armor-container svg {
-  display: block;
-  height: 100%;
-  width: auto;
-  max-width: 100%;
-}
-
-/* 舞者編號標籤 */
 .dancer-label {
-  /* 定位 - 對齊畫布頂部 */
-  position: absolute;
-  top: 5px;  /* 距離頂部 5px，保持在畫布內 */
-  left: 50%;
-  transform: translateX(-50%);
-
-  /* 視覺樣式 */
-  background: var(--bg-control-active);
-  color: var(--text-primary);
-  padding: 4px 10px;
-  border-radius: 20px;
-  font-size: 13px;
-  font-weight: bold;
-  /* 欄位變窄時不要把「舞者 1」拆成直排 */
+  text-align: center;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-control);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.5px;
   white-space: nowrap;
-
-  /* 陰影與深度 */
-  box-shadow: 0 4px 8px var(--overlay-soft),
-              0 2px 4px var(--overlay-soft);
-
-  /* 動畫過渡 */
-  transition: all 0.3s ease;
-
-  /* 確保在最上層 */
-  z-index: 100;
-
-  /* 確保不會被 SVG 遮擋 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.2s ease, color 0.2s ease;
   pointer-events: none;
 }
 
-/* 懸停效果 */
+/*
+ * 滑過時標籤提亮。
+ *
+ * 舊版是放大 1.1 倍 + 加陰影——絕對定位時不影響版面，現在它佔一行，
+ * 放大會把下面的光衣往下推，滑鼠一進一出整張卡片就抖一下。
+ */
 .armor-container:hover .dancer-label {
-  transform: translateX(-50%) scale(1.1);
-  box-shadow: 0 6px 12px var(--overlay-soft),
-              0 3px 6px var(--overlay-soft);
+  background: var(--bg-control-hover);
+  color: var(--text-primary);
 }
-

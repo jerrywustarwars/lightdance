@@ -1,5 +1,4 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
 
 import {
   PARTS,
@@ -17,6 +16,7 @@ import {
   ACCESSORY_CONFIGS,
   isPartAllowed,
 } from "../../config/accessoryConfig.js";
+import { ARMOR_SHAPES, radiusOf } from "../../config/armorShapes.js";
 import profiles from "../../redux/reducers/profiles.js";
 
 /**
@@ -30,11 +30,6 @@ import profiles from "../../redux/reducers/profiles.js";
  * 各處是否維持一致。所以改了 `PLAYER_COUNT` 或 `PARTS` 之後，
  * 這份測試應該仍然全綠；會紅的是「改了但有地方沒跟上」。
  */
-
-const ARMOR_SOURCE = readFileSync(
-  new URL("../../components/Armor.jsx", import.meta.url),
-  "utf8",
-);
 
 describe("PARTS 清單本身", () => {
   it("每一列都有 key / label / type", () => {
@@ -86,29 +81,49 @@ describe("PARTS 清單本身", () => {
 
 describe("光衣 SVG 覆蓋率", () => {
   /**
-   * 光衣的圖形是手繪 SVG（`fill={colors.hat}` 這種寫法），沒辦法自動生成。
-   * 新增身體部位時最容易漏的就是這一步 —— 資料層都對，但畫面上點不到、
-   * 也不會亮。這裡直接掃原始碼，缺哪個部位就報哪個。
+   * 光衣的圖形是手繪的，沒辦法自動生成。新增身體部位時最容易漏的就是這一步
+   * —— 資料層都對，但畫面上點不到、也不會亮。
+   *
+   * 幾何現在集中在 `config/armorShapes.js`，所以這裡直接檢查那張表，
+   * 不必再掃 JSX 原始碼找 `colors.xxx` 字串。
    */
-  it("每個身體部位在 Armor.jsx 都有對應圖形", () => {
-    const missing = PARTS.filter(
-      (part) =>
-        part.type === "body" && !ARMOR_SOURCE.includes(`colors.${part.key}`),
-    ).map((part) => `${part.key}（${part.label}）`);
+  it("每個身體部位都有圖形", () => {
+    const missing = PARTS.map((part, index) => ({ part, index }))
+      .filter(
+        ({ part, index }) =>
+          part.type === "body" && !(ARMOR_SHAPES[index]?.length > 0),
+      )
+      .map(({ part }) => `${part.key}（${part.label}）`);
 
-    expect(missing, "這些部位沒有在光衣 SVG 上畫出來").toEqual([]);
+    expect(missing, "這些部位沒有在光衣上畫出來").toEqual([]);
   });
 
-  it("SVG 沒有引用已經不存在的部位", () => {
-    // 刪掉部位時反過來的漏網之魚：SVG 還在畫，但 PARTS 已經沒有了，
-    // `colors.xxx` 會是 undefined，圖形變透明而不會報錯。
-    const referenced = [...ARMOR_SOURCE.matchAll(/colors\.([A-Za-z0-9_]+)/g)]
-      .map((match) => match[1])
-      .filter((key) => !PART_KEYS.includes(key));
+  it("圖形表沒有多出來的部位", () => {
+    // 刪掉部位時反過來的漏網之魚：表還在畫，但 PARTS 已經沒有了
+    expect(ARMOR_SHAPES.length).toBe(BODY_PART_COUNT);
+  });
 
-    expect([...new Set(referenced)], "SVG 引用了 PARTS 裡沒有的部位").toEqual(
-      [],
-    );
+  it("每個形狀都有能畫出來的座標", () => {
+    const broken = [];
+    ARMOR_SHAPES.forEach((shapes, index) => {
+      shapes.forEach((shape, i) => {
+        const ok =
+          shape.kind === "rect"
+            ? shape.width > 0 && shape.height > 0
+            : shape.kind === "circle"
+              ? shape.r > 0
+              : typeof shape.points === "string" && shape.points.length > 0;
+        if (!ok) broken.push(`${PART_KEYS[index]}[${i}]`);
+      });
+    });
+
+    expect(broken, "這些形狀畫不出東西").toEqual([]);
+  });
+
+  it("圓角一律由短邊推導，不會出現手填的漂移", () => {
+    expect(radiusOf({ width: 28, height: 65 })).toBe(8); // 粗的部位吃上限
+    expect(radiusOf({ width: 45, height: 15 })).toBe(4.5); // 細長的自動變小
+    expect(radiusOf({ width: 96.8, height: 15 })).toBe(4.5);
   });
 });
 

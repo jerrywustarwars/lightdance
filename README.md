@@ -83,7 +83,7 @@ actionTable[armor][part] = [
 
 ```bash
 cd frontend
-npm test          # 354 項
+npm test          # 356 項
 npm run build
 ```
 
