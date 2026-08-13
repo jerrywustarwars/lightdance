@@ -12,6 +12,7 @@ import {
   ARMOR_VIEWBOX,
   radiusOf,
 } from "../config/armorShapes.js";
+import { ACCESSORY_CONFIGS } from "../config/accessoryConfig.js";
 
 const Armor = (props) => {
   const dispatch = useDispatch();
@@ -64,8 +65,11 @@ const Armor = (props) => {
     );
   }
 
-  /** 這位是不是右側「裝備編輯」正在顯示的舞者 */
+  /** 這位是不是目前選取的舞者 */
   const isCurrentDancer = selectedDancerId === myId;
+
+  /** 這位舞者的道具（沒有配置就是沒帶道具） */
+  const accessory = ACCESSORY_CONFIGS[myId] ?? null;
 
   const isSelected = (part) => {
     return multiSelectedBlocks.some(
@@ -127,6 +131,7 @@ const Armor = (props) => {
       onClick={() => dispatch(updateSelectedDancer(myId))}
     >
       <div className="dancer-label">舞者 {myId + 1}</div>
+      <div className="armor-body">
       <svg className="armor-figure" viewBox={ARMOR_VIEWBOX}>
         {/* 舞台地板：讓光衣看起來是站著的，而不是浮在卡片中間 */}
         <line
@@ -150,6 +155,41 @@ const Armor = (props) => {
             : null,
         )}
       </svg>
+
+        {/*
+          道具就掛在人旁邊。
+          飾品燈原本列在右側一個獨立的側欄裡，離它所屬的舞者好幾百像素遠——
+          播放的時候你沒辦法一眼看出「這位舞者的刀亮了」。放在同一張卡片上、
+          與光衣並排之後，播放時整個人連同手上的東西一起亮，看得出來是一體的。
+        */}
+        {accessory && (
+          <div className="armor-props" title={accessory.name}>
+            {accessory.groups.map((group) => (
+              <div className="armor-props__group" key={group.label}>
+                <span className="armor-props__label">{group.label}</span>
+                <div className="armor-props__leds">
+                  {group.indices.map((part) => (
+                    <button
+                      key={part}
+                      type="button"
+                      className="armor-props__led"
+                      data-part={part}
+                      aria-selected={isSelected(part)}
+                      aria-label={`${accessory.name} ${group.label}`}
+                      style={{ background: colors[partNames[part]] }}
+                      onClick={(e) => {
+                        e.stopPropagation(); // 不要順便把整張卡片當成「選這位舞者」
+                        dispatch(updateSelectedDancer(myId));
+                        handleColorChange(part);
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

@@ -1,4 +1,4 @@
-/* 合併進 Inspector 之後高度很緊，調色器從 56 收到 44——按得到就夠了 */
+/* 這一欄高度很緊（1280×800 下只有 220px），調色器從 56 收到 44——按得到就夠了 */
 #colorWell {
   width: 44px;
   height: 44px;
@@ -7,26 +7,37 @@
   flex-shrink: 0;
 }
 /*
- * 調色盤現在是 Inspector 的一個區塊，不再是自己一欄。
+ * 調色盤 —— 上半部右側唯一的欄。欄寬定義在 pages/Home.css 的 .homepage。
  *
- * 先前它是 `position: absolute` 的獨立右欄，和「裝備編輯」那欄並排——
- * 兩欄回答的是同一句話（你正在編輯誰的哪個部位、要塗什麼顏色），
- * 分開只會讓視線來回跳，而且兩欄各佔一段寬度把光衣擠窄。
- *
- * 捲動交給 Inspector（它才知道整欄有多高），這裡只負責自己的排版。
+ * 從 header 下方（60px）才開始，和 .people-container 同一條線。先前它從 0
+ * 開始，於是 header 得用 `right: calc(欄寬 + 間距)` 讓開——那個耦合在欄寬變大
+ * 之後讓 header 在 1280 寬放不下六顆按鈕，最後一顆溢出到這一欄底下被蓋住。
  */
 .palette {
-  width: 100%;
-  flex: none;
+  position: absolute;
+  top: 60px;
+  right: var(--page-inset);
+  bottom: 0;
+  width: var(--palette-w);
+
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: start;
+  box-sizing: border-box;
+
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
 
   /* 由 flex 依序往下排，不要靠各自的 margin/absolute 硬喬位置 */
   gap: var(--space-2);
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--border-subtle);
+  padding: var(--space-2) 0;
+
+  /* 內容放不下時自己捲。1280×800 下這一欄只有 220px 高，字級或行高一變
+     就會頂出去——最壞情況是捲一下，而不是內容跑到面板外面點不到 */
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .color_example {
   width: 0px;
@@ -55,8 +66,7 @@
 
 .favorite_color_sample {
   /* 寬度隨欄位縮放，不寫死 40px——欄位窄的時候寫死值會擠出去。
-     但也要有上限：Inspector 比舊的調色盤欄寬，不設限的話兩列色票會長到
-     140px 高，把下面的部位清單整個推出可視範圍。 */
+     但也要有上限：不設限的話色票會長到 140px 高，把下面的控制項推出可視範圍。 */
   flex: 1 1 0;
   min-width: 0;
   max-width: 34px;
@@ -240,9 +250,8 @@ input[type="range"]::-ms-thumb {
 /*
  * 調色器 + HEX + 亮度並排成一列。
  *
- * 這一區直排時是 140px 高，而 Inspector 在 1280×800 下整欄只有 220px——
- * 加上色票與模式切換之後，部位清單會整個掉到可視範圍外。並排之後這一區
- * 收成 56px，剩下的高度留給部位清單。
+ * 這一區直排時是 140px 高，而這一欄在 1280×800 下只有 220px——加上色票與
+ * 模式切換之後會頂出去。並排之後這一區收成 56px。
  */
 .palette-row {
   display: flex;

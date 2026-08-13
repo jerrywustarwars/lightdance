@@ -279,8 +279,9 @@ segment 壓平回 keyframe 之後**緊鄰的色塊之間沒有黑點**，這個�
       （`utils/worksets.js` + `hooks/useWorksets.js` + `WorksetBar.jsx`）
 - [x] **軌道行高可調**：像素而非百分比，全域滑桿 + 逐軌把手
       （`utils/tracks.js`）；低於 64px 自動收起次要按鈕
-- [x] **Inspector 合併**：「裝備編輯」側欄與調色盤收成單一上下文面板
-      （`components/Inspector.jsx`），總寬 376 → 248；14 個身體部位可用點選
+- [x] **右側收成單一調色盤欄，道具搬到人旁邊**：飾品燈畫進光衣卡片與人並排
+      （播放時整個人連同手上的東西一起亮），身體部位本來就能在光衣上點，
+      右欄 376px → 200px
 - [ ] **Blink 改 metadata**：`seg.effect = {type:'blink', period}`，只在
       `segmentsToKeyframes` 壓平與 `getColorAt` 預覽時展開；UI 維持單一可拖曳色塊
 - [ ] **框選（marquee）多選**：讓多選能跨軌，多段拖曳的價值才完整
@@ -314,11 +315,6 @@ segment 壓平回 keyframe 之後**緊鄰的色塊之間沒有黑點**，這個�
 
 ## 🐛 已知待修
 
-- [ ] **Inspector 的部位清單在小視窗下很擠**。`.panel` 固定 35%，1280×800 下扣掉
-      header 只剩 220px，調色盤佔掉 150px，部位清單只剩 ~72px（三列）並自己捲。
-      可能的方向：調色盤做成可收合、把面板高度改成可拖曳的分隔線、或部位改成
-      橫向排的 chip。**先觀察實際用起來擠不擠再決定**，不要為了看起來寬敞而
-      犧牲時間軸的高度。
 
 - [ ] **工作集列與下方工具列的左緣沒對齊**（2026-08-14 回報，窄視窗最明顯）。
       `.workset-bar` 有自己的 `padding: 0 var(--space-3)`，而下面的

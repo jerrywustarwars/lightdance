@@ -15,9 +15,17 @@
   align-items: center;
 }
 
+/*
+ * 一位舞者佔一格，七格平均分配整列的寬度。
+ *
+ * 先前卡片的寬度是由內容撐出來的（SVG 的固有比例）。人與道具並排之後那條路
+ * 走不通：SVG 在 flex row 裡沒有固有寬度，卡片沒有確定寬度時它不是塌成一條線
+ * 就是溢出到卡片外面（兩種都實測過）。改成先把寬度分好，圖形再在裡面等比縮放。
+ */
 .personBackGround {
-  /* align-self: center; */
-  margin: 0 15px;
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0 var(--space-1);
   z-index: 10;
 
   /* 撐滿 people-container 的高度，讓底下的 SVG 有可以縮放的依據（見下方） */
@@ -40,6 +48,7 @@
  * 讓預覽跟實際演出一致。黑卡同時給了「一人一格」的分隔。
  */
 .armor-container {
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -57,6 +66,72 @@
 }
 
 /*
+ * 人 + 道具並排。
+ *
+ * 道具是掛在這位舞者身上的東西，放在同一張卡片裡才看得出來是一體的——
+ * 先前它們在右側一個獨立側欄，離所屬的舞者好幾百像素遠，播放時根本對不起來。
+ */
+.armor-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-1);
+}
+
+/* 道具那一直排：窄，讓光衣拿走大部分寬度 */
+.armor-props {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-1);
+}
+
+.armor-props__group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.armor-props__label {
+  font-size: 9px;
+  line-height: 1;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* 一組道具燈最多兩顆一列，再多就往下排——刀身有四顆 */
+.armor-props__leds {
+  display: grid;
+  grid-template-columns: repeat(2, 12px);
+  gap: 2px;
+}
+
+/*
+ * 一顆道具燈。
+ *
+ * 描邊而不是墊底色：填色帶 alpha，而 alpha 是 LED 亮度，墊在後面的底色會跟
+ * 它合成讓低亮度偏亮（和光衣站在黑卡上是同一個理由）。沒亮的時候靠描邊看得出
+ * 這裡有一顆燈。
+ */
+.armor-props__led {
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 1px solid var(--armor-outline);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.armor-props__led[aria-selected="true"] {
+  box-shadow:
+    inset 0 0 0 2px var(--ring-selected),
+    inset 0 0 0 3px var(--ring-outer);
+}
+
+/*
  * 光衣填滿標籤以下的空間。
  *
  * `viewBox` 已經收緊到圖形的實際範圍（見 config/armorShapes.js），
@@ -64,9 +139,15 @@
  * 圖形自己跟著長大或縮小。
  */
 .armor-figure {
+  /*
+   * 吃掉道具那一欄以外的空間，圖形靠 viewBox 等比縮放置中（preserveAspectRatio
+   * 預設 meet）。`min-width: 0` 是必要的：flex 項目的預設最小寬度是內容寬，
+   * 少了它道具一多就會把圖形推出卡片外。
+   */
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
-  width: 100%;
+  height: 100%;
   display: block;
 }
 

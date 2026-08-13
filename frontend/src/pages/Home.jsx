@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import "./Home.css";
 import ControlPanel from "../components/ControlPanel.jsx";
-import Inspector from "../components/Inspector.jsx";
+import Palette from "../components/Palette.jsx";
 import People from "../components/People.jsx";
 import DancerToggle from "../components/DancerToggle.jsx";
 import { MdOutput, MdInput, MdKeyboard } from "react-icons/md";
@@ -347,10 +347,9 @@ function Home({ rgba, setRgba, setButtonState }) {
     setShowNewProjectMenu(false);
   };
 
-  // 上半部右側唯一的欄：調色盤 + 目前舞者的部位與飾品（見 components/Inspector.jsx）
-  const listitem = [
-    <Inspector key="inspector" rgba={rgba} setRgba={setRgba} />,
-  ];
+  // 上半部右側唯一的欄。飾品已經搬到光衣旁邊（見 components/Armor.jsx），
+  // 身體部位本來就在光衣上點得到，所以這一欄只剩調色盤
+  const listitem = [<Palette key="palette" rgba={rgba} setRgba={setRgba} />];
 
   return (
     <div>

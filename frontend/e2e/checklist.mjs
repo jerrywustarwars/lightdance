@@ -506,35 +506,40 @@ const run = async () => {
     record("Move Mode 整批一起搬", false, `只有 ${dragBefore.length} 個色塊`);
   }
 
-  // ── Inspector ─────────────────────────────────────────
+  // ── 道具就掛在人旁邊 ──────────────────────────────────
   //
-  // 合併的主要價值是「部位可以用點選的」：14 個身體部位先前只能在光衣 SVG 上點，
-  // 而那些形狀縮到卡片大小之後只有十幾像素寬。清單是文字，點得到。
-  await page.locator(".personBackGround").nth(1).click();
-  await page.waitForTimeout(400);
+  // 飾品燈原本在右側一個獨立側欄裡，離所屬的舞者好幾百像素遠——播放時看不出
+  // 「這位舞者的刀亮了」。現在它們和光衣同卡片並排，顏色一樣跟著播放頭走。
+  //
+  // 舞者 2（index 1）帶雨傘，舞者 1 沒有配件。
+  const propCounts = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll(".armor-container")].map(
+        (el) => el.querySelectorAll(".armor-props__led").length,
+      ),
+    );
 
-  const partButtons = page.locator(".inspector__part");
-  const partCount = await partButtons.count();
-  record("Inspector 列出選取舞者的身體部位", partCount === 14, `${partCount} 個`);
+  const props = await propCounts();
+  record(
+    "只有帶道具的舞者旁邊才有道具燈",
+    props[0] === 0 && props[1] === 2 && props[3] === 8,
+    props.join(" / "),
+  );
 
-  if (partCount > 0) {
-    const beforeParts = await coloredBlocks(page, 0);
-    // 點「左手臂」（索引 4）——在光衣上那是一個很窄的長方形
-    await page.locator('.inspector__part[data-part="4"]').click();
+  const propLed = page.locator(".armor-container").nth(1).locator(".armor-props__led").first();
+  if (await propLed.count()) {
+    await propLed.click();
     await page.waitForTimeout(500);
 
-    const dotColor = await page.evaluate(
-      () =>
-        document.querySelector('.inspector__part[data-part="4"] .inspector__dot')
-          ?.style.backgroundColor ?? "",
-    );
+    const lit = await propLed.evaluate((el) => el.style.background);
     record(
-      "點部位清單就能放色，顏色點跟著亮",
-      !/rgba?\(\s*0,\s*0,\s*0/.test(dotColor) && dotColor !== "",
-      dotColor || "沒有顏色",
+      "點道具燈就能放色，顏色跟著亮",
+      !/rgba?\(\s*0,\s*0,\s*0/.test(lit) && lit !== "",
+      lit || "沒有顏色",
     );
-    void beforeParts;
-    await shot(page, "inspector");
+    await shot(page, "props");
+  } else {
+    record("點道具燈就能放色，顏色跟著亮", false, "找不到道具燈");
   }
 
   // ── 工作集 ────────────────────────────────────────────
