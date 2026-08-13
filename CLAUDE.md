@@ -46,7 +46,7 @@ docker compose -f docker-compose.dev.yml down
 docker compose -f docker-compose.dev.yml down
 docker compose -f docker-compose.dev.yml up --build
 
-# 檢查端口占用
+# 檢查連接埠占用
 lsof -i :3000  # 前端
 lsof -i :8000  # 後端
 lsof -i :27017 # 資料庫
@@ -81,9 +81,21 @@ Editor (actionTable) → Redux Store → handleOutput() → 32-bit RGBA 打包 �
 ```
 
 ### 編輯器資料格式 (actionTable)
-巢狀結構：`actionTable[armorIndex][partIndex] = [{time, color: {R,G,B,A}, linear}]`
-- armorIndex: 0-6（舞者編號），partIndex: 0-21（22 個身體部位，含 8 個配件 LED）
-- time: 毫秒，linear: 0（固定色）/ 1（線性過渡）
+store 存的是 **segments**（色塊），不是關鍵格：
+
+```js
+actionTable[armorIndex][partIndex] = [
+  { id, start, end, colorStart: {R,G,B,A}, colorEnd: {R,G,B,A}, linear },
+  ...
+]
+```
+
+armorIndex 0-6（舞者），partIndex 0-21（14 個身體部位 + 8 個配件 LED）。
+時間單位是毫秒且對齊 `TICK_MS`（50ms）網格，`linear` 為 1 時段內從
+`colorStart` 漸變到 `colorEnd`。
+
+**段與段之間可以有間隔，間隔就是熄滅**——黑色不是資料。壓平回韌體格式時
+空隙前會在網格整點補一個黑關鍵格，所以韌體看到的東西不變（有等價測試守著）。
 
 ### 上傳格式轉換 (handleOutput, Home.jsx:155)
 1. 時間軸對齊至 50ms 的倍數
@@ -124,10 +136,12 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 | `CopyPasteManager.jsx` | `useCopyPaste` | 五種複製貼上 + 複製模式 |
 | `hooks/useKeyboardShortcuts.js` | — | 全站唯一的 keydown 註冊點（宣告式 keymap） |
 
-`Timeline.jsx` 與 `waveform.jsx` 內部尚未拆（留給 Phase 5）。
+`Timeline.jsx` 的拖曳/resize 運算已在 Phase 5f 抽到
+`utils/segments/gestures.js`（`moveSegment` / `resizeSegment` 兩個純函式），
+元件裡只剩像素換算與直接寫 DOM。`waveform.jsx` 內部尚未拆。
 
 ### 文件檔案
-- **`README.md`**：專案說明文件（已針對 C++ 開發者優化）
+- **`README.md`**：專案說明文件（散文式，重點在資料模型與驗收方式）
 - **`docs/technical-analysis.md`**：詳細技術分析報告（架構、API、安全問題、改進路線圖）
 - **`docs/configuration.md`**：完整配置說明（環境變數、API 端點、部署模式）
 - **`docs/data-flow-pipeline.md`**：從編輯器到資料庫的完整資料流說明
@@ -167,8 +181,10 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 ```bash
 cd frontend
 npm run dev            # 另一個終端機
-npm run e2e            # 功能驗收：放色 / 選取 / 剪下 / undo / 快捷鍵 / 重新整理 / Output
-npm run audit:layout   # 版面稽核：控制項被蓋住 / 元素溢出容器 / 提示被裁掉
+npm run e2e            # 20 項：放色 / 選取 / 剪下 / undo / 快捷鍵 / 重新整理 /
+                       #        拖曳 resize / 刻度尺跳時間 / Output
+npm run audit:layout   # 4 項：控制項被蓋住 / 元素溢出容器 / 提示被裁掉 /
+                       #      成對元素沒對齊
 ```
 
 兩支都會把截圖存在 `frontend/e2e/shots/`。動過 CSS、版面或快捷鍵之後請跑一次
@@ -178,7 +194,7 @@ Edit/Logout 被橫幅蓋住、舞者開關蓋掉 12 個光衣部位、按鈕階�
 
 ⚠️ 若出現 `編輯器一直載入不了` / `一直被彈回首頁`，**先重開 `npm run dev` 再判斷**。
 連續改一堆 CSS 之後 vite 的 HMR 狀態會累積到 `/home` 載不起來，這是開發伺服器的
-問題不是程式碼的問題（重開後同一份程式碼就 17/17 全過）。
+問題不是程式碼的問題（重開後同一份程式碼就全過）。
 
 ### 設計系統（2026-08-12 起）
 
@@ -201,6 +217,16 @@ Edit/Logout 被橫幅蓋住、舞者開關蓋掉 12 個光衣部位、按鈕階�
 （Welcome / Dashboard）保留自己的品牌色，但一樣收成各自的區域 token。
 
 完整的設計決策與施工回顧見 `docs/ui-design-plan.md`。
+
+### 手勢（拖曳與 resize）
+
+運算在 `utils/segments/gestures.js`，元件裡只剩像素換算與寫 DOM。
+最小間距與最小長度兩個常數**只有那裡一份定義**——像素預覽與放開後的 commit
+必須用同一組數字，不然會出現「拖到底了但放開後又跳一點」。
+
+邊界情況（撞到鄰居、越過 0、超過總長、被夾死、縮到最小）在
+`utils/segments/__tests__/gestures.test.js` 窮舉過。真正的手感（幾何接線）
+只有 `npm run e2e` 的拖曳那一項驗得到，jsdom 量不到版面。
 
 ### 程式碼重構
 1. 保持向後相容性
@@ -376,15 +402,23 @@ actionTable[armor][part] = [
 1. **Phase 0**：vitest + `buildPlayers` 抽出 + golden fixtures（真實本地備份/mongo 指定 timestamp/合成邊界）+ 結構化 diff 比對器——專案零測試，此為動 shape 前提
 2. **Phase 2**：轉換器 `keyframesToSegments`（黑點上網格後丟棄）/ `segmentsToKeyframes`（空隙在網格點熄滅），round-trip 冪等 + 全 fixture 結構化 diff 全綠 = 閘門
 3. **Phase 4 單一原子 PR**：store 換 segments；舊寫入者包 `withKeyframeAdapter`、舊渲染讀 memoized `selectKeyframes`，既有程式碼零改動；三條載入路徑（redux-persist / 遠端 raw_data / IndexedDB 本地備份）走單一遷移入口；persist key bump（root→root_v2）保 deploy 回滾
-4. **Phase 5**：逐寫入者 segment 原生化並拆橋；最後 `blackthreshold`、`ensureBlackBefore`、`removeDuplicateBlackBlocks`、skip-black 導航全數刪除
+4. **Phase 5（5a–5f 已完成）**：逐寫入者 segment 原生化並拆橋。放色、工具列、
+   效果選單、複製貼上、區間平移、拖曳與 resize 全部改成直接操作 segments，
+   `blackSentinel.js`（`ensureBlackBefore` / `removeDuplicateBlackBlocks`）
+   整個檔案已刪除。**5g 尚未做**：`blockIndex`、`withKeyframeAdapter`、
+   `insertColorKeyframes`、`LEGACY_BLACK_SENTINEL_MS` 還在，最後兩個轉接橋
+   使用者是 audioplayer 的最愛色插入與 `EditActionTable`
 5. **Phase 6**：blink 改 `seg.effect` metadata（壓平才展開）、框選、多 segment 拖曳、對齊節拍
 
 ### 注意事項
 
-- **零 re-render 拖曳路徑必須保留**（詳見 `docs/frontend-rendering-optimization.md`）：手勢期間 direct-DOM transform、commit 恰好一次 dispatch、undo 合併一筆
-- actionTable 容器統一為巢狀 **array**（現況 array/object 混用，Phase 1 統一）
+- **零 re-render 拖曳路徑必須保留**（詳見 `docs/frontend-rendering-optimization.md`）：手勢期間 direct-DOM transform、commit 恰好一次 dispatch、undo 合併一筆。
+  Phase 5f 之後手勢的**運算**抽到 `utils/segments/gestures.js` 成為純函式
+  （`moveSegment` / `resizeSegment`），元件裡只剩像素換算與寫 DOM——
+  兩邊必須共用同一組常數，否則會出現「拖到底了但放開後又跳一點」
+- actionTable 容器統一為巢狀 **array**
 - 韌體輸出欄位順序（hat..acc7）是 ABI，用測試鎖定
-- 已知後端 bug：`GET /api/raw/{u}/LATEST` 查錯 collection——fixture 擷取用明確 timestamp，後端本身不動
+- `GET /api/raw/{u}/LATEST` 查錯 collection 的 bug 已修（2026-08-12）
 
 ## 長期願景：多軌音訊（DAW 風）
 
