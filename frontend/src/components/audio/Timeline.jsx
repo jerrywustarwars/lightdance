@@ -845,8 +845,17 @@ const Timeline = forwardRef(
            * 白色在飽和色上對比最高，外圈的深色則保證在白色/淺色色塊上也看得見
            * ——這樣任何底色都讀得出來，不需要任何依顏色分支的判斷。
            */
+          /*
+           * ring 必須畫在**框內**（`inset`）。
+           *
+           * `.timeline` 在非 move mode 時是 `overflow: hidden`，畫在框外的
+           * box-shadow 會被裁掉——第一塊色塊的左側 ring 永遠不見，軌道多的
+           * 時候（7 軌時每軌只有約 40px 高）連上下兩邊也一起被切。
+           *
+           * inset 同時保證 ring 不會改變色塊的佔位，跟舊版用 border 一樣。
+           */
           const ring = (width, color) =>
-            `0 0 0 ${width}px ${color}, 0 0 0 ${width + 2}px var(--ring-outer)`;
+            `inset 0 0 0 ${width}px ${color}, inset 0 0 0 ${width + 2}px var(--ring-outer)`;
 
           const boxShadow = isPasteTarget
             ? ring(3, "var(--ring-selected)") // 貼上目標：最粗

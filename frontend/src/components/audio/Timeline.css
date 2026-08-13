@@ -25,6 +25,7 @@
  * ring 本身畫在 Timeline.jsx 的 inline style（要跟色塊寬度一起算），
  * 四個角落的方塊放這裡，因為它需要偽元素。
  */
+/* 四角一律畫在框內——`.timeline` 非 move mode 時會裁切，畫在框外會被切掉 */
 .timeline-block.is-paste-target::before,
 .timeline-block.is-paste-target::after {
   content: "";
@@ -35,14 +36,14 @@
   z-index: 3;
 }
 .timeline-block.is-paste-target::before {
-  left: -2px;
-  top: -2px;
-  box-shadow: calc(100% + 2px) 0 0 var(--ring-selected);
+  left: 0;
+  top: 0;
+  box-shadow: calc(100% - 5px) 0 0 var(--ring-selected);
 }
 .timeline-block.is-paste-target::after {
-  left: -2px;
-  bottom: -2px;
-  box-shadow: calc(100% + 2px) 0 0 var(--ring-selected);
+  left: 0;
+  bottom: 0;
+  box-shadow: calc(100% - 5px) 0 0 var(--ring-selected);
 }
 
 /*
@@ -61,6 +62,15 @@
   border-style: solid;
   border-width: 0 9px 9px 0;
   border-color: transparent var(--ring-selected) transparent transparent;
-  pointer-events: none;
   z-index: 2;
+
+  /*
+   * 刻意**不設** `pointer-events: none`：這個角標帶著 `title`，寫了
+   * `pointer-events: none` 的話那個原生提示永遠不會出現——註解叫使用者去 hover，
+   * 但 hover 不到。
+   *
+   * 讓它接收事件是安全的：點擊會照常冒泡到 `.timeline-block` 的
+   * `onMouseDown`，選取行為不受影響；而它只有右上角 9×9px，
+   * 版面稽核量的是元素中心點，也不會被它擋到。
+   */
 }

@@ -1,7 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
-import { updateCurrentTime } from "../../redux/actions.js";
-import { TICK_MS } from "../../constants/time.js";
+import { useSelector } from "react-redux";
 import "./TimeRuler.css";
 
 /**
@@ -61,8 +59,14 @@ export const pickStepSeconds = (durationMs, widthPx) => {
   );
 };
 
-function TimeRuler() {
-  const dispatch = useDispatch();
+/**
+ * @param {object} props
+ * @param {(timeMs: number) => void} props.onSeek
+ *   跳到指定時間。由 `audioplayer` 提供——它持有 `sourceNode`，而「跳時間」
+ *   必須先停掉正在播放的音源，否則 waveform 的 rAF 迴圈會在 40ms 內把
+ *   `currentTime` 覆蓋回去，使用者看到的是「點了沒反應」。
+ */
+function TimeRuler({ onSeek }) {
   const duration = useSelector((state) => state.profiles.duration);
   const hostRef = useRef(null);
   const [width, setWidth] = useState(0);
@@ -100,26 +104,28 @@ function TimeRuler() {
     return result;
   }, [duration, width]);
 
-  /** 點刻度尺 = 跳到那個時間（對齊網格，與色塊的時間語意一致） */
+  /** 點刻度尺 = 跳到那個時間（對齊網格由 onSeek 負責，與波形點擊同一條路徑） */
   const handleSeek = (event) => {
-    if (!(duration > 0)) return;
+    if (!(duration > 0) || !onSeek) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const ratio = (event.clientX - rect.left) / rect.width;
-    const raw = Math.max(0, Math.min(ratio, 1)) * duration;
-    dispatch(updateCurrentTime(Math.round(raw / TICK_MS) * TICK_MS));
+    onSeek(Math.max(0, Math.min(ratio, 1)) * duration);
   };
 
   return (
+    /*
+     * 刻度尺是滑鼠用的輔助刻度，不掛 ARIA role。
+     *
+     * 一度標成 `role="slider"`，但 `aria-valuenow` 是寫死的 0、又 `tabIndex={-1}`
+     * 不可聚焦——螢幕閱讀器會唸出「一個永遠停在 0 的滑桿」，比不標還糟。
+     * 鍵盤要移動時間有 `Shift+←/→`，時間讀數也在工具列上，所以這裡對輔助
+     * 技術隱藏即可。
+     */
     <div
       className="time-ruler"
       ref={hostRef}
       onClick={handleSeek}
-      role="slider"
-      aria-label="時間軸刻度"
-      aria-valuemin={0}
-      aria-valuemax={Math.round(duration)}
-      aria-valuenow={0}
-      tabIndex={-1}
+      aria-hidden="true"
     >
       {ticks.map(({ time, isMajor, label }) => (
         <React.Fragment key={time}>

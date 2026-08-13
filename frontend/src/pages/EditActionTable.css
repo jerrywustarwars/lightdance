@@ -34,7 +34,7 @@
 
 .back-button {
   background-color: var(--bg-inverse);
-  color: var(--text-primary);
+  color: var(--text-inverse); /* 淺底深字——這頁是淺色的 */
   padding: 10px 15px;
   border: none;
   border-radius: 5px;
@@ -79,11 +79,11 @@ th,
 td {
   padding: 12px;
   text-align: center;
-  border: 1px solid var(--bg-inverse);
+  border: 1px solid var(--text-disabled);
 }
 th {
   background: var(--bg-inverse);
-  color: var(--text-primary);
+  color: var(--text-inverse); /* 淺底深字——這頁是淺色的 */
 }
 
 /* 讓表格置中 */

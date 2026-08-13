@@ -50,6 +50,9 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   const [zoomLevel, setZoomLevel] = useState(1); // 放大級別
   const progressFlagRef = useRef(null); // P0: 進度條 DOM ref，60fps 直接操作
   const [sourceNode, setSourceNode] = useState(null);
+  // 「使用者剛指定要跳到哪」。waveform 暫停時會把播放位置寫回 Redux，
+  // 這個 ref 是告訴它「這次是 seek，不要用舊位置覆寫」。詳見 seekTo。
+  const pendingSeekRef = useRef(null);
   const elRefs = useRef([]);
 
   const effects = useLightEffects(); // 漸變/頻閃/亮度階梯：選單與快捷鍵共用
@@ -186,6 +189,42 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     });
 
     commit(updatedActionTable);
+  };
+
+  /**
+   * 跳到指定時間。
+   *
+   * 光是 dispatch `updateCurrentTime` 不夠——播放中時 waveform 的 rAF 迴圈
+   * 每 40ms 就會用實際播放進度覆蓋掉它，看起來像「點了沒反應」。必須先停掉
+   * 正在播放的 `AudioBufferSourceNode`。
+   *
+   * 這個知識原本只寫在 waveform 的 `handleWaveformClick` 裡，刻度尺一加上來
+   * 就踩到了。改由持有 `sourceNode` 的這一層定義一次，兩邊共用。
+   */
+  const seekTo = (timeMs) => {
+    const aligned = Math.round(timeMs / TICK_MS) * TICK_MS;
+    pendingSeekRef.current = aligned;
+
+    if (sourceNode) {
+      /*
+       * 光是 `sourceNode.stop()` 不夠，還會被反咬一口：
+       *
+       *   stop() → onended → setIsPlaying(false) → waveform 的暫停分支
+       *          → 用音訊時鐘重算「播到哪」並 dispatch → 蓋掉我們要跳的時間
+       *
+       * 所以要把那條連鎖拆掉：清掉 onended、把 sourceNode 設成 null。
+       * 暫停分支的條件是 `!isPlaying && sourceNode`，sourceNode 一旦為 null
+       * 就整段跳過，不會再覆寫。
+       *
+       * （這個坑本來就存在於波形的點擊跳轉，只是沒人注意到——播放中點波形
+       * 一樣跳不動。現在兩邊共用這個函式，一起修好。）
+       */
+      sourceNode.onended = null;
+      sourceNode.stop();
+      setSourceNode(null);
+      setIsPlaying(false);
+    }
+    dispatch(updateCurrentTime(aligned));
   };
 
   /**
@@ -353,7 +392,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
             width: `${100 * zoomLevel}%`, // 根据 zoomValue 动态调整容器宽度
           }}
         >
-          <TimeRuler />
+          <TimeRuler onSeek={seekTo} />
           <ShiftMarkers shift={shift} />
           {/* 快捷鍵統一由 useKeyboardShortcuts 掛在 document 上，
               這裡不再重複註冊 onKeyDown（原本同一個 handler 綁了兩次） */}
@@ -368,6 +407,8 @@ function AudioPlayer({ setButtonState, timelineRef }) {
               scrollRef={scrollRef}
               sourceNode={sourceNode}
               setSourceNode={setSourceNode}
+              onSeek={seekTo}
+              pendingSeekRef={pendingSeekRef}
               zoomValue={zoomLevel}
               containerRef={containerRef}
               volume={volume}

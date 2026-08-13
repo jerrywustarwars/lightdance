@@ -57,6 +57,8 @@ const AudioWaveform = ({
   setSourceNode,
   containerRef,
   onTimeUpdate,
+  onSeek,
+  pendingSeekRef,
 }) => {
   const canvasRef = useRef(null);
   const [audioContext] = useState(
@@ -247,8 +249,24 @@ const AudioWaveform = ({
       animationRef.current = requestAnimationFrame(updateProgress);
     } else {
       cancelAnimationFrame(animationRef.current);
-      // 暫停時將最終時間寫回 Redux（供其他元件同步）
-      if (playbackTimeRef.current > 0) {
+
+      /*
+       * 暫停時把最終位置寫回 Redux（供其他元件同步）——但**seek 例外**。
+       *
+       * 播放中點刻度尺或波形時，`seekTo` 會停掉音源，那會讓 isPlaying 變 false
+       * 而跑到這裡；若照舊寫回 `playbackTimeRef`（音樂播到哪），就會蓋掉使用者
+       * 剛指定的位置，看起來像「點了沒反應」。實測播放中點 75% 會得到
+       * 「暫停當下的位置」而不是 75% 的位置。
+       *
+       * 所以 seek 的目標優先，並同步更新 playbackTimeRef，
+       * 免得下一次暫停又跳回舊位置。
+       */
+      const pendingSeek = pendingSeekRef?.current;
+      if (pendingSeek != null) {
+        playbackTimeRef.current = pendingSeek;
+        dispatch(updateCurrentTime(pendingSeek));
+        pendingSeekRef.current = null;
+      } else if (playbackTimeRef.current > 0) {
         const alignedTime = Math.floor(playbackTimeRef.current / 50) * 50;
         dispatch(updateCurrentTime(alignedTime));
       }
@@ -374,10 +392,8 @@ const AudioWaveform = ({
     const rect = containerRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const progress = x / rect.width;
-    const seekMs = Math.floor((progress * duration) / 50) * 50;
-
-    if (sourceNode) sourceNode.stop();
-    dispatch(updateCurrentTime(seekMs));
+    // 對齊網格與「先停音源」都交給外層的 seekTo，避免兩份實作各自漂移
+    onSeek(progress * duration);
   };
 
   // 處理滑鼠移動，顯示懸停時間
@@ -480,6 +496,8 @@ function Wave({
   setSourceNode,
   volume,
   onTimeUpdate,
+  onSeek,
+  pendingSeekRef,
 }) {
   // const musicIndex = useSelector((state) => state.profiles.data?.music_index ?? 2);
   const musicFilename = useSelector((state) => state.profiles.data?.music_filename || "2026_funding.mp3");
@@ -501,6 +519,8 @@ function Wave({
         zoomValue={zoomValue}
         volume={volume}
         onTimeUpdate={onTimeUpdate}
+        onSeek={onSeek}
+        pendingSeekRef={pendingSeekRef}
       />
     </div>
   );

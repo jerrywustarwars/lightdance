@@ -3,7 +3,7 @@
  *
  * `todo.md` 文末那份 checklist 一直只能靠人手動點，這支腳本把其中
  * **不需要人眼判斷手感**的項目自動化：放色 / 選取 / 剪下 / 刪除 /
- * undo-redo / 快捷鍵 / 重新整理後的持久化 / Output 觸發上傳。
+ * undo-redo / 快捷鍵 / 重新整理後的持久化 / 刻度尺跳時間 / Output 觸發上傳。
  *
  * ## 為什麼要有這個（元件測試不是已經很多了嗎）
  *
@@ -348,6 +348,46 @@ const run = async () => {
     `${beforeReload.length} → ${afterReload.length} 塊`,
   );
   await shot(page, "after-reload");
+
+  // ── 刻度尺跳時間 ──────────────────────────────────────
+  //
+  // 播放中的那一項特別容易壞：停掉音源之後，waveform 有兩處「把播放位置寫回
+  // Redux」的邏輯會蓋掉剛指定的時間，看起來就像「點了沒反應」。
+  const readTimeMs = () =>
+    page.evaluate(() => {
+      const txt = document.querySelector(".controls").textContent.replace(/\s+/g, " ");
+      const m = txt.match(/(\d+):(\d\d):(\d\d\d)\s*\/\s*\d+:\d\d:\d\d\d/);
+      return m ? (+m[1] * 60 + +m[2]) * 1000 + +m[3] : null;
+    });
+
+  const clickRulerAt = async (fraction) => {
+    const box = await page.locator(".time-ruler").boundingBox();
+    await page.mouse.click(box.x + box.width * fraction, box.y + box.height / 2);
+    await page.waitForTimeout(700);
+  };
+
+  const rulerBox = await page.locator(".time-ruler").boundingBox();
+  if (rulerBox) {
+    await clickRulerAt(0.5);
+    const pausedSeek = await readTimeMs();
+    record(
+      "暫停中點刻度尺會跳時間",
+      Math.abs(pausedSeek - 15000) <= 100,
+      `${pausedSeek}ms（期望 15000）`,
+    );
+
+    await page.locator(".play-button").click();
+    await page.waitForTimeout(1200);
+    await clickRulerAt(0.75);
+    const playingSeek = await readTimeMs();
+    record(
+      "播放中點刻度尺也會跳時間",
+      Math.abs(playingSeek - 22500) <= 100,
+      `${playingSeek}ms（期望 22500）`,
+    );
+  } else {
+    record("刻度尺存在", false, "找不到 .time-ruler");
+  }
 
   // ── Output ────────────────────────────────────────────
   const outputBtn = page.locator("button.output-button");

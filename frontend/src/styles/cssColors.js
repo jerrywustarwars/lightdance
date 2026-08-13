@@ -20,9 +20,47 @@
  * - 註解裡的色碼
  */
 
-/** 顏色字面值：十六進位、rgb()/rgba()、hsl()/hsla()、以及常見的顏色關鍵字 */
-const COLOR_LITERAL =
-  /#[0-9a-fA-F]{3,8}\b|\brgba?\([^)]*\)|\bhsla?\([^)]*\)|\b(?:white|black|red|green|blue|yellow|orange|purple|pink|brown|gray|grey|silver|gold|cyan|magenta|lime|navy|teal|olive|maroon)\b/g;
+/**
+ * CSS 具名顏色的完整清單。
+ *
+ * 一開始只列了十來個常見的，結果 `darkgrey` 與 `bisque` 都溜過去，
+ * `PENDING = {}` 卻宣稱零違規——**掃描器漏看比沒有掃描器更糟**，因為它會
+ * 給人「已經乾淨了」的錯覺。複合名稱（`darkslategray`…）用前綴拼湊很容易
+ * 再漏，所以這裡直接放完整名單，一勞永逸。
+ *
+ * 刻意不含 `transparent` 與 `currentColor`：它們不是具體顏色，寫死也沒問題。
+ */
+const NAMED_COLORS = [
+  "aliceblue","antiquewhite","aqua","aquamarine","azure","beige","bisque","black",
+  "blanchedalmond","blue","blueviolet","brown","burlywood","cadetblue","chartreuse",
+  "chocolate","coral","cornflowerblue","cornsilk","crimson","cyan","darkblue",
+  "darkcyan","darkgoldenrod","darkgray","darkgreen","darkgrey","darkkhaki",
+  "darkmagenta","darkolivegreen","darkorange","darkorchid","darkred","darksalmon",
+  "darkseagreen","darkslateblue","darkslategray","darkslategrey","darkturquoise",
+  "darkviolet","deeppink","deepskyblue","dimgray","dimgrey","dodgerblue","firebrick",
+  "floralwhite","forestgreen","fuchsia","gainsboro","ghostwhite","gold","goldenrod",
+  "gray","green","greenyellow","grey","honeydew","hotpink","indianred","indigo",
+  "ivory","khaki","lavender","lavenderblush","lawngreen","lemonchiffon","lightblue",
+  "lightcoral","lightcyan","lightgoldenrodyellow","lightgray","lightgreen","lightgrey",
+  "lightpink","lightsalmon","lightseagreen","lightskyblue","lightslategray",
+  "lightslategrey","lightsteelblue","lightyellow","lime","limegreen","linen","magenta",
+  "maroon","mediumaquamarine","mediumblue","mediumorchid","mediumpurple",
+  "mediumseagreen","mediumslateblue","mediumspringgreen","mediumturquoise",
+  "mediumvioletred","midnightblue","mintcream","mistyrose","moccasin","navajowhite",
+  "navy","oldlace","olive","olivedrab","orange","orangered","orchid","palegoldenrod",
+  "palegreen","paleturquoise","palevioletred","papayawhip","peachpuff","peru","pink",
+  "plum","powderblue","purple","rebeccapurple","red","rosybrown","royalblue",
+  "saddlebrown","salmon","sandybrown","seagreen","seashell","sienna","silver",
+  "skyblue","slateblue","slategray","slategrey","snow","springgreen","steelblue","tan",
+  "teal","thistle","tomato","turquoise","violet","wheat","white","whitesmoke","yellow",
+  "yellowgreen",
+];
+
+/** 顏色字面值：十六進位、rgb()/rgba()、hsl()/hsla()、具名顏色 */
+const COLOR_LITERAL = new RegExp(
+  `#[0-9a-fA-F]{3,8}\\b|\\brgba?\\([^)]*\\)|\\bhsla?\\([^)]*\\)|\\b(?:${NAMED_COLORS.join("|")})\\b`,
+  "g",
+);
 
 /** 一條宣告：`property: value`（值不含 `;` `{` `}`） */
 const DECLARATION = /([-a-zA-Z]+)\s*:\s*([^;{}]+)/g;
@@ -30,8 +68,15 @@ const DECLARATION = /([-a-zA-Z]+)\s*:\s*([^;{}]+)/g;
 /** 去掉註解，免得註解裡提到的色碼被算成違規 */
 const stripComments = (css) => css.replace(/\/\*[\s\S]*?\*\//g, "");
 
-/** 去掉 `var(...)` 的內容 —— 變數名稱裡的 `blue` 不是顏色 */
-const stripVarNames = (value) => value.replace(/var\(\s*--[^)]*\)/g, "var()");
+/**
+ * 去掉不該被當成顏色的片段：
+ * - `var(--accent-blue)`：變數名稱裡的 `blue` 只是名字
+ * - `"Tan Pro"`：字型名稱剛好撞到 `tan` 這種具名顏色
+ */
+const stripVarNames = (value) =>
+  value
+    .replace(/var\(\s*--[^)]*\)/g, "var()")
+    .replace(/"[^"]*"|'[^']*'/g, '""');
 
 /**
  * 找出一份 CSS 原始碼裡所有寫死的顏色。
@@ -53,3 +98,55 @@ export const findHardcodedColors = (css) => {
   }
   return found;
 };
+
+/**
+ * 找出「前景與背景解析成同一個顏色」的規則。
+ *
+ * 這是 token 收斂最容易踩的坑，而且**畫面上看起來只是空白**——文字還在
+ * DOM 裡、也還在該在的位置，只是跟背景同色。實測一次抓到三處：
+ * Choose-Timeline 彈窗的欄位、`/edit` 表格的表頭、返回鍵。
+ *
+ * 只比對同一條規則裡同時宣告了 `color` 與 `background(-color)` 的情況——
+ * 跨規則的繼承要解 CSS 串接才算得準，那需要真的跑瀏覽器（版面稽核在做）。
+ *
+ * @param {string} css CSS 原始碼
+ * @param {Record<string, string>} tokenValues token 名稱 → 實際色值
+ * @returns {{selector: string, value: string}[]}
+ */
+export const findSameColorRules = (css, tokenValues) => {
+  const resolve = (raw) => {
+    const value = raw.trim();
+    const varMatch = value.match(/^var\(\s*(--[a-zA-Z0-9-]+)\s*\)$/);
+    if (varMatch) return tokenValues[varMatch[1]]?.trim().toLowerCase() ?? null;
+    return value.toLowerCase();
+  };
+
+  const found = [];
+  const source = stripComments(css);
+
+  // 逐條規則：`選擇器 { 宣告 }`
+  for (const rule of source.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const [, selector, body] = rule;
+    let fg = null;
+    let bg = null;
+
+    for (const decl of body.matchAll(DECLARATION)) {
+      const [, property, value] = decl;
+      if (property.toLowerCase() === "color") fg = resolve(value);
+      if (/^background(-color)?$/i.test(property)) bg = resolve(value);
+    }
+
+    if (fg && bg && fg === bg) {
+      found.push({ selector: selector.trim().replace(/\s+/g, " "), value: fg });
+    }
+  }
+  return found;
+};
+
+/** 從 tokens.css 解析出 `--name: value` 對照表 */
+export const parseTokens = (css) =>
+  Object.fromEntries(
+    [...stripComments(css).matchAll(/(--[a-zA-Z0-9-]+)\s*:\s*([^;]+);/g)].map(
+      ([, name, value]) => [name, value.trim()],
+    ),
+  );

@@ -237,16 +237,21 @@
   width: 80px;
   height: 30px;
   border: 1px solid var(--bg-inverse);
-  border-radius: 5px;
-  background-color: var(--bg-inverse);
-  color: var(--text-inverse);
-  font-size: 16px;
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-control);
+  color: var(--text-secondary);
+  font-size: var(--fs-base);
   cursor: pointer;
   text-align: center;
 }
 
+/*
+ * 已選＝亮底反相，與按鈕階層的 primary 同一套語意。
+ * （原本未選與已選都是 `--bg-inverse` 底，文字又是 `--text-primary`，
+ *   兩者長得一模一樣而且字直接消失在背景裡。）
+ */
 .checkbox-button.selected {
   background-color: var(--bg-inverse);
-  color: var(--text-primary);
+  color: var(--text-inverse);
   border-color: var(--bg-inverse);
 }

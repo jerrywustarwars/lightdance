@@ -150,7 +150,6 @@
   font-size: 15px;
   top: 2px;
 }
-.device-info-button:hover,
 .edit-icon {
   display: inline-block;
   vertical-align: baseline;
@@ -254,16 +253,6 @@
   gap: 1px;
 }
 
-.loading-block {
-  position: absolute;
-  margin-left: 150px;
-  margin-top: 300px;
-  height: 500px;
-  width: 500px;
-  border-radius: 50px;
-  background-color: bisque;
-  z-index: 100;
-}
 
 /* 容器：預設寬度窄，展開時變寬 */
 .home-creation-bar {

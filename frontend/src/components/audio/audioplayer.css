@@ -327,7 +327,7 @@
 }
 
 .zoom-controls button:disabled {
-  background-color: darkgrey; /* 禁用時更深的灰色 */
+  background-color: var(--bg-control-active); /* 禁用時更深的灰色 */
   cursor: not-allowed;
 }
 .hover-line {
