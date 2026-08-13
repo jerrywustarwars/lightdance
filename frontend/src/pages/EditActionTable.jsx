@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useDispatch } from "react-redux";
 import { useNavigate } from "react-router-dom";
 
@@ -8,7 +8,11 @@ import { isPartAllowed } from "../config/accessoryConfig";
 import { PART_LABELS } from "../constants/parts.js";
 import { DEFAULT_SEGMENT_MS, TICK_MS } from "../constants/time.js";
 import { createId, roundToTick, validateSegments } from "../utils/segments/core.js";
-import { cloneColor, createColorSegment } from "../utils/segments/color.js";
+import {
+  cloneColor,
+  createColorSegment,
+  sameColor,
+} from "../utils/segments/color.js";
 import "./EditActionTable.css";
 
 /**
@@ -56,7 +60,14 @@ function EditActionTable() {
     commitPart(selectedArmor, selectedPart, normalized);
   };
 
+  /**
+   * 改一個欄位。值沒有真的變就什麼都不做——調色盤拖曳時會連續發事件，
+   * 沒有這道判斷的話一次拖曳就吃掉幾十格 undo。
+   */
   const updateField = (segmentId, patch) => {
+    const target = segments.find((segment) => segment.id === segmentId);
+    if (!target || !patchChangesAnything(target, patch)) return;
+
     writeBack(
       segments.map((segment) =>
         segment.id === segmentId ? { ...segment, ...patch } : segment,
@@ -183,23 +194,15 @@ function PartEditor({ armorIndex, partIndex, segments, onUpdate, onDelete }) {
               <tr key={segment.id}>
                 <td>{index}</td>
                 <td>
-                  <input
-                    type="number"
-                    step={TICK_MS}
+                  <TimeCell
                     value={segment.start}
-                    onChange={(e) =>
-                      onUpdate(segment.id, { start: Number(e.target.value) })
-                    }
+                    onCommit={(next) => onUpdate(segment.id, { start: next })}
                   />
                 </td>
                 <td>
-                  <input
-                    type="number"
-                    step={TICK_MS}
+                  <TimeCell
                     value={segment.end}
-                    onChange={(e) =>
-                      onUpdate(segment.id, { end: Number(e.target.value) })
-                    }
+                    onCommit={(next) => onUpdate(segment.id, { end: next })}
                   />
                 </td>
                 <td>
@@ -256,6 +259,52 @@ function PartEditor({ armorIndex, partIndex, segments, onUpdate, onDelete }) {
         </table>
       </div>
     </div>
+  );
+}
+
+/** patch 裡有沒有任何一項和 segment 目前的值不同（顏色比內容，其餘比值） */
+const patchChangesAnything = (segment, patch) =>
+  Object.entries(patch).some(([key, value]) =>
+    key.startsWith("color")
+      ? !sameColor(segment[key], value)
+      : segment[key] !== value,
+  );
+
+/**
+ * 時間欄位：打字時只動本地狀態，**離開欄位或按 Enter 才寫回 store**。
+ *
+ * 每次 keystroke 就 dispatch 的話，把 550 改成 1500 會經過 1 / 15 / 150 / 1500
+ * 四個中間值，每個都佔一格 undo，而且中間值會被 `roundToTick` 夾成 0——
+ * 使用者會看到自己打的數字被吃掉。這也是為什麼不用受控的 `type="number"`
+ * 直接綁 store。
+ */
+function TimeCell({ value, onCommit }) {
+  const [draft, setDraft] = useState(String(value));
+
+  // 外部改變（undo、切換部位、其他欄位連動）時同步顯示值
+  useEffect(() => setDraft(String(value)), [value]);
+
+  const commit = () => {
+    const parsed = Number(draft);
+    if (!Number.isFinite(parsed)) {
+      setDraft(String(value)); // 打了非數字就還原，不要把 NaN 寫進光表
+      return;
+    }
+    if (parsed !== value) onCommit(parsed);
+  };
+
+  return (
+    <input
+      type="number"
+      step={TICK_MS}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") setDraft(String(value));
+      }}
+    />
   );
 }
 

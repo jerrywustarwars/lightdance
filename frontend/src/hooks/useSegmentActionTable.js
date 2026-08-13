@@ -28,6 +28,34 @@ import { updateActionTable } from "../redux/actions.js";
 const EMPTY = Object.freeze([]);
 
 /**
+ * 這次寫入會不會讓光表少掉舞者？會的話一律擋下來。
+ *
+ * 光表的形狀由 `PLAYER_COUNT` 固定，**沒有任何合法的編輯會讓舞者變少**，
+ * 所以縮小一定是 bug。而且是最貴的那種 bug：整場表演靜默消失，使用者要按到
+ * 下一次 Output 才發現。
+ *
+ * 會走到這裡的路徑是這樣的：光表還沒載入時 `useSegmentActionTable` 給的是
+ * 空陣列（否則呼叫端的 `.map` 會炸），呼叫端拿它當基準算完再整張寫回去，
+ * 於是把 store 裡真正的表覆蓋成空的。四個 `commit` 呼叫端都是同一個模式，
+ * 擋在這個單一出口比要求每個呼叫端各自防守可靠。
+ *
+ * 只擋縮小、不擋等長 —— 判斷條件要能明確說出「什麼情況一定是錯的」，
+ * 否則就會變成另一種需要維護的猜測。
+ */
+const wouldShrinkTable = (nextTable, current) => {
+  if (!Array.isArray(current) || current.length === 0) return false;
+  if (Array.isArray(nextTable) && nextTable.length >= current.length) {
+    return false;
+  }
+
+  console.error(
+    "[useSegmentActionTable] 擋下會讓光表縮小的寫入：",
+    `${current.length} 位舞者 → ${Array.isArray(nextTable) ? nextTable.length : typeof nextTable}`,
+  );
+  return true;
+};
+
+/**
  * 把單一部位的新 segments 併回整張表，其餘部位維持原 reference。
  *
  * 結構共享是 memo 與逐部位訂閱能生效的前提：只有真的被改動的那條
@@ -132,6 +160,7 @@ export function useSegmentActionTable() {
     (nextTable, meta) => {
       const current = store.getState().profiles.data.actionTable;
       if (nextTable === current) return;
+      if (wouldShrinkTable(nextTable, current)) return;
       dispatch(updateActionTable(nextTable, meta));
     },
     [dispatch, store],

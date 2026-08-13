@@ -116,7 +116,7 @@ const Timeline = forwardRef(
           if (dt !== 0) {
             // 邊界夾緊、網格對齊、與鄰居的最小間距全部在 moveSegment 裡，
             // 那是純函式所以測得到（gestures.test.js）。這裡只負責把像素換算
-            // 成毫秒。沒有實際位移時它會回傳原陣列，commitPart 就不會佔一格 undo。
+            // 成毫秒。沒有實際位移時它會回傳原陣列，commitSegments 就不會佔一格 undo。
             commitSegments(
               moveSegment(segmentsRef.current, segmentId, dt, {
                 duration: durationRef.current,
@@ -160,7 +160,7 @@ const Timeline = forwardRef(
           if (dt !== 0) {
             // 邊界夾緊、網格對齊、與鄰居的最小間距全部在 moveSegment 裡，
             // 那是純函式所以測得到（gestures.test.js）。這裡只負責把像素換算
-            // 成毫秒。沒有實際位移時它會回傳原陣列，commitPart 就不會佔一格 undo。
+            // 成毫秒。沒有實際位移時它會回傳原陣列，commitSegments 就不會佔一格 undo。
             commitSegments(
               moveSegment(segmentsRef.current, segmentId, dt, {
                 duration: durationRef.current,
