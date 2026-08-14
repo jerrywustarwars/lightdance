@@ -18,6 +18,7 @@ from time import strftime, localtime
 
 from fastapi.middleware.cors import CORSMiddleware
 
+from paths import UnsafePathError, resolve_within
 from auth import (
     create_access_token,
     hash_password,
@@ -63,15 +64,30 @@ collection_pico = db['pico']
 collection_music = db['music']
 user_list = db['users']
 
-origins = [
+# 允許的來源。
+#
+# 舊版是一份**寫死在程式裡**的清單（不是 `*`，所以沒有原本記的那麼糟），
+# 但那代表換一個部署位置就要改程式、重新 build image。收成環境變數之後
+# 換機器只要改 .env。
+#
+# 預設值就是原本那份清單，所以沒設 CORS_ORIGINS 的環境行為完全不變。
+DEFAULT_ORIGINS = [
     "http://localhost",
     "http://localhost:8000",
     "http://localhost:8081",
     "http://localhost:3000",
     "http://localhost:3001",
     "http://140.113.160.136:419",
-    "http://140.113.160.136"
+    "http://140.113.160.136",
 ]
+
+def _load_origins():
+    raw = os.getenv("CORS_ORIGINS", "").strip()
+    if not raw:
+        return DEFAULT_ORIGINS
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+origins = _load_origins()
 
 app.add_middleware(
     CORSMiddleware,
@@ -446,13 +462,18 @@ async def upload_music(file: UploadFile = File(None), current_user: User = Depen
 	if file.content_type != "audio/mpeg":
 		raise HTTPException(status_code=415, detail="File must be an MP3")
 
-	file_location = f"{MUSIC_FILE_PATH}/{current_user.username}"
+	# 檔名完全由客戶端決定，直接接上去的話 `../../something` 會寫到目錄外面
+	try:
+		file_loc = resolve_within(MUSIC_FILE_PATH, current_user.username, file.filename)
+	except UnsafePathError as error:
+		raise HTTPException(status_code=400, detail=str(error))
+
+	file_location = os.path.dirname(file_loc)
 	if not os.path.exists(file_location):
 		print("make new directory")
 		os.makedirs(file_location, exist_ok=True)
-			    
+
 	print("saving files")
-	file_loc = file_location + '/' + file.filename
 	# Save the uploaded file to the local server
 	with open(file_loc, "wb") as buffer:
 		shutil.copyfileobj(file.file, buffer)
@@ -465,7 +486,11 @@ async def upload_music(file: UploadFile = File(None), current_user: User = Depen
 # 使用場景：瀏覽特定使用者的音樂檔案庫
 @api_router.get("/get_music_list/{username}")
 async def get_music_list(username: str):
-	file_path = f"{MUSIC_FILE_PATH}/{username}"
+	try:
+		file_path = resolve_within(MUSIC_FILE_PATH, username)
+	except UnsafePathError as error:
+		raise HTTPException(status_code=400, detail=str(error))
+
 	if not os.path.isdir(file_path):
 		return {"music_list": [], "message": f"no music directory for {username}"}
 	files = os.listdir(file_path)
@@ -484,13 +509,15 @@ async def get_music_list(username: str):
 # 使用場景：播放或下載音樂檔案
 @api_router.get("/get_music/{username}/{filename}")
 async def get_music_file(username: str, filename: str):
-	file_location = f'{MUSIC_FILE_PATH}/{username}/{filename}'
-	if not os.path.exists(file_location):
-		raise HTTPException(status_code=415, detail= f"file not found: {file_location}")
-	
-	
-	# Check if the file exiists before serving it
-	if not os.path.exists(file_location):
+	# 網址裡的字串不能直接接進路徑：百分比編碼是在路由之後才解開的，
+	# `..%2F..%2Fetc%2Fpasswd` 進到這裡就是 `../../etc/passwd`（見 paths.py）
+	try:
+		file_location = resolve_within(MUSIC_FILE_PATH, username, filename)
+	except UnsafePathError as error:
+		raise HTTPException(status_code=400, detail=str(error))
+
+	if not os.path.isfile(file_location):
+		# 不要把組出來的路徑回給客戶端——那會洩漏伺服器上的目錄結構
 		raise HTTPException(status_code=404, detail="File not found")
 
 	# Return the file as a response
