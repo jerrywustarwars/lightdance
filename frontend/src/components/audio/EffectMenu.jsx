@@ -6,8 +6,13 @@ import { faWandMagicSparkles } from "@fortawesome/free-solid-svg-icons";
 import { useSegmentActionTable } from "../../hooks/useSegmentActionTable.js";
 import { TICK_MS } from "../../constants/time.js";
 import { resolveSelections } from "../../utils/selection.js";
-import { cloneColor, lerpColor, BLACK } from "../../utils/segments/color.js";
-import { createId } from "../../utils/segments/core.js";
+import { cloneColor, BLACK } from "../../utils/segments/color.js";
+import {
+  MIN_BLINK_PERIOD_MS,
+  blinkPeriodOf,
+  makeBlink,
+  withoutEffect,
+} from "../../utils/segments/effects.js";
 
 /**
  * 效果選單：三種套用在選取色塊上的效果。
@@ -15,7 +20,7 @@ import { createId } from "../../utils/segments/core.js";
  * | 效果 | 作用 |
  * |---|---|
  * | 漸變 (L) | 切換色塊的 `linear`，讓它在段內從 colorStart 漸變到 colorEnd |
- * | 頻閃 (B) | 把色塊切成固定週期的閃爍序列 |
+ * | 頻閃 (B) | 在色塊上記一個閃爍週期（metadata，不切色塊） |
  * | 亮度階梯 | 從選取的色塊往後，把連續色塊的透明度做成階梯 |
  *
  * 邏輯放在 `useLightEffects()`，因為 L / B 也有鍵盤快捷鍵——外殼呼叫一次 hook，
@@ -95,65 +100,70 @@ export function useLightEffects() {
   };
 
   /**
-   * 頻閃：把選取的色塊切成 `period` 毫秒一次的閃爍。
+   * 頻閃：在選取的色塊上記一個 `effect: {type:'blink', period}`。
    *
-   * 每個週期是「亮 `period - TICK_MS`、熄滅一格」——熄滅用**空隙**表達，
-   * 不再補黑色關鍵格。壓平回 keyframe 時，空隙前會在網格整點發一個黑點，
-   * 落在跟舊版 `period - 10ms` 相同的 tick 上，所以韌體看到的東西不變。
+   * **不切色塊。** 舊版是破壞性的——套下去之後那個色塊就被換成 N 個小色塊，
+   * 於是想整段挪半拍要把 N 個全部選起來（而且它們之間有空隙，連選會斷）、
+   * 想把間隔從 250 改成 200 只能刪掉重放、想改顏色要逐塊改。
+   * 現在畫面上還是一個可拖曳、可 resize、可改色的色塊，展開只發生在壓平輸出
+   * 與播放預覽（見 `utils/segments/effects.js`）。
    *
-   * 原本的色塊若是漸變，閃爍的每一段會取該時間點在漸變曲線上的顏色，
-   * 讓「一邊漸變一邊閃」看起來仍然連續。
+   * `period` 傳 0 就是取消頻閃。
    */
   const applyBlink = (periodInput) => {
-    const period = parseInt(periodInput, 10);
-    if (isNaN(period) || period <= 0 || period % TICK_MS !== 0) {
-      alert(`請輸入 ${TICK_MS} 的倍數！`);
-      return;
-    }
-    // 一個週期至少要兩格：一格亮、一格滅。只有一格的話等於整段熄滅。
-    if (period < TICK_MS * 2) {
-      alert(`頻閃間隔至少要 ${TICK_MS * 2}ms，否則沒有亮的部分。`);
-      return;
-    }
-    if (selected.length !== 1) {
-      alert("請先選取「一個」色塊，再套用頻閃。");
+    if (selected.length === 0) {
+      alert("請先選取色塊，再套用頻閃。");
       return;
     }
 
-    const target = selected[0].segment;
-    const span = target.end - target.start;
-    const blinkCount = Math.floor(span / period);
-    if (blinkCount < 1) {
-      alert("色塊比一個頻閃週期還短，請選長一點的色塊或縮小間隔。");
+    // 0 = 取消。放在解析之前，因為 0 過不了 makeBlink 的最小週期檢查
+    const wantsClear = parseInt(periodInput, 10) === 0;
+    const effect = wantsClear ? null : makeBlink(periodInput);
+
+    if (!wantsClear && !effect) {
+      alert(
+        `頻閃間隔必須是 ${TICK_MS} 的倍數，且至少 ${MIN_BLINK_PERIOD_MS}ms` +
+          `（一個週期要有亮的一段和滅的一格）。輸入 0 可以取消頻閃。`,
+      );
       return;
     }
 
-    const pulses = [];
-    for (let i = 0; i < blinkCount; i++) {
-      const start = target.start + i * period;
-      // 段內漸變時，取這一刻在漸變曲線上的顏色
-      const ratio = span > 0 ? (start - target.start) / span : 0;
-      const color =
-        target.linear === 1
-          ? lerpColor(target.colorStart, target.colorEnd, ratio)
-          : cloneColor(target.colorStart);
+    /*
+     * 可以一次套到多個色塊——metadata 不像切色塊那樣依賴「選取的是哪一個」，
+     * 所以框選一整段之後可以整批套。裝不下一個完整週期的色塊會被跳過而不是
+     * 讓整個操作失敗，否則框選裡混到一個短色塊就什麼都做不了。
+     */
+    const targets = new Set(selected.map((entry) => entry.segment.id));
+    let changed = 0;
+    let skipped = 0;
 
-      pulses.push({
-        id: createId(),
-        start,
-        end: start + period - TICK_MS, // 最後一格留給空隙 = 熄滅
-        colorStart: color,
-        colorEnd: cloneColor(color),
-        linear: 0,
-      });
+    const next = activeSegments.map((segment) => {
+      if (!targets.has(segment.id)) return segment;
+
+      if (wantsClear) {
+        if (!segment.effect) return segment;
+        changed++;
+        return withoutEffect(segment);
+      }
+
+      if (segment.end - segment.start < effect.period) {
+        skipped++;
+        return segment;
+      }
+      if (blinkPeriodOf(segment) === effect.period) return segment;
+
+      changed++;
+      return { ...segment, effect };
+    });
+
+    if (!changed) {
+      alert(
+        skipped
+          ? "選取的色塊比一個頻閃週期還短，請選長一點的色塊或縮小間隔。"
+          : "沒有東西需要變更。",
+      );
+      return;
     }
-
-    const index = activeSegments.indexOf(target);
-    const next = [
-      ...activeSegments.slice(0, index),
-      ...pulses,
-      ...activeSegments.slice(index + 1),
-    ];
     commitActive(next);
   };
 
@@ -197,14 +207,19 @@ export function useLightEffects() {
     return true;
   };
 
-  return { toggleLinear, applyBlink, applyBrightnessLadder };
+  /** 目前選取的色塊上的頻閃週期（多個選取時取第一個）；沒有的話是 null */
+  const currentBlinkPeriod = () =>
+    selected.length ? blinkPeriodOf(selected[0].segment) : null;
+
+  return { toggleLinear, applyBlink, applyBrightnessLadder, currentBlinkPeriod };
 }
 
 /** 百分比選項：10%、20%、…、100% */
 const PERCENT_OPTIONS = [...Array(10)].map((_, i) => (i + 1) * 10);
 
 function EffectMenu({ effects }) {
-  const { toggleLinear, applyBlink, applyBrightnessLadder } = effects;
+  const { toggleLinear, applyBlink, applyBrightnessLadder, currentBlinkPeriod } =
+    effects;
 
   const [menuVisible, setMenuVisible] = useState(false);
   const [ladderVisible, setLadderVisible] = useState(false);
@@ -225,10 +240,18 @@ function EffectMenu({ effects }) {
     if (menuVisible) setLadderVisible(false);
   };
 
+  /**
+   * 頻閃的輸入框。
+   *
+   * 預設值填**目前選取色塊的週期**（沒有頻閃時填 100）。頻閃現在是可以改的
+   * metadata，所以「調整間隔」是常見動作——把現值放進輸入框，使用者才知道
+   * 自己現在是多少，而不是每次都從 100 重猜。
+   */
   const promptBlink = () => {
+    const current = currentBlinkPeriod();
     const userInput = window.prompt(
-      `請輸入頻閃間隔 (ms)，必須為 ${TICK_MS} 的倍數：`,
-      "100",
+      `請輸入頻閃間隔 (ms)，必須為 ${TICK_MS} 的倍數。輸入 0 取消頻閃：`,
+      String(current ?? 100),
     );
     if (userInput !== null) applyBlink(userInput);
     setMenuVisible(false);

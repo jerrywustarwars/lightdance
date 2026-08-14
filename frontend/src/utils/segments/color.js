@@ -6,6 +6,8 @@ import {
   floorToTick,
   insertSegment,
 } from "./core.js";
+import { blinkColorAt } from "./effects.js";
+import { BLACK, cloneColor, lerpColor, sameColor } from "./rgba.js";
 
 /**
  * 燈光 segment 的色彩層 —— `core.js` 之上的**唯一**認得顏色的地方。
@@ -27,40 +29,11 @@ import {
  * 而不是「上一段的顏色」。
  */
 
-export const BLACK = Object.freeze({ R: 0, G: 0, B: 0, A: 1 });
-
-/** 複製一份顏色並補齊預設值，避免呼叫端共用同一個物件 */
-export const cloneColor = (color) => ({
-  R: color?.R ?? 0,
-  G: color?.G ?? 0,
-  B: color?.B ?? 0,
-  A: color?.A ?? 1,
-});
-
-export const isBlackColor = (color) =>
-  (color?.R ?? 0) === 0 && (color?.G ?? 0) === 0 && (color?.B ?? 0) === 0;
-
-export const sameColor = (a, b) =>
-  (a?.R ?? 0) === (b?.R ?? 0) &&
-  (a?.G ?? 0) === (b?.G ?? 0) &&
-  (a?.B ?? 0) === (b?.B ?? 0) &&
-  (a?.A ?? 1) === (b?.A ?? 1);
-
-/**
- * 兩色之間線性插值，`ratio` 為 0 時回傳 `from`、1 時回傳 `to`。
- *
- * RGB 四捨五入成整數（韌體吃的是 8-bit 通道），alpha 保持浮點——
- * 它在打包時才會被量化成 7-bit。等同 C++ 的 `std::lerp` 逐通道版本。
+/*
+ * 顏色的基本運算住在 `rgba.js`（`effects.js` 也要用，放在共同的下層才不會
+ * 變成循環相依）。這裡原樣 re-export，既有的 import 路徑不必改。
  */
-export const lerpColor = (from, to, ratio) => {
-  const t = Math.max(0, Math.min(1, ratio));
-  return {
-    R: Math.round((from?.R ?? 0) * (1 - t) + (to?.R ?? 0) * t),
-    G: Math.round((from?.G ?? 0) * (1 - t) + (to?.G ?? 0) * t),
-    B: Math.round((from?.B ?? 0) * (1 - t) + (to?.B ?? 0) * t),
-    A: (from?.A ?? 1) * (1 - t) + (to?.A ?? 1) * t,
-  };
-};
+export { BLACK, cloneColor, isBlackColor, lerpColor, sameColor } from "./rgba.js";
 
 /**
  * 某個時間點該顯示什麼顏色。
@@ -71,6 +44,14 @@ export const lerpColor = (from, to, ratio) => {
 export function getColorAt(segments, time) {
   const segment = findSegmentAt(segments ?? [], time);
   if (!segment) return { ...BLACK };
+
+  /*
+   * 頻閃是段上的 metadata，不是一堆小色塊（見 effects.js）。展開只發生在
+   * 壓平輸出與這裡的預覽取色——而預覽是播放時每一格都會問一次的路徑，
+   * 所以用 `blinkColorAt` 直接算相位，不要展開整條時間軸。
+   */
+  const blink = blinkColorAt(segment, time);
+  if (blink !== undefined) return blink ?? { ...BLACK };
 
   if (segment.linear !== 1) return cloneColor(segment.colorStart);
 

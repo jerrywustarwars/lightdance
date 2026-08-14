@@ -182,9 +182,10 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 ```bash
 cd frontend
 npm run dev            # 另一個終端機
-npm run e2e            # 41 項：放色 / 選取 / 框選 / 剪下 / undo / 快捷鍵 /
-                       #        重新整理 / 拖曳 resize / 多段一起搬 / 刻度尺 /
-                       #        道具 / 調色盤 / 工作集 / 行高 / Output / /edit
+npm run e2e            # 43 項：放色 / 選取 / 框選 / 剪下 / undo / 快捷鍵 /
+                       #        重新整理 / 拖曳 resize / 多段一起搬 / 頻閃 /
+                       #        刻度尺 / 道具 / 調色盤 / 工作集 / 行高 /
+                       #        Output / /edit
 npm run audit:layout   # 5 項：控制項被蓋住 / 元素溢出容器 / 提示被裁掉 /
                        #      成對元素沒對齊（含軌名列↔時間軸逐列）/
                        #      各塊邊緣與各排內容左緣沒對齊
@@ -326,6 +327,28 @@ CSS 用 `--ruler-h` 讓出一段當預設值，但那只在工具列排成一行
 逐軌把手拖曳時只改自己的 DOM，**放開才 dispatch 一次**：每格像素都寫 redux
 的話 154 條 Timeline 會跟著重繪，手感會變成一格一格跳。
 
+### 頻閃是 metadata，不是一堆小色塊
+
+`seg.effect = {type:'blink', period}`，語意與展開規則在
+`utils/segments/effects.js`。展開只發生在**兩個地方**：壓平成韌體格式
+（`segmentsToKeyframes`）與播放預覽取色（`getColorAt`）。畫面上它一直是
+**一個**可拖曳、可 resize、可改色的色塊，左下角有一排短豎線當記號。
+
+舊版是破壞性的：套下去之後色塊就被換成 N 個小色塊，於是想整段挪半拍要把
+N 個全部選起來（它們之間有空隙，`Shift+click` 連選會斷）、想把間隔從 250 改成
+200 只能刪掉重放、想改顏色要逐塊改。
+
+⚠️ **預覽取色不要展開整條時間軸**。播放時每一格都會問一次 `getColorAt`，
+展開會在每一幀配置 N 個物件。用 `blinkColorAt` 直接算相位。
+
+⚠️ **顏色的基本運算在 `utils/segments/rgba.js`，不在 `color.js`。**
+`effects.js` 需要顏色插值，而 `color.js` 需要問 `effects.js`「這一格是亮是滅」
+——兩邊互相 import 在 ES module 下跑得起來（都只在函式裡呼叫），但那是靠時序
+矇混過去的。共同的下層讓依賴方向永遠是單向的。`color.js` 原樣 re-export，
+既有的 import 路徑不必改。
+
+展開後的形狀與舊版逐格相同（有等價測試守著），所以韌體收到的東西沒變。
+
 ### 框選
 
 幾何在 `utils/segments/marquee.js`（純函式），事件與像素換算在
@@ -445,6 +468,18 @@ mouseup 的**共同祖先**——跨軌框選時那是 `.timeline-container`，�
 
 ## 更新記錄
 
+- **2026-08-14（深夜四）**：**Phase 6 兩項功能**。**框選**：拉一個矩形選取跨軌的
+  多個色塊（幾何在 `utils/segments/marquee.js`，事件在 `MarqueeSelect.jsx`）。
+  多段一起拖早就做好了，但選取只能 `Shift+click` 一個一個點且跨不了軌——
+  同一個樂句在七位舞者身上各有一段時要點十幾下。踩到兩個順序問題：拖曳後
+  瀏覽器補的 `click` 會被 outside-click handler 判成「點在 block 外面」而清空
+  剛框好的選取；Shift 的加選基準必須在 mousedown 就存好（Timeline 會在同一次
+  mousedown 清空選取）。**頻閃改成 metadata**：`seg.effect = {type,period}`，
+  展開只發生在壓平輸出與播放預覽，畫面上一直是一個可拖曳、可改色的色塊。
+  舊版是破壞性的——套下去色塊就被換成 N 個小塊，想挪半拍要全部選起來（中間
+  有空隙，連選會斷）、想改間隔只能刪掉重放。順帶把顏色的基本運算拆到
+  `utils/segments/rgba.js` 避免 `color.js` ↔ `effects.js` 的循環相依。
+  e2e 37 → 43。測試 412 → 455 passed
 - **2026-08-14（深夜三）**：**工具列換行處理與調色盤重做**。播放控制那一組有 647px
   寬，1280 下必定換行，而它落在第二排的**最左邊**——正下方是空的軌名欄，看起來像
   一排跟誰都沒關係的控制項掛在那裡。改成 `margin-left: auto` 靠右：排得下時貼齊

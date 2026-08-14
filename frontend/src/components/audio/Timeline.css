@@ -74,3 +74,31 @@
    * 版面稽核量的是元素中心點，也不會被它擋到。
    */
 }
+
+/*
+ * 頻閃的角標。
+ *
+ * 頻閃是段上的 metadata（見 `utils/segments/effects.js`），色塊不會被切開——
+ * 少了記號的話畫面上完全看不出這一塊在閃，只能靠播放才知道。
+ *
+ * 用一排明暗交替的短豎線而不是圖示：它直接畫出「亮、滅、亮、滅」這件事，
+ * 而且不佔色相（編輯器介面無彩色，飽和的顏色只留給使用者的燈光資料）。
+ * 畫在**左下角**，右上角留給亮度角標與漸變的魔杖圖示——三個記號可能同時出現
+ * 在同一塊上，疊在一起就都讀不到了。
+ */
+.block-blink-mark {
+  position: absolute;
+  left: 3px;
+  bottom: 3px;
+  width: 14px;
+  height: 8px;
+  z-index: 2;
+  border-radius: 1px;
+  background: repeating-linear-gradient(
+    to right,
+    var(--ring-selected) 0 2px,
+    transparent 2px 4px
+  );
+
+  /* 和亮度角標同樣的理由：帶著 title，設了 pointer-events: none 就 hover 不到 */
+}

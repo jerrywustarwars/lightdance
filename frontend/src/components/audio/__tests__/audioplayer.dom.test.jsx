@@ -608,7 +608,14 @@ describe("效果選單與亮度階梯", () => {
    * 熄滅是段與段之間的空隙，不再是黑色關鍵格。
    */
 
-  it("頻閃把一段切成多段，中間留空隙而不是黑色關鍵格", () => {
+  /*
+   * 頻閃是段上的 metadata，**不切色塊**。
+   *
+   * 舊版切成 N 個小色塊，於是想整段挪半拍要把 N 個全部選起來（它們之間有
+   * 空隙，連選會斷）、想改間隔只能刪掉重放。這一項守住「色塊還是一個」，
+   * 展開後的形狀由 `utils/segments/__tests__/effects.test.js` 守。
+   */
+  it("頻閃記在色塊上，色塊仍然是一個", () => {
     globalThis.prompt.mockReturnValueOnce("500");
     const store = createTestStore();
     selectSegment(store, 0, 0, 0); // 紅 1000~2000
@@ -617,23 +624,47 @@ describe("效果選單與亮度階梯", () => {
     fireEvent.click(menuItem("頻閃 (B)"));
 
     const segments = segmentsOf(store);
-    // 1000ms 的色塊、500ms 一個週期 → 兩段脈衝
-    const pulses = segments.filter((s) => s.start >= 1000 && s.start < 2000);
-    expect(pulses).toHaveLength(2);
+    const target = segments.find((s) => s.start === 1000);
 
-    // 每段亮 450ms（週期扣掉一格 TICK_MS），剩下那一格是空隙＝熄滅
-    expect(pulses[0]).toMatchObject({ start: 1000, end: 1450 });
-    expect(pulses[1]).toMatchObject({ start: 1500, end: 1950 });
+    expect(target).toMatchObject({
+      start: 1000,
+      end: 2000,
+      effect: { type: "blink", period: 500 },
+    });
+    // 沒有被切開，也沒有多出任何東西
+    expect(segments.filter((s) => s.start >= 1000 && s.start < 2000)).toHaveLength(1);
+    expect(target.colorStart.R).toBe(255);
+  });
 
-    // 顏色沿用原本的紅色，而且**沒有任何純黑的 segment**——
-    // 黑色在 segment 模型裡不是資料
-    for (const pulse of pulses) {
-      expect(pulse.colorStart.R).toBe(255);
-    }
-    const blackSegments = segments.filter(
-      (s) => !s.colorStart.R && !s.colorStart.G && !s.colorStart.B,
-    );
-    expect(blackSegments).toHaveLength(0);
+  it("再套一次頻閃可以改間隔，不必刪掉重放", () => {
+    globalThis.prompt.mockReturnValueOnce("500").mockReturnValueOnce("200");
+    const store = createTestStore();
+    selectSegment(store, 0, 0, 0);
+    mount(store);
+
+    openEffectMenu();
+    fireEvent.click(menuItem("頻閃 (B)"));
+    openEffectMenu();
+    fireEvent.click(menuItem("頻閃 (B)"));
+
+    const target = segmentsOf(store).find((s) => s.start === 1000);
+    expect(target.effect).toEqual({ type: "blink", period: 200 });
+  });
+
+  it("輸入 0 取消頻閃，色塊變回普通色塊", () => {
+    globalThis.prompt.mockReturnValueOnce("500").mockReturnValueOnce("0");
+    const store = createTestStore();
+    selectSegment(store, 0, 0, 0);
+    mount(store);
+
+    openEffectMenu();
+    fireEvent.click(menuItem("頻閃 (B)"));
+    openEffectMenu();
+    fireEvent.click(menuItem("頻閃 (B)"));
+
+    const target = segmentsOf(store).find((s) => s.start === 1000);
+    expect(target.effect).toBeUndefined();
+    expect(target).toMatchObject({ start: 1000, end: 2000 });
   });
 
   it("頻閃週期短於兩格會被擋下來（沒有亮的部分）", () => {

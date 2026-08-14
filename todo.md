@@ -294,8 +294,11 @@ segment 壓平回 keyframe 之後**緊鄰的色塊之間沒有黑點**，這個�
       （reducer 的 `UPDATECHOSENCOLOR` 自動記、依色相去重，所以拉亮度不會塞爆）。
       順手修掉快捷鍵 7/8 繞回第 1/2 格的靜默錯誤，與 `TransparentButton.css` 裡
       一條套到全站的裸 `*` 選擇器
-- [ ] **Blink 改 metadata**：`seg.effect = {type:'blink', period}`，只在
-      `segmentsToKeyframes` 壓平與 `getColorAt` 預覽時展開；UI 維持單一可拖曳色塊
+- [x] **Blink 改 metadata**：`seg.effect = {type:'blink', period}`（`effects.js`），
+      只在 `segmentsToKeyframes` 壓平與 `getColorAt` 預覽時展開，UI 維持單一可
+      拖曳色塊（左下角一排短豎線當記號）。可以一次套到多個選取的色塊、再套一次
+      改間隔、輸入 0 取消。顏色的基本運算順帶拆到 `rgba.js` 避免
+      `color.js` ↔ `effects.js` 循環相依
 - [x] **框選（marquee）多選**：幾何在 `utils/segments/marquee.js`（純函式），
       事件與像素換算在 `MarqueeSelect.jsx`。從空隙拉、Alt 從任何地方拉、
       Shift 加選。踩到兩個順序問題：拖曳後瀏覽器補的 `click` 會被判成「點在
@@ -337,7 +340,6 @@ segment 壓平回 keyframe 之後**緊鄰的色塊之間沒有黑點**，這個�
 
 | # | 項目 | 大小 | 備註 |
 |---|---|---|---|
-| A2 | **Blink 改 metadata** | M | `seg.effect = {type:'blink', period}`，只在 `segmentsToKeyframes` 壓平與 `getColorAt` 預覽時展開。現在頻閃是**直接生一堆小 segment**，做完就不能整段拖、不能改週期 |
 | A3 | **速度軌與節拍吸附** | L | 設計已定案（見下方「速度軌」），使用者拍板**實作延後** |
 
 ### B. 尚未拆件 / 技術債

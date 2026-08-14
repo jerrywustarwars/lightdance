@@ -1,5 +1,6 @@
 import { TICK_MS } from "../../constants/time.js";
 import { ceilToTick, createId } from "./core.js";
+import { expandEffects } from "./effects.js";
 
 /**
  * keyframe ↔ segment 雙向轉換。
@@ -132,8 +133,19 @@ export function keyframesToSegments(timeline, options = {}) {
  *   否則輸出的時間範圍會比原本短。
  * @returns {Array} `[{time, color, linear}]`
  */
-export function segmentsToKeyframes(segments, options = {}) {
+export function segmentsToKeyframes(input, options = {}) {
   const { duration } = options;
+
+  /*
+   * 效果（目前只有頻閃）在這裡才展開成一串脈衝。
+   *
+   * 編輯器裡它是段上的一個 metadata 欄位，畫面上仍然是**一個**可拖曳、可 resize、
+   * 可改色的色塊；韌體不認得那個欄位，所以壓平時把它攤成舊模型看得懂的樣子。
+   * 展開後的形狀與舊版「直接生一堆小色塊」逐格相同，韌體收到的東西不變。
+   *
+   * 沒有任何效果時 `expandEffects` 回傳原陣列，不會多配置一次。
+   */
+  const segments = expandEffects(input);
 
   // 全程熄滅的部位：涵蓋 [0, duration]，與 normalizeActionTable 的不變式一致
   if (!Array.isArray(segments) || segments.length === 0) {

@@ -840,6 +840,19 @@ const Timeline = forwardRef(
                   title={`亮度 ${Math.round((block.color?.A ?? 1) * 100)}%`}
                 />
               )}
+              {/*
+                頻閃的記號。
+                頻閃現在是段上的 metadata，**色塊不會被切開**，所以畫面上完全
+                看不出這一塊在閃——必須有一個記號，否則使用者只能靠播放才知道。
+                用一排短豎線（明暗交替）而不是圖示：它直接畫出「亮、滅、亮、滅」
+                這件事，而且不佔色相。
+              */}
+              {!isGapBlock && block.blinkPeriod && (
+                <span
+                  className="block-blink-mark"
+                  title={`頻閃 ${block.blinkPeriod}ms`}
+                />
+              )}
               {" "}
               {/*
               {/* 如果不是黑色方块，渲染左右虛擬檢測塊

@@ -21,6 +21,8 @@
  * 有 id 就是真的色塊，沒有就是熄滅的空隙。
  */
 
+import { blinkPeriodOf } from "./effects.js";
+
 const BLACK = Object.freeze({ R: 0, G: 0, B: 0, A: 1 });
 
 /** 空隙 block：畫面上是黑的，但它不是資料，不能被選取 */
@@ -36,7 +38,7 @@ const makeGap = (startTime, durationTime) => ({
 /**
  * @param {Array} segments - 已符合不變式的 segment 陣列
  * @param {number} duration - 表演總長（ms）
- * @returns {Array} `[{segmentId, startTime, durationTime, color, colorEnd, linear}]`
+ * @returns {Array} `[{segmentId, startTime, durationTime, color, colorEnd, linear, blinkPeriod}]`
  *   依時間排序、首尾相接、涵蓋 `[0, duration)`
  */
 export function buildTimelineBlocks(segments, duration) {
@@ -64,6 +66,9 @@ export function buildTimelineBlocks(segments, duration) {
         color: segment.colorStart,
         colorEnd: segment.colorEnd,
         linear: segment.linear === 1 ? 1 : 0,
+        // 頻閃是段上的 metadata，畫面上仍然是一個色塊——這裡只把週期帶出來
+        // 讓 Timeline 畫一個角標，不展開成一堆小 block（見 effects.js）
+        blinkPeriod: blinkPeriodOf(segment),
       });
       cursor = end;
     }

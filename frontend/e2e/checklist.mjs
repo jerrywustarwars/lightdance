@@ -190,7 +190,16 @@ const run = async () => {
   const errors = [];
   page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
   page.on("pageerror", (e) => errors.push(`PAGEERROR: ${e.message}`));
-  page.on("dialog", (d) => d.accept());
+  /*
+   * 對話框一律接受。
+   *
+   * ⚠️ `dialog.accept()` **不帶參數時，prompt 回傳的是空字串，不是預設值**——
+   * 這跟畫面上看到的行為（輸入框裡明明填著 100，按確定就送出 100）相反，
+   * 而且不會有任何錯誤，只會讓被測的程式收到 ""。所以要答什麼得明講：
+   * 呼叫端在觸發之前設 `promptAnswer`，用完歸還空字串。
+   */
+  let promptAnswer = "";
+  page.on("dialog", (d) => d.accept(promptAnswer));
 
   const uploads = [];
   page.on(
@@ -339,6 +348,45 @@ const run = async () => {
     await shot(page, "effect-menu");
     await page.keyboard.press("Escape");
     await page.waitForTimeout(300);
+  }
+
+  // ── 頻閃是 metadata，不切色塊 ──────────────────────────
+  //
+  // 舊版套下去之後那個色塊就被換成 N 個小色塊，想整段挪半拍得把 N 個全部選
+  // 起來（而且它們之間有空隙，Shift 連選會斷）。現在畫面上還是一個色塊，
+  // 只多一個角標；展開只發生在壓平輸出與播放預覽。
+  //
+  {
+    const blockBefore = await coloredBlocks(page, 0);
+    await page.locator(".timeline-block[data-selected='true']").first().click().catch(() => {});
+    await page.waitForTimeout(200);
+
+    // 選起第一個有顏色的色塊
+    const lit = page.locator(".timeline-block:not([data-gap])").first();
+    await lit.click();
+    await page.waitForTimeout(300);
+
+    // Escape 不會關掉這個選單（它只清選取），所以先問狀態再決定要不要點——
+    // 無條件點一下有可能是把已經開著的選單關掉
+    if (!(await page.locator(".effect-menu").count())) {
+      await effectBtn.first().click();
+      await page.waitForTimeout(300);
+    }
+    promptAnswer = "250"; // 1 秒的色塊 → 四個週期
+    await page.locator(".effect-menu-item", { hasText: "頻閃" }).first().click();
+    await page.waitForTimeout(600);
+    promptAnswer = "";
+
+    const blockAfter = await coloredBlocks(page, 0);
+    const marks = await page.locator(".block-blink-mark").count();
+
+    record(
+      "套頻閃之後色塊沒有被切開",
+      blockAfter.length === blockBefore.length,
+      `${blockBefore.length} → ${blockAfter.length} 塊`,
+    );
+    record("頻閃的色塊看得到角標", marks >= 1, `${marks} 個角標`);
+    await shot(page, "blink");
   }
 
   // ── 重新整理後 persist 復原（風險最高的一項）────────────
