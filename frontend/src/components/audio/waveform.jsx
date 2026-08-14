@@ -3,6 +3,8 @@ import { useDispatch, useSelector } from "react-redux";
 import { API_ENDPOINTS } from "../../config/api.js";
 import { localMusicMap } from "./musicData.js";
 import { peaksForViewport, peaksFromChannel } from "../../utils/audio/peaks.js";
+import { anchorFor, positionAt } from "../../utils/audio/clock.js";
+import { TICK_MS } from "../../constants/time.js";
 
 import {
   updateCurrentTime,
@@ -131,7 +133,10 @@ const AudioWaveform = ({
       const offset = currentTime / 1000; // 將毫秒轉換為秒
       const now = audioContext.currentTime;
       newSource.start(0, offset);
-      setStartTime(now - offset);
+      // 錨點只有一種算法（utils/audio/clock.js）。舊版這裡寫的是 `now - offset`，
+      // 少除了一個 rate——從中間某處用非 1 倍速播放時位置會算錯，而下面那個
+      // 「改速度」的 effect 用的又是另一種慣例。
+      setStartTime(anchorFor({ contextTime: now, positionMs: currentTime, rate: playbackRate }));
       setSourceNode(newSource);
 
       newSource.onended = () => {
@@ -139,9 +144,12 @@ const AudioWaveform = ({
       };
     } else if (!isPlaying && sourceNode) {
       sourceNode.stop();
-      const elapsed = audioContext.currentTime - startTime;
-      const rawTime = elapsed * 1000; // 單位毫秒
-      const alignedTime = Math.floor(rawTime / 50) * 50; // 對齊到 50ms
+      const rawTime = positionAt({
+        contextTime: audioContext.currentTime,
+        anchor: startTime,
+        rate: playbackRate,
+      });
+      const alignedTime = Math.floor(rawTime / TICK_MS) * TICK_MS;
       dispatch(updateCurrentTime(alignedTime));
     }
   }, [isPlaying]);
@@ -156,12 +164,14 @@ const AudioWaveform = ({
   useEffect(() => {
     if (sourceNode && isPlaying) {
       sourceNode.playbackRate.value = playbackRate || 1;
-      // 重新計算 startTime 以配合新的播放速度
-      // 當前音訊位置 (毫秒) = currentTime
-      // 實際經過時間 (秒) = audioContext.currentTime
-      // 新的 startTime = 現在時間 - (當前音訊位置 / 新播放速度)
-      const now = audioContext.currentTime;
-      setStartTime(now - (currentTime / 1000) / (playbackRate || 1));
+      // 換速度的當下位置不變，之後以新速率前進（clock.test.js 有守著連續性）
+      setStartTime(
+        anchorFor({
+          contextTime: audioContext.currentTime,
+          positionMs: currentTime,
+          rate: playbackRate,
+        }),
+      );
     }
   }, [playbackRate]);
 
@@ -250,7 +260,7 @@ const AudioWaveform = ({
         dispatch(updateCurrentTime(pendingSeek));
         pendingSeekRef.current = null;
       } else if (playbackTimeRef.current > 0) {
-        const alignedTime = Math.floor(playbackTimeRef.current / 50) * 50;
+        const alignedTime = Math.floor(playbackTimeRef.current / TICK_MS) * TICK_MS;
         dispatch(updateCurrentTime(alignedTime));
       }
     }
@@ -259,7 +269,11 @@ const AudioWaveform = ({
 
   const updateProgress = () => {
     if (isPlaying && audioBuffer) {
-      const elapsed = (audioContext.currentTime - startTime) * (playbackRate || 1) * 1000;
+      const elapsed = positionAt({
+        contextTime: audioContext.currentTime,
+        anchor: startTime,
+        rate: playbackRate,
+      });
       playbackTimeRef.current = elapsed;
 
       // 紅線：每幀直接操作 DOM（60fps，不經過 React；用 ref 確保 resize 後讀取最新寬度）

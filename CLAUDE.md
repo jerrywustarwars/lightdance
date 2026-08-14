@@ -186,10 +186,10 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 ```bash
 cd frontend
 npm run dev            # 另一個終端機
-npm run e2e            # 44 項：放色 / 選取 / 框選 / 剪下 / undo / 快捷鍵 /
+npm run e2e            # 45 項：放色 / 選取 / 框選 / 剪下 / undo / 快捷鍵 /
                        #        重新整理 / 拖曳 resize / 多段一起搬 / 頻閃 /
-                       #        刻度尺 / 波形 / 道具 / 調色盤 / 工作集 /
-                       #        行高 / Output / /edit
+                       #        刻度尺 / 倍速 / 波形 / 道具 / 調色盤 /
+                       #        工作集 / 行高 / Output / /edit
 npm run audit:layout   # 5 項：控制項被蓋住 / 元素溢出容器 / 提示被裁掉 /
                        #      成對元素沒對齊（含軌名列↔時間軸逐列）/
                        #      各塊邊緣與各排內容左緣沒對齊
@@ -352,6 +352,29 @@ N 個全部選起來（它們之間有空隙，`Shift+click` 連選會斷）、�
 既有的 import 路徑不必改。
 
 展開後的形狀與舊版逐格相同（有等價測試守著），所以韌體收到的東西沒變。
+
+### 播放時鐘
+
+「現在播到第幾毫秒」只有一份算法（`utils/audio/clock.js`）：
+
+```
+position(t) = (t - anchor) × rate × 1000
+```
+
+`anchor` 是「若一路以目前速率播放，音檔位置 0 會落在哪個 context 時間」。
+開播、seek、變速三個時機都用 `anchorFor()` 算錨點。
+
+⚠️ 先前這件事寫在兩個地方而且**慣例不同**：開播時是 `now - offset`（少除一個
+rate），變速時是 `now - cur/rate`（正確）。前者代進公式得到
+`(Δt + offset) × rate` 而不是 `offset + Δt × rate`——只有 rate = 1 或
+offset = 0 時才相等。也就是**從中間某處用非 1 倍速播放，位置就是錯的**，
+而 `currentTime` 是光衣預覽取色的依據，所以變速對拍時燈跟音樂對不上。
+
+⚠️ **`pendingSeekRef` 只在真的打斷播放時才舉起來。** 消耗它的只有
+「isPlaying 轉 false」那個 effect，暫停時 seek 不會讓 isPlaying 變動，
+旗標會一直舉著到下一次暫停才被消耗，把真實位置蓋回上一次點的地方。
+
+兩個都是 e2e 加「2 倍速從第 15 秒播」那一項時抓到的。
 
 ### 波形的峰值運算
 

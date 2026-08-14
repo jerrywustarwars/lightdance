@@ -509,6 +509,39 @@ const run = async () => {
       Math.abs(playingSeek - 22500) <= 100,
       `${playingSeek}ms（期望 22500）`,
     );
+    /*
+     * 倍速播放時的位置。
+     *
+     * 這一項守的是一個真的算錯的公式。舊版開播時的錨點是 `now - offset`
+     * （少除了一個 rate），代進 `(t - anchor) × rate` 得到
+     * `(Δt + offset) × rate` 而不是 `offset + Δt × rate`——兩者只有在
+     * **rate = 1 或 offset = 0** 時才相等。
+     *
+     * 也就是說「從中間某處用非 1 倍速播」位置就是錯的，而 `currentTime`
+     * 是光衣預覽取色的依據，所以變速對拍時看到的燈跟聽到的音樂對不上。
+     *
+     * 這裡從第 15 秒用 2 倍速播約 1 秒：正確答案在 17000 附近，
+     * 舊公式會給 32000 上下（(1 + 15) × 2），差距大到不必抓得很準。
+     */
+    await page.selectOption("#speed-select", "2");
+    await page.waitForTimeout(300);
+    await clickRulerAt(0.5); // 回到 15000ms
+    const before = await readTimeMs();
+
+    await page.locator(".play-button").click();
+    await page.waitForTimeout(1000);
+    await page.locator(".play-button").click(); // 暫停，讓位置寫回 redux
+    await page.waitForTimeout(600);
+    const after = await readTimeMs();
+    await page.selectOption("#speed-select", "1");
+    await page.waitForTimeout(300);
+
+    const advanced = after - before;
+    record(
+      "2 倍速從第 15 秒播，位置照 2 倍速前進",
+      before === 15000 && advanced > 1200 && advanced < 4000,
+      `${before} → ${after}（前進 ${advanced}ms，舊公式會直接跳到 32000 附近）`,
+    );
   } else {
     record("刻度尺存在", false, "找不到 .time-ruler");
   }

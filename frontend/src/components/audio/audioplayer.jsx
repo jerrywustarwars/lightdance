@@ -229,9 +229,20 @@ function AudioPlayer({ setButtonState, timelineRef }) {
    */
   const seekTo = (timeMs) => {
     const aligned = Math.round(timeMs / TICK_MS) * TICK_MS;
-    pendingSeekRef.current = aligned;
 
     if (sourceNode) {
+      /*
+       * `pendingSeekRef` 只在**真的打斷播放**時才舉起來。
+       *
+       * 舊版無條件設定，但消耗它的只有「isPlaying 轉 false」那個 effect——
+       * 暫停時點刻度尺不會讓 isPlaying 變動，於是旗標一直舉著，等到下一次
+       * 「播放 → 暫停」才被消耗，把真實的播放位置蓋回**上一次點的地方**。
+       *
+       * 使用者看到的是：暫停時選好位置、播一段、按暫停，時間跳回原點。
+       * 這是 e2e 加倍速那一項時抓到的（位置完全沒前進，15000 → 15000）。
+       */
+      pendingSeekRef.current = aligned;
+
       /*
        * 光是 `sourceNode.stop()` 不夠，還會被反咬一口：
        *
