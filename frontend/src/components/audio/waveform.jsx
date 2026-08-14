@@ -3,7 +3,6 @@ import { useDispatch, useSelector } from "react-redux";
 import { API_ENDPOINTS } from "../../config/api.js";
 import { localMusicMap } from "./musicData.js";
 import { peaksForViewport, peaksFromChannel } from "../../utils/audio/peaks.js";
-import { anchorFor, positionAt } from "../../utils/audio/clock.js";
 import { TICK_MS } from "../../constants/time.js";
 
 import {
@@ -11,14 +10,6 @@ import {
   updateDuration,
   updateFullpeaks,
 } from "../../redux/actions";
-
-// 輔助函數：載入並解碼音頻
-async function loadAudioData(url, audioContext) {
-  const response = await fetch(url); // 從指定的 URL 獲取音頻文件
-  const arrayBuffer = await response.arrayBuffer(); // 轉換為 ArrayBuffer
-  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer); // 解碼音頻數據
-  return audioBuffer;
-}
 
 /**
  * 從解碼後的音檔算出整首歌的峰值。
@@ -33,27 +24,19 @@ function getPeaks(audioBuffer, buckets = 200000) {
 // AudioWaveform 組件
 const AudioWaveform = ({
   url,
+  engine,
   isPlaying,
-  setIsPlaying,
   zoomValue,
   scrollRef,
-  volume,
-  sourceNode,
-  setSourceNode,
   containerRef,
   onTimeUpdate,
   onSeek,
-  pendingSeekRef,
 }) => {
   const canvasRef = useRef(null);
-  const [audioContext] = useState(
-    () => new (window.AudioContext || window.webkitAudioContext)()
-  ); // 創建 AudioContext
   const dispatch = useDispatch();
   const duration = useSelector((state) => state.profiles.duration); // 獲取音頻總時長
   const currentTime = useSelector((state) => state.profiles.currentTime); // 用於 playback start offset、紅線暫停同步；rAF 熱路徑使用 playbackTimeRef 而非此值
   const fullPeaks = useSelector((state) => state.profiles.fullPeaks); // 獲取全分辨率的波峰數據
-  const playbackRate = useSelector((state) => state.profiles.playbackRate); // 獲取播放速率
   const [canvasWidth, setCanvasWidth] = useState(0); // 設置 canvas 寬度
   const [canvasHeight, setCanvasHeight] = useState(0); // 設置 canvas 高度
   const [hoverTime, setHoverTime] = useState(null); // 懸停顯示的時間
@@ -74,11 +57,12 @@ const AudioWaveform = ({
     canvasWidthRef.current = canvasWidth;
   }, [canvasWidth]);
 
-  const [audioBuffer, setAudioBuffer] = useState(null);
-  const gainNodeRef = useRef(null);
-
-  const [startTime, setStartTime] = useState(0);
+  // 「音檔載好了沒」只影響「點波形能不能跳時間」，不必存 buffer 本身——
+  // 解碼結果由引擎的快取持有（見 engine.js 的 load）
+  const [isLoaded, setIsLoaded] = useState(false);
   const animationRef = useRef(null);
+  // 上一次 effect 跑的時候是不是在播——用來分辨「真的暫停」與「掛載時的初始狀態」
+  const wasPlayingRef = useRef(false);
   // 監聽滾動並更新`scrollPosition`
   useEffect(() => {
     const handleScroll = () => {
@@ -119,61 +103,15 @@ const AudioWaveform = ({
     }
   }, [containerRef, zoomValue]);
 
-  // Handle playback
-  useEffect(() => {
-    if (isPlaying && audioBuffer) {
-      const newSource = audioContext.createBufferSource();
-      const gainNode = audioContext.createGain();
-      newSource.buffer = audioBuffer;
-      newSource.playbackRate.value = playbackRate || 1;
-      gainNode.gain.value = volume;
-      gainNodeRef.current = gainNode;
-
-      newSource.connect(gainNode).connect(audioContext.destination);
-      const offset = currentTime / 1000; // 將毫秒轉換為秒
-      const now = audioContext.currentTime;
-      newSource.start(0, offset);
-      // 錨點只有一種算法（utils/audio/clock.js）。舊版這裡寫的是 `now - offset`，
-      // 少除了一個 rate——從中間某處用非 1 倍速播放時位置會算錯，而下面那個
-      // 「改速度」的 effect 用的又是另一種慣例。
-      setStartTime(anchorFor({ contextTime: now, positionMs: currentTime, rate: playbackRate }));
-      setSourceNode(newSource);
-
-      newSource.onended = () => {
-        setIsPlaying(false);
-      };
-    } else if (!isPlaying && sourceNode) {
-      sourceNode.stop();
-      const rawTime = positionAt({
-        contextTime: audioContext.currentTime,
-        anchor: startTime,
-        rate: playbackRate,
-      });
-      const alignedTime = Math.floor(rawTime / TICK_MS) * TICK_MS;
-      dispatch(updateCurrentTime(alignedTime));
-    }
-  }, [isPlaying]);
-
-  useEffect(() => {
-    if (gainNodeRef.current) {
-      gainNodeRef.current.gain.value = volume;
-    }
-  }, [volume]);
-
-  // 更新播放速度
-  useEffect(() => {
-    if (sourceNode && isPlaying) {
-      sourceNode.playbackRate.value = playbackRate || 1;
-      // 換速度的當下位置不變，之後以新速率前進（clock.test.js 有守著連續性）
-      setStartTime(
-        anchorFor({
-          contextTime: audioContext.currentTime,
-          positionMs: currentTime,
-          rate: playbackRate,
-        }),
-      );
-    }
-  }, [playbackRate]);
+  /*
+   * 播放、暫停、音量、變速原本是這裡的四個 effect，各自持有一部分狀態
+   * （sourceNode、gainNode、startTime）。現在全部在 `utils/audio/engine.js`：
+   * 這個元件只負責畫圖與回報位置，不再碰 Web Audio。
+   *
+   * 那四個 effect 的相依陣列都不完整（例如 `[isPlaying]` 卻讀了 currentTime、
+   * volume、playbackRate、sourceNode），而且**暫停時有兩個地方都會寫
+   * currentTime**——靠宣告順序決定誰贏。收進引擎之後那些問題不存在了。
+   */
 
   useEffect(() => {
     if (scrollRef?.current && duration > 0) {
@@ -192,30 +130,41 @@ const AudioWaveform = ({
     }
   }, [zoomValue, canvasWidth, duration, scrollRef]);
 
+  /*
+   * 載入音檔。
+   *
+   * 解碼走**引擎的快取**，不自己再解一次——同一個檔案被下載兩次、解碼兩次是
+   * 純粹的浪費，而解碼是整個載入流程裡最貴的一步。
+   *
+   * 目前一首歌 = 一個 clip；多曲銜接時這裡會變成把多個 clip 交給引擎，
+   * 而總長度改由 `engine.durationMs()` 決定（見 utils/audio/schedule.js）。
+   */
   useEffect(() => {
-    if (!url) return;
+    if (!url || !engine) return;
+    let cancelled = false;
 
-  // 1. 當 URL 改變時，先停止目前的播放（如果正在播）
-    if (sourceNode) {
-      try {
-        sourceNode.stop();
-      } catch (e) {
-        console.warn("停止舊音軌失敗", e);
-      }
-      setSourceNode(null);
-    }
-    // if (fullPeaks && fullPeaks.length > 0) return;
-    loadAudioData(url, audioContext).then((buffer) => {
-      const peaks = getPeaks(buffer);
-      setAudioBuffer(buffer);
-      dispatch(updateDuration(buffer.duration * 1000));
-      // if (fullPeaks && fullPeaks.length > 0) return;
-      dispatch(updateFullpeaks(peaks));
-      dispatch(updateCurrentTime(0));
-    }).catch((error) => {
-      console.error("載入api音樂失敗", error);
-    });
-  }, [url, audioContext, dispatch]);
+    setIsLoaded(false);
+    engine
+      .load(url)
+      .then((buffer) => {
+        if (cancelled) return;
+        const durationMs = buffer.duration * 1000;
+        engine.setClips([
+          { id: url, start: 0, end: durationMs, sourceFile: url, sourceOffset: 0 },
+        ]);
+        setIsLoaded(true);
+        dispatch(updateDuration(durationMs));
+        dispatch(updateFullpeaks(getPeaks(buffer)));
+        dispatch(updateCurrentTime(0));
+      })
+      .catch((error) => {
+        console.error("載入api音樂失敗", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [url, engine, dispatch]);
 
   // 根據 zoomValue 重繪波形
   // useEffect(() => {
@@ -244,36 +193,34 @@ const AudioWaveform = ({
       cancelAnimationFrame(animationRef.current);
 
       /*
-       * 暫停時把最終位置寫回 Redux（供其他元件同步）——但**seek 例外**。
+       * 暫停時把最終位置寫回 Redux（供其他元件同步）。
        *
-       * 播放中點刻度尺或波形時，`seekTo` 會停掉音源，那會讓 isPlaying 變 false
-       * 而跑到這裡；若照舊寫回 `playbackTimeRef`（音樂播到哪），就會蓋掉使用者
-       * 剛指定的位置，看起來像「點了沒反應」。實測播放中點 75% 會得到
-       * 「暫停當下的位置」而不是 75% 的位置。
+       * **這裡是唯一寫入的地方。** 舊版有兩個 effect 都會在暫停時寫，靠宣告
+       * 順序決定誰贏；而且其中一個要靠 `pendingSeekRef` 這個旗標分辨
+       * 「這次是 seek 還是真的暫停」。位置收進引擎之後這個問題消失了——
+       * `positionMs()` 在 seek 之後回傳的就是新位置，不需要旗標。
        *
-       * 所以 seek 的目標優先，並同步更新 playbackTimeRef，
-       * 免得下一次暫停又跳回舊位置。
+       * ⚠️ **只有「播放 → 暫停」才寫**。effect 在掛載時也會跑一次 else 分支，
+       * 那時什麼都還沒播，引擎的位置是 0——無條件寫的話會把使用者原本的播放
+       * 位置清成 0。舊版靠 `playbackTimeRef.current > 0` 擋，那個條件在
+       * 「從 0 開始播一段再暫停」時剛好也成立，但語意是模糊的；改成明確記錄
+       * 上一次的播放狀態。
        */
-      const pendingSeek = pendingSeekRef?.current;
-      if (pendingSeek != null) {
-        playbackTimeRef.current = pendingSeek;
-        dispatch(updateCurrentTime(pendingSeek));
-        pendingSeekRef.current = null;
-      } else if (playbackTimeRef.current > 0) {
-        const alignedTime = Math.floor(playbackTimeRef.current / TICK_MS) * TICK_MS;
-        dispatch(updateCurrentTime(alignedTime));
+      if (wasPlayingRef.current) {
+        const position = engine.positionMs();
+        dispatch(updateCurrentTime(Math.floor(position / TICK_MS) * TICK_MS));
+        playbackTimeRef.current = position;
       }
     }
+    wasPlayingRef.current = isPlaying;
     return () => cancelAnimationFrame(animationRef.current);
-  }, [isPlaying, startTime]);
+  }, [isPlaying, engine, dispatch]);
 
   const updateProgress = () => {
-    if (isPlaying && audioBuffer) {
-      const elapsed = positionAt({
-        contextTime: audioContext.currentTime,
-        anchor: startTime,
-        rate: playbackRate,
-      });
+    if (isPlaying) {
+      // 位置只有一個答案：引擎。先前這裡自己用 context 時鐘推算，而那份推算
+      // 與變速時的推算慣例不同——從中間起用非 1 倍速就是錯的
+      const elapsed = engine.positionMs();
       playbackTimeRef.current = elapsed;
 
       // 紅線：每幀直接操作 DOM（60fps，不經過 React；用 ref 確保 resize 後讀取最新寬度）
@@ -356,7 +303,7 @@ const AudioWaveform = ({
 
   // 處理波形點擊，更新播放時間
   const handleWaveformClick = (e) => {
-    if (!audioBuffer) return;
+    if (!isLoaded) return;
     const rect = containerRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const progress = x / rect.width;
@@ -455,17 +402,13 @@ const AudioWaveform = ({
 };
 
 function Wave({
+  engine,
   isPlaying,
-  setIsPlaying,
   zoomValue,
   scrollRef,
   containerRef,
-  sourceNode,
-  setSourceNode,
-  volume,
   onTimeUpdate,
   onSeek,
-  pendingSeekRef,
 }) {
   // const musicIndex = useSelector((state) => state.profiles.data?.music_index ?? 2);
   const musicFilename = useSelector((state) => state.profiles.data?.music_filename || "2026_funding.mp3");
@@ -478,17 +421,13 @@ function Wave({
     <div>
       <AudioWaveform
         url={resolvedUrl}
+        engine={engine}
         isPlaying={isPlaying}
-        setIsPlaying={setIsPlaying}
-        sourceNode={sourceNode}
-        setSourceNode={setSourceNode}
         scrollRef={scrollRef}
         containerRef={containerRef}
         zoomValue={zoomValue}
-        volume={volume}
         onTimeUpdate={onTimeUpdate}
         onSeek={onSeek}
-        pendingSeekRef={pendingSeekRef}
       />
     </div>
   );

@@ -141,9 +141,16 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 `utils/segments/gestures.js`（`movableRange` / `moveSegments` / `resizeSegment`
 三個純函式），元件裡只剩像素換算與直接寫 DOM。
 
-`waveform.jsx` 是最後一個沒拆完的大檔，裡面混了四件事：解碼音檔、算峰值、
-畫 canvas、跑播放引擎。**峰值運算已抽到 `utils/audio/peaks.js`**（純函式），
-繪圖只剩「拿數字畫方塊」；解碼與播放引擎還在裡面。
+`waveform.jsx` 已經拆完，現在只做兩件事：**畫波形**與**回報播放位置**。
+音訊全部在 `utils/audio/`：
+
+| 檔案 | 內容 |
+|---|---|
+| `peaks.js` | 峰值運算（兩層降取樣，純函式） |
+| `clock.js` | 「現在播到第幾毫秒」的唯一算法 |
+| `schedule.js` | clip 時間軸 → `start(when, offset, duration)` 的參數與音量包絡 |
+| `engine.js` | 所有 Web Audio 狀態（**不是 hook、不認得 React**，所以測得到） |
+| `hooks/useAudioEngine.js` | 薄薄一層：建立引擎、同步 volume/rate、卸載時清掉 |
 
 ### 文件檔案
 - **`README.md`**：專案說明文件（散文式，重點在資料模型與驗收方式）
@@ -352,6 +359,29 @@ N 個全部選起來（它們之間有空隙，`Shift+click` 連選會斷）、�
 既有的 import 路徑不必改。
 
 展開後的形狀與舊版逐格相同（有等價測試守著），所以韌體收到的東西沒變。
+
+### 音訊引擎
+
+所有 Web Audio 的狀態都在 `utils/audio/engine.js`。它**刻意不是 hook 也不認得
+React**——這樣才能拿假的 AudioContext 在 jsdom 裡驗排程，而「你把這個 source
+排在第幾秒」在真瀏覽器裡問不到。
+
+⚠️ **`isPlaying` 一變就驅動引擎，不要只掛在 `handlePlayPause` 上。** 設定
+`isPlaying` 的地方有三個（播放鍵自己 `setIsPlaying(p => !p)`、空白鍵、整場播完
+的回呼），只掛其中一條路徑的話按鈕會變成「畫面切成暫停圖示但音樂照播」。
+
+⚠️ **載入不能等 `resume()`。** 沒有使用者手勢時 Chrome 的 `resume()` promise
+會一直 pending（不是 reject，是永遠不 settle），把它放進載入路徑會讓 duration
+永遠出不來、波形永遠空白。`decodeAudioData` 在 suspended 的 context 上照樣能用，
+所以 `getContext()`（只建立）與 `ensureRunning()`（建立 + resume）是分開的。
+
+⚠️ **接縫一次排好，不要等 `onended` 再啟動下一首**——後者一定有縫。代價是
+變速與 seek 都必須整批重排（已排好的 `when` 是用舊速率/舊起點算的）。
+
+⚠️ 結束通知只掛在**最後一個** clip 上，否則每首歌播完都會通知一次，
+播放鍵會在接縫處自己跳掉。
+
+**行為改變**：播放中 seek 現在會**繼續播**（引擎重排），不再變成暫停。
 
 ### 播放時鐘
 

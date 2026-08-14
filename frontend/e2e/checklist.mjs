@@ -500,15 +500,30 @@ const run = async () => {
       `${pausedSeek}ms（期望 15000）`,
     );
 
+    /*
+     * 播放中點刻度尺 → **跳過去而且繼續播**。
+     *
+     * 這是引擎化之後的行為改變：舊版的 seek 會把音源停掉（於是變成暫停），
+     * 因為當時位置分散在三個地方，seek 必須手動打斷播放的連鎖才不會被覆寫。
+     * 現在引擎直接整批重排，播放不中斷——和一般 DAW 一致。
+     *
+     * 所以不能斷言「正好等於 22500」，音樂已經往前走了一段。
+     * 驗的是「跳到那裡而且沒有往回」。
+     */
     await page.locator(".play-button").click();
     await page.waitForTimeout(1200);
     await clickRulerAt(0.75);
+    await page.waitForTimeout(200);
     const playingSeek = await readTimeMs();
     record(
-      "播放中點刻度尺也會跳時間",
-      Math.abs(playingSeek - 22500) <= 100,
-      `${playingSeek}ms（期望 22500）`,
+      "播放中點刻度尺會跳過去並繼續播",
+      playingSeek >= 22400 && playingSeek < 25000,
+      `${playingSeek}ms（期望 22500 起、繼續前進）`,
     );
+
+    // 後面幾項假設是暫停狀態
+    await page.locator(".play-button").click();
+    await page.waitForTimeout(300);
     /*
      * 倍速播放時的位置。
      *

@@ -30,6 +30,7 @@ import {
 } from "../../utils/segments/color.js";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts.js";
 import { useDeselectOnOutsideClick } from "../../hooks/useDeselectOnOutsideClick.js";
+import { useAudioEngine } from "../../hooks/useAudioEngine.js";
 import { useSegmentActionTable } from "../../hooks/useSegmentActionTable.js";
 import { useActiveTracks } from "../../hooks/useWorksets.js";
 import { FAVORITE_SLOTS, favoriteColorAt } from "../../utils/palette.js";
@@ -70,12 +71,23 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1); // 放大級別
   const progressFlagRef = useRef(null); // P0: 進度條 DOM ref，60fps 直接操作
-  const [sourceNode, setSourceNode] = useState(null);
-  // 「使用者剛指定要跳到哪」。waveform 暫停時會把播放位置寫回 Redux，
-  // 這個 ref 是告訴它「這次是 seek，不要用舊位置覆寫」。詳見 seekTo。
-  const pendingSeekRef = useRef(null);
   const elRefs = useRef([]);
   const marqueeBoxRef = useRef(null); // 框選的矩形，手勢期間直接改它的 style
+
+  const playbackRate = useSelector((state) => state.profiles.playbackRate);
+
+  /*
+   * 播放引擎 —— 所有 Web Audio 的狀態都在裡面（見 utils/audio/engine.js）。
+   *
+   * 先前這些狀態切成三份：`sourceNode` 在這裡、`startTime` 在 waveform、
+   * 真正的時鐘在 AudioContext。後果是暫停時有兩個 effect 都會寫 currentTime，
+   * 而 seek 修正之所以有效靠的是它宣告在後面。
+   */
+  const audio = useAudioEngine({
+    volume,
+    rate: playbackRate,
+    onEnded: () => setIsPlaying(false),
+  });
 
   const effects = useLightEffects(); // 漸變/頻閃/亮度階梯：選單與快捷鍵共用
   const shift = useTimeShift(); // 區間平移：按鈕與時間軸標記共用同一份狀態
@@ -202,13 +214,28 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     );
   };
 
-  const handlePlayPause = () => {
-    if (!isPlaying) {
-      setIsPlaying(true);
-    } else {
-      setIsPlaying(false);
-    }
-  };
+  /** 播放 / 暫停。真正的動作由下面那個 effect 做（見它的說明） */
+  const handlePlayPause = () => setIsPlaying((playing) => !playing);
+
+  /*
+   * `isPlaying` 一變就驅動引擎。
+   *
+   * ⚠️ **不要只在 `handlePlayPause` 裡叫引擎。** 設定 `isPlaying` 的地方不只
+   * 一個：播放鍵自己 `setIsPlaying(p => !p)`、空白鍵走 handlePlayPause、
+   * 整場播完由引擎回呼設 false。只掛在其中一條路徑上的話，按鈕會變成「畫面
+   * 切成暫停圖示但音樂照播」——實測就是這樣（e2e 的倍速那一項位置完全不動）。
+   *
+   * 起點取 Redux 的 `currentTime` 而不是引擎自己記的位置：方向鍵、W/S/A/D、
+   * 點色塊等等都會直接改 `currentTime` 卻不經過引擎。**「要從哪裡開始」的
+   * 真相在 Redux，「正在播到哪」的真相在引擎**——這個分工是刻意的。
+   */
+  const currentTimeRef = useRef(currentTime);
+  currentTimeRef.current = currentTime;
+
+  useEffect(() => {
+    if (isPlaying) audio.play(currentTimeRef.current);
+    else audio.pause();
+  }, [isPlaying, audio]);
 
   /** 1~6：把最愛色套到選取的色塊上（空的那格不做事） */
   const handleFavoriteColorChoose = (index) => {
@@ -220,47 +247,18 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   /**
    * 跳到指定時間。
    *
-   * 光是 dispatch `updateCurrentTime` 不夠——播放中時 waveform 的 rAF 迴圈
-   * 每 40ms 就會用實際播放進度覆蓋掉它，看起來像「點了沒反應」。必須先停掉
-   * 正在播放的 `AudioBufferSourceNode`。
+   * 引擎負責「音樂跳到哪」，Redux 的 `currentTime` 負責「畫面顯示在哪」，
+   * 兩邊都要更新。播放中 seek 會讓引擎整批重排（見 engine.js），暫停中則
+   * 只是記住位置。
    *
-   * 這個知識原本只寫在 waveform 的 `handleWaveformClick` 裡，刻度尺一加上來
-   * 就踩到了。改由持有 `sourceNode` 的這一層定義一次，兩邊共用。
+   * 舊版這裡有一整段「停掉 sourceNode、清掉 onended、設成 null」的處理，
+   * 加上一個 `pendingSeekRef` 旗標告訴 waveform「這次是 seek 不是暫停」——
+   * 因為當時位置分散在三個地方，seek 必須手動去每個地方打斷連鎖。
+   * 位置收進引擎之後那些全部不需要了。
    */
   const seekTo = (timeMs) => {
     const aligned = Math.round(timeMs / TICK_MS) * TICK_MS;
-
-    if (sourceNode) {
-      /*
-       * `pendingSeekRef` 只在**真的打斷播放**時才舉起來。
-       *
-       * 舊版無條件設定，但消耗它的只有「isPlaying 轉 false」那個 effect——
-       * 暫停時點刻度尺不會讓 isPlaying 變動，於是旗標一直舉著，等到下一次
-       * 「播放 → 暫停」才被消耗，把真實的播放位置蓋回**上一次點的地方**。
-       *
-       * 使用者看到的是：暫停時選好位置、播一段、按暫停，時間跳回原點。
-       * 這是 e2e 加倍速那一項時抓到的（位置完全沒前進，15000 → 15000）。
-       */
-      pendingSeekRef.current = aligned;
-
-      /*
-       * 光是 `sourceNode.stop()` 不夠，還會被反咬一口：
-       *
-       *   stop() → onended → setIsPlaying(false) → waveform 的暫停分支
-       *          → 用音訊時鐘重算「播到哪」並 dispatch → 蓋掉我們要跳的時間
-       *
-       * 所以要把那條連鎖拆掉：清掉 onended、把 sourceNode 設成 null。
-       * 暫停分支的條件是 `!isPlaying && sourceNode`，sourceNode 一旦為 null
-       * 就整段跳過，不會再覆寫。
-       *
-       * （這個坑本來就存在於波形的點擊跳轉，只是沒人注意到——播放中點波形
-       * 一樣跳不動。現在兩邊共用這個函式，一起修好。）
-       */
-      sourceNode.onended = null;
-      sourceNode.stop();
-      setSourceNode(null);
-      setIsPlaying(false);
-    }
+    audio.seek(aligned);
     dispatch(updateCurrentTime(aligned));
   };
 
@@ -464,16 +462,12 @@ function AudioPlayer({ setButtonState, timelineRef }) {
           <div className="waveform-container" ref={containerRef}>
             {/* 波形顯示區域 */}
             <Waveform
+              engine={audio}
               isPlaying={isPlaying}
-              setIsPlaying={setIsPlaying}
               scrollRef={scrollRef}
-              sourceNode={sourceNode}
-              setSourceNode={setSourceNode}
               onSeek={seekTo}
-              pendingSeekRef={pendingSeekRef}
               zoomValue={zoomLevel}
               containerRef={containerRef}
-              volume={volume}
               onTimeUpdate={(elapsed) => {
                 if (progressFlagRef.current && duration > 0) {
                   progressFlagRef.current.style.left = `${(elapsed / duration) * 100}%`;

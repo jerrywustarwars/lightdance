@@ -57,17 +57,33 @@ export function createAudioEngine({
   let pausedAt = 0;   // 暫停時停在哪（ms）
   let onEnded = null;
 
-  /** 真正要出聲的時候才建立 context —— 那時一定有使用者手勢 */
-  const ensureContext = async () => {
+  /**
+   * 建立 context（不 resume）。
+   *
+   * ⚠️ **解碼不能等 resume。** 沒有使用者手勢時，Chrome 的
+   * `context.resume()` 回傳的 promise 會**一直 pending**——不是 reject，
+   * 是永遠不 settle。把 resume 放進載入路徑的話，整個音檔載入就卡在那裡，
+   * duration 永遠出不來、波形永遠是空白的（實測就是這樣，e2e 四項一起紅）。
+   *
+   * `decodeAudioData` 在 suspended 的 context 上照樣可以用，所以載入只需要
+   * context 存在，不需要它在跑。
+   */
+  const getContext = () => {
     if (!context) {
       context = createContext();
       master = context.createGain();
       master.gain.value = volume;
       master.connect(context.destination);
     }
-    // 分頁切走再切回來、或自動播放政策擋下來時，context 會是 suspended
-    if (context.state === "suspended") await context.resume();
     return context;
+  };
+
+  /** 真的要出聲之前才 resume —— 呼叫端一定是在使用者手勢裡 */
+  const ensureRunning = async () => {
+    const ctx = getContext();
+    // 分頁切走再切回來、或自動播放政策擋下來時，context 會是 suspended
+    if (ctx.state === "suspended") await ctx.resume();
+    return ctx;
   };
 
   const load = async (url) => {
@@ -75,7 +91,7 @@ export function createAudioEngine({
     if (cache.inflight.has(url)) return cache.inflight.get(url);
 
     const task = (async () => {
-      const ctx = await ensureContext();
+      const ctx = getContext();
       const data = await fetchAudio(url);
       const buffer = await ctx.decodeAudioData(data);
       cache.buffers.set(url, buffer);
@@ -109,7 +125,7 @@ export function createAudioEngine({
    * 接線、把算好的數字餵進去。
    */
   const schedule = async (fromMs) => {
-    const ctx = await ensureContext();
+    const ctx = await ensureRunning();
     const plan = scheduleFrom(clips, {
       fromMs,
       rate,
@@ -173,13 +189,21 @@ export function createAudioEngine({
     getClips: () => clips,
     durationMs: () => totalDuration(clips),
 
-    /** 預先把音檔抓下來解碼，之後按播放就不用等 */
+    /**
+     * 抓下來並解碼一個音檔（有快取）。
+     *
+     * 對外開放是因為波形也需要那份解碼結果來算峰值——讓它自己再解碼一次的話，
+     * 同一個檔案會下載兩次、解碼兩次，而解碼是整個載入流程裡最貴的一步。
+     */
+    load,
+
+    /** 預先把用到的音檔全部備妥，之後按播放就不用等 */
     prepare: () =>
       Promise.all([...new Set(clips.map((clip) => clip.sourceFile))].map(load)),
 
     async play(fromMs = pausedAt) {
       if (isPlaying) return;
-      const ctx = await ensureContext();
+      const ctx = await ensureRunning();
       anchor = anchorFor({ contextTime: ctx.currentTime, positionMs: fromMs, rate });
       isPlaying = true;
       pausedAt = fromMs;
@@ -201,7 +225,7 @@ export function createAudioEngine({
       if (!isPlaying) return target;
 
       stopAll();
-      const ctx = await ensureContext();
+      const ctx = await ensureRunning();
       anchor = anchorFor({ contextTime: ctx.currentTime, positionMs: target, rate });
       await schedule(target);
       return target;
@@ -223,7 +247,7 @@ export function createAudioEngine({
       const at = this.positionMs();
       stopAll();
       rate = value;
-      const ctx = await ensureContext();
+      const ctx = await ensureRunning();
       anchor = anchorFor({ contextTime: ctx.currentTime, positionMs: at, rate });
       await schedule(at);
     },

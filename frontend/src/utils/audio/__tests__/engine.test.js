@@ -114,6 +114,21 @@ describe("生命週期", () => {
     expect(fake.context.state).toBe("running");
   });
 
+  /*
+   * 這是 e2e 抓到的回歸。resume 原本放在載入路徑裡，而沒有使用者手勢時
+   * Chrome 的 `resume()` promise 會**一直 pending**（不是 reject，是永遠不
+   * settle）——整個載入就卡在那裡，duration 出不來、波形是空白的。
+   */
+  it("載入不會等 resume（沒有手勢時那個 promise 永遠不會 settle）", async () => {
+    const engine = makeEngine();
+    // 讓 resume 永遠不 settle，模擬沒有使用者手勢的情形
+    fake.context.resume = vi.fn(() => new Promise(() => {}));
+
+    const buffer = await engine.load("a.mp3");
+    expect(buffer.duration).toBe(30);
+    expect(fake.context.resume).not.toHaveBeenCalled();
+  });
+
   it("dispose 會關掉 context", async () => {
     const engine = makeEngine();
     engine.setClips(threeSongs);
@@ -131,6 +146,15 @@ describe("解碼快取", () => {
     engine.pause();
     await engine.play(0);
     expect(fetched.filter((url) => url === "a.mp3")).toHaveLength(1);
+  });
+
+  it("load 對外開放，讓波形共用同一份解碼結果", async () => {
+    const engine = makeEngine();
+    const buffer = await engine.load("a.mp3");
+    expect(buffer.duration).toBe(30);
+    // 再要一次不會重抓——波形與播放共用快取
+    await engine.load("a.mp3");
+    expect(fetched).toEqual(["a.mp3"]);
   });
 
   it("同一個檔案被兩個 clip 用到也只抓一次", async () => {
