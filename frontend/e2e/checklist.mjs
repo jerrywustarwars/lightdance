@@ -234,6 +234,32 @@ const run = async () => {
   record("音檔載入出 duration", /0:30|0:29/.test(header));
   await shot(page, "editor-loaded");
 
+  /*
+   * 波形真的畫出來了。
+   *
+   * 這一項在改繪圖程式碼時才發現是個缺口：波形整片空白的話，上面每一項都還是
+   * 會過（duration 是從解碼結果來的，跟畫不畫得出來無關）。而波形的繪圖路徑
+   * 有好幾個分母會在容器還沒量到寬度時變成 0，`NaN` 傳進 `fillRect`
+   * **不會報錯，只是什麼都不畫**——安靜到 console 一片乾淨。
+   *
+   * 直接數畫布上有多少個不透明的像素，這是唯一問得到「有沒有畫東西」的方式。
+   */
+  const wavePixels = await page.evaluate(() => {
+    const canvas = document.querySelector(".waveform-container canvas");
+    if (!canvas || !canvas.width || !canvas.height) return -1;
+    const { data } = canvas
+      .getContext("2d")
+      .getImageData(0, 0, canvas.width, canvas.height);
+    let painted = 0;
+    for (let i = 3; i < data.length; i += 4) if (data[i] > 0) painted++;
+    return painted;
+  });
+  record(
+    "波形真的畫出來（不是一片空白）",
+    wavePixels > 1000,
+    wavePixels < 0 ? "找不到畫布" : `${wavePixels} 個像素`,
+  );
+
   // 換一個亮色，截圖才看得出東西（預設 chosenColor 是接近全黑的 rgb(5,5,5)）
   await page.evaluate(() => {
     const well = document.querySelector("#colorWell");

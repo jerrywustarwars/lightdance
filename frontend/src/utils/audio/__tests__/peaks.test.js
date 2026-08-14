@@ -1,0 +1,160 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  computePeaks,
+  normalizePeaks,
+  peaksForViewport,
+  resamplePeaks,
+  visibleRange,
+} from "../peaks.js";
+
+describe("算峰值", () => {
+  it("每個桶取絕對值的最大值", () => {
+    // 8 個取樣點分成 4 桶：每桶兩個
+    const data = [0.1, -0.9, 0.2, 0.3, -0.5, 0.4, 0.05, 0.05];
+    expect(computePeaks(data, 4)).toEqual([0.9, 0.3, 0.5, 0.05]);
+  });
+
+  it("桶比取樣點還細時每桶至少取一個點", () => {
+    // 兩個點分成四桶：不至少取一個的話後面幾桶會是 0
+    const peaks = computePeaks([1, 0.5], 4);
+    expect(peaks).toHaveLength(4);
+    expect(peaks.every((peak) => peak > 0)).toBe(true);
+  });
+
+  it("空資料回傳空陣列而不是炸掉", () => {
+    expect(computePeaks([], 10)).toEqual([]);
+    expect(computePeaks(undefined, 10)).toEqual([]);
+    expect(computePeaks([1, 2], 0)).toEqual([]);
+  });
+});
+
+describe("正規化", () => {
+  it("最大值變成 1", () => {
+    expect(normalizePeaks([0.25, 0.5])).toEqual([0.5, 1]);
+  });
+
+  /*
+   * 這是這次抽出來時補上的守衛。靜音的音檔算出來全是 0，舊版直接
+   * `peak / maxPeak` 會得到一整排 NaN——而 NaN 傳進 `fillRect` **不會報錯，
+   * 只是什麼都不畫**。波形就這樣消失，console 一片乾淨。
+   */
+  it("全靜音不會產生 NaN", () => {
+    const out = normalizePeaks([0, 0, 0]);
+    expect(out).toEqual([0, 0, 0]);
+    expect(out.every(Number.isFinite)).toBe(true);
+  });
+
+  it("空陣列回傳空陣列", () => {
+    expect(normalizePeaks([])).toEqual([]);
+    expect(normalizePeaks(null)).toEqual([]);
+  });
+});
+
+describe("可視範圍", () => {
+  const view = { viewportWidth: 100, contentWidth: 1000, peakCount: 500 };
+
+  it("捲到開頭時取前面那一段", () => {
+    expect(visibleRange({ ...view, scrollLeft: 0 })).toEqual({ start: 0, end: 50 });
+  });
+
+  it("捲到中間時取中間那一段", () => {
+    expect(visibleRange({ ...view, scrollLeft: 500 })).toEqual({
+      start: 250,
+      end: 300,
+    });
+  });
+
+  it("捲過頭不會超出陣列範圍", () => {
+    expect(visibleRange({ ...view, scrollLeft: 99999 })).toEqual({
+      start: 500,
+      end: 500,
+    });
+  });
+
+  it("負的捲動位置（橡皮筋回彈）夾到 0", () => {
+    expect(visibleRange({ ...view, scrollLeft: -50 }).start).toBe(0);
+  });
+
+  /*
+   * 掛載的第一幀容器還沒量到寬度，`scrollLeft / 0` 是 NaN。舊版沒有守衛，
+   * NaN 一路流到 `slice(NaN, NaN)` 得到空陣列，再流到 `Math.max()` 得到
+   * -Infinity，最後每根柱子的高度都是 NaN。
+   */
+  it("容器還沒有寬度時回傳空範圍，不是 NaN", () => {
+    const range = visibleRange({ ...view, contentWidth: 0, scrollLeft: 10 });
+    expect(range).toEqual({ start: 0, end: 0 });
+  });
+
+  it("還沒有峰值資料時回傳空範圍", () => {
+    expect(visibleRange({ ...view, peakCount: 0 })).toEqual({ start: 0, end: 0 });
+  });
+
+  it("end 永遠不小於 start", () => {
+    const range = visibleRange({ ...view, scrollLeft: 400, viewportWidth: 0 });
+    expect(range.end).toBeGreaterThanOrEqual(range.start);
+  });
+});
+
+describe("降取樣", () => {
+  it("每根柱取區間的平均", () => {
+    // 取平均而不是取最大：取最大會讓整片波形貼齊上緣，看不出強弱
+    expect(resamplePeaks([0, 1, 0, 1], 2)).toEqual([0.5, 0.5]);
+  });
+
+  it("來源比目標短時原樣回傳，不補值", () => {
+    expect(resamplePeaks([1, 2, 3], 10)).toEqual([1, 2, 3]);
+  });
+
+  it("回傳的是新陣列，不會被呼叫端改到", () => {
+    const source = [1, 2, 3];
+    expect(resamplePeaks(source, 10)).not.toBe(source);
+  });
+
+  it("邊界輸入不會炸掉", () => {
+    expect(resamplePeaks([], 10)).toEqual([]);
+    expect(resamplePeaks([1, 2], 0)).toEqual([]);
+    expect(resamplePeaks(null, 10)).toEqual([]);
+  });
+
+  it("每個值都是有限數", () => {
+    const out = resamplePeaks([0, 0, 0, 0, 0, 0], 3);
+    expect(out.every(Number.isFinite)).toBe(true);
+  });
+});
+
+describe("整條管線", () => {
+  const peaks = Array.from({ length: 1000 }, (_, i) => (i < 500 ? 0.1 : 1));
+
+  it("放大看小聲的段落時會重新正規化", () => {
+    // 前半段全是 0.1，單獨看的時候應該撐滿高度，而不是變成貼著中線的細線
+    const quiet = peaksForViewport(
+      peaks,
+      { scrollLeft: 0, viewportWidth: 100, contentWidth: 200 },
+      10,
+    );
+    expect(Math.max(...quiet)).toBe(1);
+  });
+
+  it("容器還沒有寬度時回傳空陣列", () => {
+    expect(
+      peaksForViewport(peaks, { scrollLeft: 0, viewportWidth: 0, contentWidth: 0 }),
+    ).toEqual([]);
+  });
+
+  it("沒有峰值資料時回傳空陣列", () => {
+    expect(
+      peaksForViewport([], { scrollLeft: 0, viewportWidth: 100, contentWidth: 200 }),
+    ).toEqual([]);
+  });
+
+  it("輸出的長度不超過要求的柱數", () => {
+    const out = peaksForViewport(
+      peaks,
+      { scrollLeft: 0, viewportWidth: 200, contentWidth: 200 },
+      64,
+    );
+    expect(out.length).toBeLessThanOrEqual(64);
+    expect(out.every(Number.isFinite)).toBe(true);
+  });
+});

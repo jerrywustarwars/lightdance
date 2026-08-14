@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, memo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { API_ENDPOINTS } from "../../config/api.js";
 import { localMusicMap } from "./musicData.js";
+import { peaksForViewport, peaksFromChannel } from "../../utils/audio/peaks.js";
 
 import {
   updateCurrentTime,
@@ -17,32 +18,14 @@ async function loadAudioData(url, audioContext) {
   return audioBuffer;
 }
 
-// 輔助函數：根據音頻數據獲取波峰
-function getPeaks(audioBuffer, samplesPerPixel = 200000) {
-  const channelData = audioBuffer.getChannelData(0); // 獲取左聲道數據
-  const peaks = [];
-  let maxPeak = 0;
-  console.log("channelData", channelData.length);
-
-  const blockSize = channelData.length / samplesPerPixel; // 計算每個區塊的大小
-  for (let i = 0; i < samplesPerPixel; i++) {
-    const blockStart = Math.floor(i * blockSize);
-    const blockEnd = Math.floor(blockStart + blockSize);
-    let max = 0;
-
-    for (let j = blockStart; j < blockEnd; j++) {
-      if (Math.abs(channelData[j]) > max) {
-        max = Math.abs(channelData[j]); // 找到區塊內的最大值
-      }
-    }
-
-    peaks.push(max); // 儲存該區塊的最大峰值
-    if (max > maxPeak) maxPeak = max; // 更新整體最大峰值
-  }
-
-  // 將峰值正規化到 [0, 1] 範圍內
-  const normalizedPeaks = peaks.map((peak) => peak / maxPeak);
-  return normalizedPeaks;
+/**
+ * 從解碼後的音檔算出整首歌的峰值。
+ *
+ * 實際的運算在 `utils/audio/peaks.js`（純函式，邊界條件在那裡窮舉過）——
+ * 這裡只負責從 AudioBuffer 拿左聲道出來。
+ */
+function getPeaks(audioBuffer, buckets = 200000) {
+  return peaksFromChannel(audioBuffer.getChannelData(0), buckets);
 }
 
 // AudioWaveform 組件
@@ -315,74 +298,45 @@ const AudioWaveform = ({
   //   return () => cancelAnimationFrame(animationFrameRef.current); // 清理動畫
   // }, [isPlaying, zoomValue]);
 
+  /**
+   * 把目前看得到的那一段波形畫出來。
+   *
+   * 「要畫哪些柱子」全部交給 `peaksForViewport`（純函式，見 utils/audio/peaks.js），
+   * 這裡只剩「拿數字畫方塊」。抽出去之前這個函式同時在做三件事：從 ref 讀捲動
+   * 位置與寬度、算可視範圍與降取樣、然後才畫——中間任何一個分母是 0 都會安靜地
+   * 產生 NaN，而 NaN 傳進 `fillRect` 不會報錯，只是什麼都不畫。
+   */
   function drawWaveforms(canvas) {
+    const scroller = scrollRef.current;
+    const container = containerRef.current;
+    if (!canvas || !scroller || !container) return;
+
     const context = canvas.getContext("2d");
     const height = canvas.height;
-    const width = canvas.width;
-    context.clearRect(0, 0, width, height);
+    context.clearRect(0, 0, canvas.width, height);
 
-    const container = containerRef.current;
-    context.clearRect(0, 0, scrollRef.current.clientWidth, height); // 清空畫布
+    const bars = peaksForViewport(fullPeaks, {
+      scrollLeft: scroller.scrollLeft,
+      viewportWidth: scroller.offsetWidth,
+      contentWidth: container.offsetWidth,
+    });
+    if (bars.length === 0) return;
+
     // 波形顏色從 token 讀，不寫死——原本是淺綠，跟燈光的綠色色塊搶注意力。
     // canvas 沒辦法直接吃 CSS 變數，所以在這裡解析一次。
     context.fillStyle =
       getComputedStyle(document.documentElement)
         .getPropertyValue("--wave-fill")
         .trim() || "#6f6f6f";
-    const targetBarCount = 1000;
-    const startIndex = Math.floor(
-      (scrollRef.current?.scrollLeft / container.offsetWidth) * fullPeaks.length
-    ); // 計算起始索引
-    const endIndex = Math.floor(
-      ((scrollRef.current?.scrollLeft + scrollRef.current.offsetWidth) /
-        container.offsetWidth) *
-        fullPeaks.length
-    ); // 計算起始索引
 
-    const result = [];
+    const barWidth = scroller.offsetWidth / bars.length;
+    const middle = height / 2;
 
-    const visiblePeaks = fullPeaks.slice(startIndex, endIndex);
-    console.log(
-      "startIndex",
-      startIndex,
-      "endIndex",
-      endIndex,
-      "length",
-      endIndex - startIndex
-    );
-    const factor = (endIndex - startIndex) / targetBarCount; // 計算縮放因子
-
-    for (let i = 0; i < targetBarCount; i++) {
-      const start = Math.floor(i * factor); // 計算起始索引
-      const end = Math.floor((i + 1) * factor);
-      const chunk = visiblePeaks.slice(start, end > start ? end : start + 1);
-      const avg = chunk.length
-        ? chunk.reduce((sum, v) => sum + v, 0) / chunk.length
-        : 0;
-
-      // result.push(min);
-      result.push(avg); // 使用平均值
-    }
-    // console.log("result", result);
-
-    const maxPeak = Math.max(...result); // 找到峰值的最大值
-    const barWidth = scrollRef.current.offsetWidth / targetBarCount; // 每個柱條的寬度
-
-    for (let i = 0; i < result.length; i++) {
-      const peak = result[i];
-      const normalizedPeak = peak / maxPeak; // 正規化峰值
-      const barHeight = (normalizedPeak * height) / 2; // 計算柱條高度
-
-      // 繪製上半部分波形
-      context.fillRect(
-        i * barWidth,
-        height / 2 - barHeight,
-        barWidth,
-        barHeight
-      );
-
-      // 繪製下半部分波形（鏡像）
-      context.fillRect(i * barWidth, height / 2, barWidth, barHeight);
+    for (let i = 0; i < bars.length; i++) {
+      const barHeight = (bars[i] * height) / 2;
+      // 上下對稱各畫一次
+      context.fillRect(i * barWidth, middle - barHeight, barWidth, barHeight);
+      context.fillRect(i * barWidth, middle, barWidth, barHeight);
     }
   }
 
