@@ -120,7 +120,6 @@
   background-color: var(--bg-panel); /* 灰色背景 */
   color: var(--text-primary);
   position: relative;
-  border-top: 4px solid var(--bg-control);
   display: flex;
   flex-direction: column;
 }

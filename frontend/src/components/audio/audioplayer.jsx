@@ -30,7 +30,20 @@ import {
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts.js";
 import { useSegmentActionTable } from "../../hooks/useSegmentActionTable.js";
 import { useActiveTracks } from "../../hooks/useWorksets.js";
+import { FAVORITE_SLOTS, favoriteColorAt } from "../../utils/palette.js";
 import { trackHeight } from "../../utils/tracks.js";
+
+/**
+ * 最愛色的快捷鍵：`1` ~ `FAVORITE_SLOTS`。
+ *
+ * 兩種寫法都要——沒按 Shift 時比對 `event.key`（就是數字），按著 Shift 時
+ * 數字鍵的 `key` 會變成符號（Shift+1 → `!`），只有 `event.code` 還看得出來
+ * 按的是哪個鍵。格數超過 9 的話這裡要改寫（單一字元的字元類別放不下）。
+ */
+const DIGIT_KEYS = Array.from({ length: FAVORITE_SLOTS }, (_, i) =>
+  String(i + 1),
+);
+const DIGIT_CODES = new RegExp(`^Digit[1-${FAVORITE_SLOTS}]$`);
 
 function AudioPlayer({ setButtonState, timelineRef }) {
   const dispatch = useDispatch();
@@ -153,20 +166,8 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   // P0: 進度條改由 waveform.jsx 的 rAF 透過 onTimeUpdate callback 直接操作 DOM（60fps）
   // 移除了 setProgressWidth 的 useEffect，避免播放期間不必要的 re-render
 
-  /**
-   * 把 1~8 的序號換算成最愛顏色盤上的座標。
-   * 顏色盤還沒載入時（favoriteColor 預設是空陣列）回傳 null，呼叫端跳過。
-   */
-  const favoriteColorAt = (colorIndex) => {
-    const columns = favoriteColor?.[0]?.length;
-    if (!columns) return null;
-    const row = Math.floor(colorIndex / columns); // 計算第幾列
-    const col = colorIndex % columns; // 計算第幾行
-    return favoriteColor[row % favoriteColor.length][col] ?? null;
-  };
-
   const handleFavoriteColorInsert = (colorIndex) => {
-    const color = favoriteColorAt(colorIndex);
+    const color = favoriteColorAt(favoriteColor, colorIndex);
     if (!color) return;
     insertFavoriteColorArray(color);
   };
@@ -219,10 +220,10 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     }
   };
 
-  /** 1~8：把最愛色套到選取的色塊上 */
+  /** 1~6：把最愛色套到選取的色塊上（空的那格不做事） */
   const handleFavoriteColorChoose = (index) => {
-    const newColor = favoriteColorAt(index);
-    if (!newColor) return; // 顏色盤還沒載入
+    const newColor = favoriteColorAt(favoriteColor, index);
+    if (!newColor) return; // 那一格還沒存過顏色
     applyColorToSelection(newColor);
   };
 
@@ -331,7 +332,14 @@ function AudioPlayer({ setButtonState, timelineRef }) {
 
     // 最愛顏色與透明度
     {
-      key: ["1", "2", "3", "4", "5", "6", "7", "8"],
+      /*
+       * 數字鍵對應調色盤上的六格。
+       *
+       * 由 FAVORITE_SLOTS 推導而不是寫死 1~8：色票從 4×2 收成一列六格之後，
+       * 7 與 8 仍然綁著，而舊的二維換算會讓它們**繞回第 1、2 格**——按 7
+       * 套到的是第 1 格的顏色，畫面上沒有任何東西顯示這件事。
+       */
+      key: DIGIT_KEYS,
       // ctrl: false 是必要的守衛：沒有它，Ctrl+1 會同時打中這條和下面的透明度，
       // 兩個 handler 從同一份 actionTable 快照各自 produce 再 dispatch，
       // 結果是套色被蓋掉、卻多留一筆 history（一次 Ctrl+Z 復原不完）。
@@ -348,7 +356,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     { key: "0", ctrl: true, handler: () => trackActions.changeBrightness(1) },
     {
       // 按住 Shift 時數字鍵的 event.key 會是符號（Shift+1 → "!"），只能用 code 比對
-      code: /^Digit[1-8]$/,
+      code: DIGIT_CODES,
       shift: true,
       ctrl: false,
       handler: (event) =>
@@ -407,8 +415,13 @@ function AudioPlayer({ setButtonState, timelineRef }) {
           <ShiftToolButton shift={shift} />
           <UniformAlphaMenu actions={trackActions} />
         </div>
-        <span className="tool-sep" />
-        <div className="tool-group">
+        {/*
+          播放控制不掛分隔線：它靠 `margin-left: auto` 被推到最右邊，那段自動
+          留白本身就是分隔。窄視窗下它會換到第二行，這時分隔線會變成第一行
+          末端一條懸空的短線（實測 1280 下就是這樣）——留白換行之後仍然成立，
+          線不會。
+        */}
+        <div className="tool-group tool-group--transport">
           <PlayerControls
             isPlaying={isPlaying}
             setIsPlaying={setIsPlaying}

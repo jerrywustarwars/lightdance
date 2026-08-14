@@ -1,91 +1,73 @@
-import React from "react";
-import { useState, useEffect } from "react";
-import "./Palette.css";
-import TransparentButton from "./TransparentButton";
-import { RiSketching } from "react-icons/ri";
+import React, { useEffect, useState } from "react";
 import { FaEyeDropper } from "react-icons/fa6";
 import { useDispatch, useSelector } from "react-redux";
+
+import "./Palette.css";
 import {
   updateChosenColor,
-  updatePaletteColor,
   updateFavoriteColor,
+  updatePaletteColor,
 } from "../redux/actions";
+import {
+  FAVORITE_SLOTS,
+  HEX_PATTERN,
+  hexToRgb,
+  isNormalizedFavorites,
+  normalizeFavorites,
+  rgbToHex,
+  setFavoriteSlot,
+} from "../utils/palette.js";
 
 /**
- * 最愛色盤的格數：1 列 × 6 欄。
+ * 調色盤 —— 上半部右側唯一的欄（200px 寬）。
  *
- * 這個數字動過兩次，都是被欄位高度逼的。最早是 4 列 × 2 欄（8 格），面板只有
- * 170px 寬時後兩列會被捲出可視範圍——存進去就找不到了；接著收成 2 列 × 3 欄；
- * 之後這一欄收窄到 200px，兩列色票（72px）會把下面的控制項推出去，所以攤成一列。
+ * 由上而下：目前顏色（調色器 + HEX + 亮度）、最近使用、最愛色。
+ * 三塊的關係是「正在調的 → 剛用過的 → 存起來的」，越往下越持久。
+ *
+ * ## 這一版改掉的三件事
+ *
+ * **點色票的預設行為是覆蓋。** 舊版用一支 `<input type="range" min=0 max=1
+ * step=1>` 當「填色 / 取色」的開關，而預設在「填色」那一端——也就是點任何一格
+ * 最愛色都會**把它蓋成目前的顏色**。使用者要拿出存好的顏色，得先發現那支滑桿
+ * 是個開關並把它推到另一端。破壞性的操作不該是預設值，而且開關不該長得像
+ * 連續值的滑桿。現在預設是「使用」，要覆蓋得先切到「存色」。
+ *
+ * **亮度只有六段。** 舊版是 `(parseInt(A*10) ± 2) / 10` 的加減按鈕，走得到的
+ * 值只有 0/0.2/0.4/0.6/0.8/1.0 六個，而 `Ctrl+1~9` 早就能設 10%~90%——
+ * 同一個屬性兩套精度，滑桿設得出來的值按鈕調不到。改成滑桿之後兩邊一致。
+ *
+ * **沒有「最近用過」。** 每個顏色都得先想到要存才留得住，否則調完就沒了。
+ * 最近使用由 reducer 自動維護（見 `UPDATECHOSENCOLOR`），不需要使用者動手。
  */
-const FAVORITE_ROWS = 1;
-const FAVORITE_COLS = 6;
 
-/** `#RRGGBB`（大小寫皆可）才算合法，避免半途輸入就去改顏色 */
-const HEX_PATTERN = /^#[0-9a-fA-F]{6}$/;
+/** 亮度滑桿的刻度：1% 一格，和 `Ctrl+1~9` 走的 10% 級距相容 */
+const ALPHA_STEP = 0.01;
 
 function Palette({ rgba, setRgba }) {
   const dispatch = useDispatch();
   const favoriteColor = useSelector((state) => state.profiles.favoriteColor);
+  const recentColors = useSelector((state) => state.profiles.recentColors);
   const chosenColor = useSelector((state) => state.profiles.chosenColor);
   const paletteColor = useSelector((state) => state.profiles.paletteColor);
 
-  // const [inputValue, setInputValue] = useState("#000000");
-  const [clickStatus, setClickStatus] = useState(false);
-  const [toggleState, setToggleState] = useState(false); //
+  /** 點最愛色是要「拿出來用」還是「存進去」。預設拿出來用——覆蓋是破壞性的 */
+  const [saveMode, setSaveMode] = useState(false);
 
-  /**
-   * 最愛色固定 6 格，排成 2 列 × 3 欄。
+  const favorites = normalizeFavorites(favoriteColor);
+  const recents = Array.isArray(recentColors) ? recentColors : [];
+
+  /*
+   * 把 store 裡的舊形狀收成一維六格。
    *
-   * 原本是 4 列 × 2 欄（8 格），但面板只有 170px 寬，後兩列會被捲出可視範圍
-   * ——存進去之後就找不到了。改成 6 格剛好一次看得完。
-   *
-   * 既有使用者的 store 裡是舊形狀，所以這裡不只在空的時候初始化，也把任何
-   * 不是 2×3 的形狀攤平重排（保留前 6 個顏色，不足補白）。
+   * 舊版存的是二維陣列（色票排過 4×2 與 2×3），而排版是 CSS 的事，
+   * 資料只需要「第幾格」。已經是正規形狀就不 dispatch——這個 effect 依賴
+   * `favoriteColor`，少了這道判斷會無限重繪（同樣的洞在 audioplayer 的
+   * 調色盤 effect 上出現過一次）。
    */
   useEffect(() => {
-    const rows = FAVORITE_ROWS;
-    const cols = FAVORITE_COLS;
-    const alreadyRight =
-      favoriteColor.length === rows &&
-      favoriteColor.every((line) => Array.isArray(line) && line.length === cols);
-    if (alreadyRight) return;
-
-    const flat = favoriteColor.flat();
-    const filled = Array.from(
-      { length: rows * cols },
-      (_, i) => flat[i] ?? { R: 255, G: 255, B: 255, A: 1 },
-    );
-    dispatch(
-      updateFavoriteColor(
-        Array.from({ length: rows }, (_, r) =>
-          filled.slice(r * cols, (r + 1) * cols),
-        ),
-      ),
-    );
+    if (isNormalizedFavorites(favoriteColor)) return;
+    dispatch(updateFavoriteColor(normalizeFavorites(favoriteColor)));
   }, [dispatch, favoriteColor]);
-
-  useEffect(() => {
-    const sample = document.getElementById("thecolorsample");
-    if (sample) {
-      sample.addEventListener("click", function (event) {
-        if (event.target) {
-          document.querySelector("#colorWell").click();
-        }
-      });
-    }
-
-    // 清理事件监听器
-    return () => {
-      if (sample) {
-        sample.removeEventListener("click", function (event) {
-          if (event.target) {
-            document.querySelector("#colorWell").click();
-          }
-        });
-      }
-    };
-  }, []);
 
   /*
    * HEX 欄位需要自己的草稿狀態：使用者一個字一個字打的時候會經過
@@ -94,111 +76,67 @@ function Palette({ rgba, setRgba }) {
    */
   const [hexDraft, setHexDraft] = useState(paletteColor);
   useEffect(() => {
-    setHexDraft(paletteColor.toUpperCase());
+    setHexDraft((paletteColor ?? "#000000").toUpperCase());
   }, [paletteColor]);
+
+  /** 選一個顏色：同步 HEX 欄位、chosenColor 與呼叫端持有的 rgba */
+  const chooseColor = (color) => {
+    const alpha = color.A ?? chosenColor?.A ?? 1;
+    const next = { R: color.R, G: color.G, B: color.B, A: alpha };
+    dispatch(updatePaletteColor(rgbToHex(next)));
+    dispatch(updateChosenColor(next));
+    setRgba?.(next);
+  };
 
   const handleHexChange = (event) => {
     const next = event.target.value.toUpperCase();
     setHexDraft(next);
-    if (HEX_PATTERN.test(next)) applyHexColor(next);
+    const rgb = hexToRgb(next);
+    if (rgb) chooseColor(rgb);
   };
 
-  /** 套用一個合法的 #RRGGBB，透明度維持不變 */
-  const applyHexColor = (hex) => {
-    dispatch(updatePaletteColor(hex));
+  const handlePickerChange = (event) => {
+    const rgb = hexToRgb(event.target.value);
+    if (rgb) chooseColor(rgb);
+  };
+
+  /** 亮度 = LED 的 alpha。只改 A，色相不動 */
+  const setAlpha = (alpha) => {
+    dispatch(updateChosenColor({ ...chosenColor, A: alpha }));
+    setRgba?.({ ...(rgba ?? chosenColor), A: alpha });
+  };
+
+  const alpha = chosenColor?.A ?? 1;
+
+  const saveToSlot = (index) => {
     dispatch(
-      updateChosenColor({
-        R: parseInt(hex.slice(1, 3), 16),
-        G: parseInt(hex.slice(3, 5), 16),
-        B: parseInt(hex.slice(5, 7), 16),
-        A: chosenColor.A !== undefined ? chosenColor.A : 1,
-      }),
+      updateFavoriteColor(setFavoriteSlot(favoriteColor, index, chosenColor)),
     );
   };
 
-  const handleColorChange = (event) => {
-    const newColor = event.target.value;
-    dispatch(updatePaletteColor(newColor));
-
-    const hexToRgba = (hex) => {
-      const r = parseInt(hex.slice(1, 3), 16);
-      const g = parseInt(hex.slice(3, 5), 16);
-      const b = parseInt(hex.slice(5, 7), 16);
-      const a = chosenColor.A !== undefined ? chosenColor.A : 1; // 保持透明度不變
-      return { R: r, G: g, B: b, A: a };
-    };
-    const rgbaColor = hexToRgba(newColor);
-    dispatch(updateChosenColor(rgbaColor)); // 更新 Redux 狀態中的 chosenColor
+  /*
+   * 空格一律是「存進去」，不看目前是哪個模式——空的格子沒有東西可以拿出來用，
+   * 所以那個動作沒有歧義，也不會蓋掉任何東西。
+   */
+  const handleFavoriteClick = (index) => {
+    const color = favorites[index];
+    if (!color || saveMode) saveToSlot(index);
+    else chooseColor(color);
   };
 
-  useEffect(() => {
-    console.log("顏色已變為:", chosenColor); // 侦测颜色变化
-  }, [chosenColor]); // 每次 color 更新时触发
-
-  const handleToggleChange = () => {
-    setToggleState(!toggleState); // 切換滑桿狀態
-    setClickStatus(!clickStatus); // 同步修改 clickStatus
+  /** 右鍵存色：不必先切模式，給熟了之後的人用 */
+  const handleFavoriteContextMenu = (event, index) => {
+    event.preventDefault();
+    saveToSlot(index);
   };
 
-  const setSampleColor = (hex) => {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    let a = rgba.A !== undefined ? rgba.A : 1;
-    setRgba({ R: r, G: g, B: b, A: a });
-    dispatch(updateChosenColor({ R: r, G: g, B: b, A: a }));
-  };
-
-  function deepClone2DArray(arr) {
-    if (!Array.isArray(arr) || arr.length === 0) {
-      return arr;
-    }
-    const clone = [];
-    for (let i = 0; i < arr.length; i++) {
-      if (Array.isArray(arr[i])) {
-        clone.push(deepClone2DArray(arr[i])); // Recursively clone nested arrays
-      } else {
-        clone.push(arr[i]); // Copy non-array elements
-      }
-    }
-    return clone;
-  }
-
-  const handleClick = (lineId, squareId) => {
-    if (clickStatus) {
-      handleChooseFavoriteColor(lineId, squareId);
-    } else {
-      handleChangeFavoriteColor(lineId, squareId);
-    }
-  };
-
-  function handleChooseFavoriteColor(lineId, squareId) {
-    var it = favoriteColor[lineId][squareId];
-    dispatch(updateChosenColor({ R: it.R, G: it.G, B: it.B, A: it.A }));
-
-    let hexString =
-      "#" +
-      ((1 << 24) | (it.R << 16) | (it.G << 8) | it.B)
-        .toString(16)
-        .slice(1)
-        .toUpperCase();
-    dispatch(updatePaletteColor(hexString));
-  }
-
-  function handleChangeFavoriteColor(lineId, squareId) {
-    let tmpArray = deepClone2DArray(favoriteColor);
-    let alpha = chosenColor.A !== undefined ? chosenColor.A : 1;
-    tmpArray[lineId][squareId] = {
-      R: chosenColor.R,
-      G: chosenColor.G,
-      B: chosenColor.B,
-      A: alpha,
-    };
-
-    // setFavoriteColor(tmpArray);
-    dispatch(updateFavoriteColor(tmpArray));
-  }
-
+  const swatchStyle = (color) => ({
+    // 亮度是 LED 的 alpha，會和後面的底色合成——這裡直接乘進去而不是用
+    // rgba()，讓色票顯示的就是實際演出時的亮度（和光衣站在黑卡上同一個理由）
+    backgroundColor: `rgb(${color.R * (color.A ?? 1)}, ${
+      color.G * (color.A ?? 1)
+    }, ${color.B * (color.A ?? 1)})`,
+  });
 
   return (
     <div className="palette">
@@ -208,87 +146,134 @@ function Palette({ rgba, setRgba }) {
         下半部的控制項會掉到可視範圍外。
       */}
       <div className="palette-row">
-      <input
-        className="palette-color-picker"
-        type="color"
-        value={paletteColor}
-        id="colorWell"
-        onChange={handleColorChange}
-      />{" "}
-      <div className="palette-row__fields">
-      {/*
-        原本這個位置顯示的是打包後的 32-bit RGBA 整數（例如 84215140）——
-        那是 debug 產物，對使用者沒有意義。位置本來就該回答「目前顏色是什麼」，
-        所以換成看得懂、也能貼色碼進去的 HEX 欄位。
-      */}
-      <div className="hex-field">
-        <label htmlFor="hexInput">HEX</label>
         <input
-          id="hexInput"
-          type="text"
-          value={hexDraft}
-          spellCheck={false}
-          maxLength={7}
-          aria-label="目前顏色的 HEX 色碼"
-          onChange={handleHexChange}
-          onBlur={() => setHexDraft(paletteColor.toUpperCase())}
+          className="palette-color-picker"
+          type="color"
+          value={HEX_PATTERN.test(paletteColor) ? paletteColor : "#000000"}
+          id="colorWell"
+          aria-label="選擇顏色"
+          onChange={handlePickerChange}
         />
-      </div>
-      <TransparentButton rgba={rgba} setRgba={setRgba} />
-      </div>
-      </div>
-      <div className="favorite_color_background">
-        {favoriteColor.map((colorArray, lineId) => (
-          <div key={lineId} className="favorite_color_line">
-            {colorArray.map((color, squareId) => (
-              <div
-                key={squareId}
-                className="favorite_color_sample"
-                color={color}
-                style={{
-                  backgroundColor: `rgb(${color.R * color.A}, ${
-                    color.G * color.A
-                  }, ${color.B * color.A})`,
-                  zIndex: "100",
-                }}
-                onClick={() => handleClick(lineId, squareId)}
-              />
-            ))}
+        <div className="palette-row__fields">
+          {/*
+            原本這個位置顯示的是打包後的 32-bit RGBA 整數（例如 84215140）——
+            那是 debug 產物，對使用者沒有意義。位置本來就該回答「目前顏色是
+            什麼」，所以換成看得懂、也能貼色碼進去的 HEX 欄位。
+          */}
+          <div className="hex-field">
+            <label htmlFor="hexInput">HEX</label>
+            <input
+              id="hexInput"
+              type="text"
+              value={hexDraft}
+              spellCheck={false}
+              maxLength={7}
+              aria-label="目前顏色的 HEX 色碼"
+              onChange={handleHexChange}
+              onBlur={() => setHexDraft(rgbToHex(chosenColor))}
+            />
           </div>
-        ))}
+
+          {/*
+            亮度。舊版是 ±20% 的加減按鈕（只有六段），滑桿設得出來的中間值
+            按鈕調不到，而 Ctrl+1~9 早就在設 10%~90%。
+          */}
+          <div className="alpha-field">
+            <span className="alpha-field__label">亮度</span>
+            <input
+              type="range"
+              className="alpha-slider"
+              min={0}
+              max={1}
+              step={ALPHA_STEP}
+              value={alpha}
+              aria-label="亮度"
+              onChange={(event) => setAlpha(Number(event.target.value))}
+            />
+            <span className="alpha-field__value">
+              {Math.round(alpha * 100)}%
+            </span>
+          </div>
+        </div>
       </div>
 
       {/*
-        填色 / 取色 是模式切換，不屬於「最愛顏色」清單。原本被放在
-        .favorite_color_background 裡面，色票一多就跟著捲出可視範圍
-        （實測整排被推到面板外 130px，完全點不到）。移到清單外面固定住。
+        最近使用。使用者不必先想到「這個顏色等一下還會用到」才留得住它——
+        調完色直接畫，回頭想再用同一個顏色時它還在。
       */}
-      <div className="color-status">
-        <span
-          style={{
-            color: toggleState ? "#808080" : "#FFFFFF",
-            transition: "color 0.5 ease",
-          }}
-        >
-          <RiSketching /> 填色
-        </span>
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="1"
-          value={toggleState ? 1 : 0} // 根據 toggleState 控制滑桿位置
-          onChange={handleToggleChange}
-          className="color-slider" // 使用外部 CSS 樣式
-        />
-        <span
-          style={{
-            color: toggleState ? "#FFFFFF" : "#808080", // toggleState=0時，取色變灰色
-            transition: "color 0.5 ease",
-          }}
-        >
-          <FaEyeDropper /> 取色
-        </span>
+      <div className="palette-section">
+        <div className="palette-section__head">
+          <span>最近</span>
+        </div>
+        <div className="swatch-row">
+          {Array.from({ length: FAVORITE_SLOTS }, (_, i) => {
+            const color = recents[i];
+            if (!color) {
+              return <span key={i} className="swatch swatch--placeholder" />;
+            }
+            return (
+              <button
+                key={i}
+                type="button"
+                className="swatch"
+                style={swatchStyle(color)}
+                title={`${rgbToHex(color)} · ${Math.round((color.A ?? 1) * 100)}%`}
+                onClick={() => chooseColor(color)}
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      {/*
+        最愛色。點下去的預設行為是「拿出來用」，要覆蓋得先切到「存色」——
+        舊版的預設是覆蓋，存好的顏色一不小心就被蓋掉了。
+      */}
+      <div className="palette-section">
+        <div className="palette-section__head">
+          <span>最愛</span>
+          <div className="mode-switch" role="group" aria-label="最愛色的點擊行為">
+            <button
+              type="button"
+              className="mode-switch__option"
+              aria-pressed={!saveMode}
+              onClick={() => setSaveMode(false)}
+            >
+              <FaEyeDropper /> 使用
+            </button>
+            <button
+              type="button"
+              className="mode-switch__option"
+              aria-pressed={saveMode}
+              onClick={() => setSaveMode(true)}
+            >
+              存色
+            </button>
+          </div>
+        </div>
+        <div className="swatch-row">
+          {favorites.map((color, index) => (
+            <button
+              key={index}
+              type="button"
+              className={`swatch favorite_color_sample${
+                color ? "" : " swatch--empty"
+              }`}
+              style={color ? swatchStyle(color) : undefined}
+              title={
+                color
+                  ? `${index + 1}　${rgbToHex(color)} · ${Math.round(
+                      (color.A ?? 1) * 100,
+                    )}%${saveMode ? "（點擊覆蓋）" : "（點擊使用，快捷鍵 " + (index + 1) + "）"}`
+                  : `第 ${index + 1} 格是空的，點擊存入目前顏色`
+              }
+              onClick={() => handleFavoriteClick(index)}
+              onContextMenu={(event) => handleFavoriteContextMenu(event, index)}
+            >
+              {color ? null : "+"}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

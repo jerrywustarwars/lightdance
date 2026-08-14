@@ -1,4 +1,5 @@
 import { PLAYER_COUNT } from "../../constants/parts.js";
+import { pushRecentColor } from "../../utils/palette.js";
 import { DEFAULT_ROW_H, clampRowHeight } from "../../utils/tracks.js";
 import {
   addSet,
@@ -35,7 +36,10 @@ const initialState = {
   worksets: createDefaultWorksets(),
   // 軌道行高（像素）。逐軌覆寫存在 track.height，見 utils/tracks.js
   rowHeight: DEFAULT_ROW_H,
+  // 使用者明確存起來的六格，快捷鍵 1~6 對應（空格是 null，見 utils/palette.js）
   favoriteColor: [],
+  // 最近選過的顏色，由 UPDATECHOSENCOLOR 自動維護，使用者不需要先想到要存
+  recentColors: [],
   // 由 PLAYER_COUNT 推導：改人數時不會忘了這裡
   dancerVisibility: Array(PLAYER_COUNT).fill(true),
   clipboard: {
@@ -130,8 +134,20 @@ export const profiles = (state = initialState, action) => {
           },
         },
       };
-    case "UPDATECHOSENCOLOR":
-      return { ...state, chosenColor: action.payload };
+    /*
+     * 選色的同時記進「最近使用」。
+     *
+     * 記在這裡而不是在調色盤元件裡，是因為選色的入口不只一個：調色器、HEX
+     * 欄位、最愛色、時間軸上的取色（TrackToolbar 的 handleColorPick）、
+     * 亮度滑桿。要每個入口各記一次的話，遲早會有人新增第六個入口而忘記。
+     *
+     * `pushRecentColor` 在內容沒變時回傳原陣列，所以拉亮度滑桿（每格一次
+     * dispatch）不會每次都換掉 state 的 reference。
+     */
+    case "UPDATECHOSENCOLOR": {
+      const recentColors = pushRecentColor(state.recentColors, action.payload);
+      return { ...state, chosenColor: action.payload, recentColors };
+    }
     case "UPDATECURRENTTIME":
       return { ...state, currentTime: action.payload };
     case "UPDATEACCESSTOKEN":

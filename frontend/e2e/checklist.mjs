@@ -542,6 +542,81 @@ const run = async () => {
     record("點道具燈就能放色，顏色跟著亮", false, "找不到道具燈");
   }
 
+  // ── 調色盤 ────────────────────────────────────────────
+  //
+  // 三件事在 jsdom 上驗不到又特別容易壞：
+  //
+  //   1. 點最愛色的**預設行為**。舊版預設是「覆蓋」——點一格存好的顏色會把它
+  //      蓋成目前的顏色，而切換開關長得像一支連續值的滑桿，沒人會發現。
+  //      這一項是回歸測試：預設必須是「拿出來用」。
+  //   2. 空格能不能一點就存。空的格子沒有東西可以拿出來用，所以不管在哪個
+  //      模式都是存——這是新使用者第一次存色的路徑。
+  //   3. 最近使用有沒有自動記。它由 reducer 在 UPDATECHOSENCOLOR 裡維護，
+  //      而選色的入口有五個（調色器 / HEX / 最愛 / 時間軸取色 / 亮度滑桿），
+  //      改壞的話畫面上只是「那一排一直是空的」，不會有錯誤。
+  const swatchColors = (section) =>
+    page.evaluate((index) => {
+      const row = document.querySelectorAll(".palette-section")[index];
+      return [...(row?.querySelectorAll(".swatch") ?? [])].map(
+        (el) => getComputedStyle(el).backgroundColor,
+      );
+    }, section);
+
+  const RECENT = 0;
+  const FAVORITE = 1;
+
+  // 前面已經放過幾次色（放色、道具燈），最近使用應該記下來了
+  const recents = await swatchColors(RECENT);
+  record(
+    "最近使用會自動記下用過的顏色",
+    recents.some((bg) => !isGap(bg)),
+    `${recents.filter((bg) => !isGap(bg)).length} / ${recents.length} 格有顏色`,
+  );
+
+  // 空格點一下就存進目前的顏色
+  const favSlot = page.locator(".palette-section").nth(FAVORITE).locator(".swatch");
+  await favSlot.first().click();
+  await page.waitForTimeout(300);
+  const saved = (await swatchColors(FAVORITE))[0];
+  record("點空的最愛格就存入目前顏色", !isGap(saved), saved || "還是空的");
+
+  /*
+   * 存好之後再點一次：預設模式下必須是「拿出來用」，不能把它蓋掉。
+   * 先把目前顏色換成別的（拉亮度滑桿到 50%），再點那一格——
+   * 若行為錯誤變成覆蓋，色票會變成 50% 亮度的那個顏色。
+   */
+  await page.locator(".alpha-slider").fill("0.5");
+  await page.waitForTimeout(300);
+  await favSlot.first().click();
+  await page.waitForTimeout(300);
+  const afterUse = (await swatchColors(FAVORITE))[0];
+  record(
+    "預設點最愛色是拿出來用，不會蓋掉它",
+    afterUse === saved,
+    `${saved} → ${afterUse}`,
+  );
+
+  /*
+   * 切到「存色」之後才會覆蓋。
+   *
+   * 上一步點過「使用」，所以目前顏色已經**等於**那一格存的顏色（連亮度一起
+   * 拿出來——存起來的是完整的顏色，不是只有色相）。這時直接存回去看不出差別，
+   * 得先把顏色換掉。
+   */
+  await page.locator(".alpha-slider").fill("0.9");
+  await page.waitForTimeout(300);
+  await page.locator(".mode-switch__option").nth(1).click();
+  await page.waitForTimeout(200);
+  await favSlot.first().click();
+  await page.waitForTimeout(300);
+  const afterSave = (await swatchColors(FAVORITE))[0];
+  record("切到存色模式才會覆蓋", afterSave !== saved, `${saved} → ${afterSave}`);
+  await shot(page, "palette");
+
+  // 切回「使用」，免得影響後面的檢查
+  await page.locator(".mode-switch__option").first().click();
+  await page.waitForTimeout(200);
+
   // ── 工作集 ────────────────────────────────────────────
   //
   // 切換工作集要真的換掉軌道清單，而且**存得住**——這一項最容易壞的地方是
