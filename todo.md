@@ -296,7 +296,10 @@ segment 壓平回 keyframe 之後**緊鄰的色塊之間沒有黑點**，這個�
       一條套到全站的裸 `*` 選擇器
 - [ ] **Blink 改 metadata**：`seg.effect = {type:'blink', period}`，只在
       `segmentsToKeyframes` 壓平與 `getColorAt` 預覽時展開；UI 維持單一可拖曳色塊
-- [ ] **框選（marquee）多選**：讓多選能跨軌，多段拖曳的價值才完整
+- [x] **框選（marquee）多選**：幾何在 `utils/segments/marquee.js`（純函式），
+      事件與像素換算在 `MarqueeSelect.jsx`。從空隙拉、Alt 從任何地方拉、
+      Shift 加選。踩到兩個順序問題：拖曳後瀏覽器補的 `click` 會被判成「點在
+      block 外面」而清空剛框好的選取；Shift 的加選基準必須在 mousedown 就存好
 - [ ] **速度軌與節拍吸附**（設計已定案，實作延後 —— 見下方）
 
 #### 速度軌（多音軌 BPM 不同的答案，2026-08-14 拍板、實作延後）
@@ -334,7 +337,6 @@ segment 壓平回 keyframe 之後**緊鄰的色塊之間沒有黑點**，這個�
 
 | # | 項目 | 大小 | 備註 |
 |---|---|---|---|
-| A1 | **框選（marquee）多選** | M | 讓多選能跨軌。多段拖曳（`moveSegments`）已經做好了，但目前只能 `Shift+click` 一個一個點，跨軌選不到——這是那個功能價值的另一半 |
 | A2 | **Blink 改 metadata** | M | `seg.effect = {type:'blink', period}`，只在 `segmentsToKeyframes` 壓平與 `getColorAt` 預覽時展開。現在頻閃是**直接生一堆小 segment**，做完就不能整段拖、不能改週期 |
 | A3 | **速度軌與節拍吸附** | L | 設計已定案（見下方「速度軌」），使用者拍板**實作延後** |
 
@@ -342,6 +344,7 @@ segment 壓平回 keyframe 之後**緊鄰的色塊之間沒有黑點**，這個�
 
 | # | 項目 | 大小 | 備註 |
 |---|---|---|---|
+| B0 | **154 份重複的 document click listener** | S | `Timeline.jsx` 每個實例都在 document 上掛一個「點到 block 以外就取消選取」的 handler，內容完全一樣。應該提到 audioplayer 掛一次。做框選時發現的 |
 | B1 | **`waveform.jsx` 內部尚未拆** | M | Phase 3 拆了 audioplayer，waveform 留著沒動。它是「整條時間軸只播一個音檔」的單軌設計（單一 `sourceNode`），是 Phase 7 多軌的**唯一前置** |
 | B2 | bundle 1.8MB（gzip 542kB） | S | `npm run build` 會警告 chunk > 500kB。音檔本身就佔了幾十 MB，要處理的話從 `manualChunks` 與音檔改成後端串流兩個方向 |
 

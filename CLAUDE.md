@@ -182,9 +182,9 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 ```bash
 cd frontend
 npm run dev            # 另一個終端機
-npm run e2e            # 37 項：放色 / 選取 / 剪下 / undo / 快捷鍵 / 重新整理 /
-                       #        拖曳 resize / 多段一起搬 / 刻度尺 / 道具 /
-                       #        調色盤 / 工作集 / 行高 / Output / /edit
+npm run e2e            # 41 項：放色 / 選取 / 框選 / 剪下 / undo / 快捷鍵 /
+                       #        重新整理 / 拖曳 resize / 多段一起搬 / 刻度尺 /
+                       #        道具 / 調色盤 / 工作集 / 行高 / Output / /edit
 npm run audit:layout   # 5 項：控制項被蓋住 / 元素溢出容器 / 提示被裁掉 /
                        #      成對元素沒對齊（含軌名列↔時間軸逐列）/
                        #      各塊邊緣與各排內容左緣沒對齊
@@ -325,6 +325,27 @@ CSS 用 `--ruler-h` 讓出一段當預設值，但那只在工具列排成一行
 
 逐軌把手拖曳時只改自己的 DOM，**放開才 dispatch 一次**：每格像素都寫 redux
 的話 154 條 Timeline 會跟著重繪，手感會變成一格一格跳。
+
+### 框選
+
+幾何在 `utils/segments/marquee.js`（純函式），事件與像素換算在
+`components/audio/MarqueeSelect.jsx`。碰到色塊的**任何一部分**就選中，
+不要求整段被框住——想選的通常是「這一段時間裡的東西」，而色塊長度不一。
+
+⚠️ **時間軸上沒有真正的空白**：`buildTimelineBlocks` 讓色塊首尾相接涵蓋整條
+`[0, duration)`，空隙也是一個 block（只是不帶 `segmentId`，DOM 上是
+`data-gap="true"`）。所以「從空白處開始拉」實際上是從一個空隙 block 開始。
+整條軌被蓋滿時沒有空隙可按，那時用 **Alt + 拖曳**。
+
+⚠️ **拖曳結束後那一下 `click` 必須吃掉。** 每個 Timeline 都在 document 上掛了
+「點到 block 以外就取消選取」的 handler，而 click 的 target 是 mousedown 與
+mouseup 的**共同祖先**——跨軌框選時那是 `.timeline-container`，於是剛框好的
+選取在同一個 tick 被清空。用時間戳擋，不要掛一次性 listener：mouseup 落在
+視窗外時根本不會有 click，那個 listener 會留著把下一次真正的點擊吃掉。
+
+⚠️ **Shift 加選的基準要在 mousedown 就存好**。Timeline 會在同一次 mousedown
+把選取清空（點空隙 = 取消選取），等到 mouseup 再讀就只剩空的，Shift 框選會
+退化成「每次都從頭選」——而畫面上只是「怎麼沒加進去」，不會有錯誤。
 
 ### 手勢（拖曳與 resize）
 

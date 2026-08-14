@@ -806,6 +806,10 @@ const Timeline = forwardRef(
               // 選取狀態目前只反映在 box-shadow 上，而顏色是使用者的資料，
               // 從樣式反推「這塊有沒有被選到」很脆弱。用一個屬性明講。
               data-selected={isNormalSelected || isCopySource ? "true" : undefined}
+              // 空隙也是一個 block（排版上首尾相接涵蓋整條時間軸），框選要能認出
+              // 「這裡按下去是空白處」。同樣不要從樣式反推——空隙的背景是純黑，
+              // 而純黑也是合法的燈色。
+              data-gap={isGapBlock ? "true" : undefined}
               onMouseMove={moveMode ? undefined : handleBlockMouseMove}
               onMouseLeave={moveMode ? undefined : handleBlockMouseLeave}
               onMouseDown={(e) => handleMouseDown(e, index)}

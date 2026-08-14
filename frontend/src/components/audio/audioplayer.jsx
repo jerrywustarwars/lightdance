@@ -20,6 +20,7 @@ import {
 } from "./TrackToolbar.jsx";
 import Timeline from "./Timeline.jsx";
 import TimeRuler from "./TimeRuler.jsx";
+import { MarqueeBox, useMarqueeSelect } from "./MarqueeSelect.jsx";
 import { updateChosenColor, updateCurrentTime } from "../../redux/actions.js";
 import { TICK_MS } from "../../constants/time.js";
 import {
@@ -73,6 +74,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   // 這個 ref 是告訴它「這次是 seek，不要用舊位置覆寫」。詳見 seekTo。
   const pendingSeekRef = useRef(null);
   const elRefs = useRef([]);
+  const marqueeBoxRef = useRef(null); // 框選的矩形，手勢期間直接改它的 style
 
   const effects = useLightEffects(); // 漸變/頻閃/亮度階梯：選單與快捷鍵共用
   const shift = useTimeShift(); // 區間平移：按鈕與時間軸標記共用同一份狀態
@@ -368,6 +370,13 @@ function AudioPlayer({ setButtonState, timelineRef }) {
 
   useKeyboardShortcuts(shortcuts);
 
+  // 框選：從空隙（或按住 Alt 從任何地方）拉一個矩形，選取跨軌的多個色塊
+  useMarqueeSelect({
+    containerRef: timelineRef,
+    boxRef: marqueeBoxRef,
+    tracks: showPart,
+  });
+
   const listitem = showPart.map((setting) => (
     <Timeline
       key={setting.id}
@@ -445,6 +454,9 @@ function AudioPlayer({ setButtonState, timelineRef }) {
               這裡不再重複註冊 onKeyDown（原本同一個 handler 綁了兩次） */}
           <div className="timeline-container" ref={timelineRef}>
             {listitem}
+            {/* 框選的矩形。常駐但預設隱藏，手勢期間只改它的 style —— 這個容器是
+                154 條 Timeline 的祖先，每格像素都 setState 會讓它們全部重算 */}
+            <MarqueeBox boxRef={marqueeBoxRef} />
           </div>
           <div className="waveform-container" ref={containerRef}>
             {/* 波形顯示區域 */}

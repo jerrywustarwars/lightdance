@@ -506,6 +506,112 @@ const run = async () => {
     record("Move Mode 整批一起搬", false, `只有 ${dragBefore.length} 個色塊`);
   }
 
+  // ── 框選（marquee）─────────────────────────────────────
+  //
+  // 框選的重點是**跨軌**：Shift+click 只能在同一條時間軸上加選，而同一個樂句
+  // 在七位舞者身上各有一段時，一次要點十幾下。
+  //
+  // 這一項只有真瀏覽器驗得到：jsdom 量不到色塊的位置，也沒有 elementFromPoint，
+  // 而框選整件事就是「矩形碰到誰」。
+  //
+  // 先在第二條時間軸上也放一個色塊，才有跨軌的東西可以框。
+  const selectedCount = () =>
+    page.evaluate(
+      () => document.querySelectorAll(".timeline-block[data-selected='true']").length,
+    );
+
+  const rows = await page.evaluate(() =>
+    [...document.querySelectorAll(".timeline")].map((el) => {
+      const r = el.getBoundingClientRect();
+      return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), width: Math.round(r.width) };
+    }),
+  );
+
+  if (rows.length >= 2) {
+    /*
+     * 預設的三條軌是舞者 1/2/3 的同一個部位，所以「在第二軌放色塊」＝
+     * 點第二位舞者身上的同一個部位。這比去改軌道的下拉選單可靠——
+     * 選單的選項順序不是這支腳本該綁的東西。
+     */
+    await clickRulerAt(0.2);
+    await page.waitForTimeout(200);
+    await clickArmorPart(page, 1, 0);
+    await page.waitForTimeout(600);
+    const beforeCross = (await coloredBlocks(page, 1)).length;
+
+    // 先清掉選取，框選才驗得出「框到幾個」
+    await page.mouse.click(rows[0].left + rows[0].width * 0.9, rows[0].top + 20);
+    await page.waitForTimeout(300);
+
+    /*
+     * 從第一軌的空白處往下拉到第二軌。起點刻意選在時間軸最右邊（那裡一定是
+     * 空隙），往左下拉回來——框可以往任何方向拉，順便驗到這件事。
+     */
+    const x2 = rows[0].left + rows[0].width * 0.05;
+    await page.mouse.move(rows[0].left + rows[0].width * 0.95, rows[0].top + 20);
+    await page.mouse.down();
+    await page.mouse.move(x2, rows[1].bottom - 20, { steps: 12 });
+    await page.waitForTimeout(150);
+
+    const boxVisible = await page.evaluate(() => {
+      const box = document.querySelector(".marquee-box");
+      if (!box) return null;
+      const r = box.getBoundingClientRect();
+      return getComputedStyle(box).display !== "none" && r.width > 10 && r.height > 10;
+    });
+
+    await page.mouse.up();
+    await page.waitForTimeout(400);
+
+    const framed = await selectedCount();
+    record("拖曳時看得到框選的矩形", boxVisible === true, String(boxVisible));
+    record(
+      "框選一次選到跨軌的多個色塊",
+      framed >= 2,
+      `${framed} 塊被選（第二軌有 ${beforeCross} 個色塊）`,
+    );
+    await shot(page, "marquee");
+
+    /*
+     * Shift 框選是加選。
+     *
+     * 這裡有一個很容易漏的順序問題：Timeline 自己的 handler 會在**同一次
+     * mousedown** 把選取清空（點空隙 = 取消選取），所以「原本選了什麼」必須在
+     * 按下的那一刻就存起來，等到 mouseup 再去讀就只剩空的了——那會讓 Shift
+     * 框選退化成「每次都從頭選」，而畫面上看起來只是「怎麼沒加進去」。
+     */
+    // 先只框第二軌（1 塊）
+    await page.mouse.move(rows[1].left + rows[1].width * 0.95, rows[1].top + 20);
+    await page.mouse.down();
+    await page.mouse.move(x2, rows[1].bottom - 20, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForTimeout(400);
+    const firstPass = await selectedCount();
+
+    // 再按住 Shift 框第一軌，兩次的結果要疊起來
+    await page.keyboard.down("Shift");
+    await page.mouse.move(rows[0].left + rows[0].width * 0.95, rows[0].top + 20);
+    await page.mouse.down();
+    await page.mouse.move(x2, rows[0].bottom - 20, { steps: 8 });
+    await page.mouse.up();
+    await page.keyboard.up("Shift");
+    await page.waitForTimeout(400);
+    const added = await selectedCount();
+
+    record(
+      "Shift 框選是加選，不是重新選",
+      added > firstPass,
+      `${firstPass} → ${added} 塊`,
+    );
+
+    // 單純點一下空隙仍然是取消選取，不能被框選吃掉
+    await page.mouse.click(rows[0].left + rows[0].width * 0.9, rows[0].top + 20);
+    await page.waitForTimeout(400);
+    record("點一下空隙仍然是取消選取", (await selectedCount()) === 0, "");
+  } else {
+    record("框選一次選到跨軌的多個色塊", false, `只有 ${rows.length} 條軌`);
+  }
+
   // ── 道具就掛在人旁邊 ──────────────────────────────────
   //
   // 飾品燈原本在右側一個獨立側欄裡，離所屬的舞者好幾百像素遠——播放時看不出
