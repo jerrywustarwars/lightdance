@@ -63,6 +63,10 @@ services:
       # 開啟後端熱重載
       - APP_RELOAD=true
       - MUSIC_FILE_PATH=/music
+      # 存取權杖的簽章秘鑰（見 backend/auth.py）。沒設的話後端會臨時產生一把，
+      # 重啟之後所有人要重新登入——正式環境務必在 .env 設好
+      - AUTH_SECRET=${AUTH_SECRET:-}
+      - AUTH_TOKEN_TTL_HOURS=${AUTH_TOKEN_TTL_HOURS:-12}
     networks:
       app-network:
         aliases:

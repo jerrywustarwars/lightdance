@@ -434,12 +434,38 @@ mouseup 的**共同祖先**——跨軌框選時那是 `.timeline-container`，�
 
 ## 安全性注意事項
 
-⚠️ **重要**：專案目前存在以下安全問題需要注意：
+### 已修（2026-08-14）：權杖與密碼
 
-1. **密碼明文儲存** - 需實施 bcrypt 或 Argon2 加密
-2. **Token 機制不安全** - 需要改用 JWT
-3. **輸入驗證不足** - 需加強使用者輸入驗證
-4. **CORS 設定過寬** - 需要限制允許的來源
+⚠️ 舊版**權杖就是使用者名稱**：`/api/token` 回傳 `user.username`，而驗證是
+`get_user(user_list, token)`——也就是任何人送 `Authorization: Bearer <某個帳號名>`
+就通過，密碼完全不需要。帳號名稱不是秘密（它出現在網址、截圖、彼此喊人的訊息裡），
+所以那不是「權杖不夠安全」，是**整條驗證等於不存在**。
+
+現在 `backend/auth.py` 是唯一的定義處：
+
+| | 作法 |
+|---|---|
+| 密碼 | bcrypt（cost 12）。舊的明文密碼**登入成功時就地換成雜湊**，不停機、不用遷移腳本、沒有人被鎖在外面 |
+| 權杖 | HS256 簽章的 JWT，帶 `sub` 與 `exp`（預設 12 小時） |
+| 秘鑰 | `AUTH_SECRET` 環境變數。沒設會臨時產生一把並印警告——**正式環境一定要設**，否則每次重啟大家都被登出 |
+
+⚠️ **不要為了方便放寬 `read_token`。** 舊版之所以是個大洞，正是因為它把
+「查得到這個名字」當成驗證通過。簽章驗不過就是驗不過。
+
+⚠️ 明文比對用 `secrets.compare_digest` 比的是 **bytes 不是 str**——後者遇到
+非 ASCII 會直接丟 `TypeError`，密碼裡有中文的人會拿到 500 而不是「密碼錯誤」。
+（這是 `backend/tests/test_auth.py` 抓到的，用一個中文的錯誤密碼就踩到。）
+
+### 還沒處理
+
+1. **輸入驗證不足** - 需加強使用者輸入驗證
+2. **CORS** - 目前是一份寫死的來源清單（不是 `*`），但那份清單跟著程式碼走，
+   換部署位置要改程式。應該收成環境變數
+
+⚠️ **`db/dump_data/**/users.bson` 裡有 7 組帳號的明文密碼，而這個 repo 是
+public fork——那個檔案永遠不得 import 進 fixture、不得 commit。**
+`frontend/scripts/import-mongo-fixtures.mjs` 的 `ALLOWED_COLLECTIONS` 白名單
+（只允許 `raw_json` / `color`）是硬性防線，不要繞過。
 
 詳細改進方案請參考 `docs/technical-analysis.md`。
 

@@ -17,6 +17,14 @@ from bson import ObjectId
 from time import strftime, localtime
 
 from fastapi.middleware.cors import CORSMiddleware
+
+from auth import (
+    create_access_token,
+    hash_password,
+    needs_rehash,
+    read_token,
+    verify_password,
+)
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm #
 from fastapi.responses import FileResponse
 from fastapi.encoders import jsonable_encoder
@@ -84,8 +92,20 @@ def get_user(list, username: str):
         return User(**user_dict)
 
 def decode_token(token):
-    user = get_user(user_list, token)
-    return user
+    """
+    權杖 → 使用者。
+
+    ⚠️ 舊版是 `get_user(user_list, token)`——**權杖就是使用者名稱**，於是任何人
+    只要送 `Authorization: Bearer <某個帳號名>` 就通過了，密碼完全不需要。
+    帳號名稱不是秘密（它會出現在網址、截圖、彼此喊人的訊息裡），所以那條路徑
+    等於整個驗證都不存在。
+
+    現在先驗簽章與有效期，通過了才去查那個人還在不在。
+    """
+    username = read_token(token)
+    if not username:
+        return None
+    return get_user(user_list, username)
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     user = decode_token(token)
@@ -115,10 +135,18 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     if not user_dict:
         raise HTTPException(status_code=400, detail="Incorrect username or password")
     user = UserInDB(**user_dict)
-    if not form_data.password == user.password:
+    if not verify_password(form_data.password, user.password):
         raise HTTPException(status_code=400, detail="Incorrect username or password")
 
-    return {"access_token": user.username, "token_type": "bearer"}
+    # 懶惰遷移：舊資料的密碼欄位是明文，登入成功的當下就地換成 bcrypt 雜湊。
+    # 不需要停機、不需要遷移腳本，也不會有人被鎖在外面——每個人登入一次就完成。
+    if needs_rehash(user.password):
+        user_list.update_one(
+            {"username": user.username},
+            {"$set": {"password": hash_password(form_data.password)}},
+        )
+
+    return {"access_token": create_access_token(user.username), "token_type": "bearer"}
 
 # 取得當前登入使用者的基本資訊
 # 使用方法：GET /api/users/me，需要 Bearer Token
