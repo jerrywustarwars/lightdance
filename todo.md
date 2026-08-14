@@ -352,7 +352,7 @@ segment 壓平回 keyframe 之後**緊鄰的色塊之間沒有黑點**，這個�
 
 | # | 項目 | 大小 | 備註 |
 |---|---|---|---|
-| B1 | **`waveform.jsx` 拆到一半** | M | 峰值運算已抽到 `utils/audio/peaks.js`（純函式 + 22 項測試），繪圖只剩「拿數字畫方塊」。**還沒拆的是播放引擎**——單一 `sourceNode` 的假設全部在那裡，是 Phase 7 多軌的唯一前置，值得單獨一次 |
+| B1 | **`waveform.jsx` 拆到一半** | M | 峰值（`peaks.js`）、時鐘（`clock.js`）、排程（`schedule.js`）、引擎（`engine.js`）都抽好了，共 85 項測試。**剩下最後一步：把 waveform.jsx 接到引擎上**，那一步會刪掉元件裡的 `audioContext` / `sourceNode` / `startTime` 三份狀態 |
 | B2 | bundle 1.8MB（gzip 542kB） | S | `npm run build` 會警告 chunk > 500kB。音檔本身就佔了幾十 MB，要處理的話從 `manualChunks` 與音檔改成後端串流兩個方向 |
 
 ### C. 安全性（**從專案開始到現在一件都沒動**）
