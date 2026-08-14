@@ -29,6 +29,7 @@ import {
   sameColor,
 } from "../../utils/segments/color.js";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts.js";
+import { useDeselectOnOutsideClick } from "../../hooks/useDeselectOnOutsideClick.js";
 import { useSegmentActionTable } from "../../hooks/useSegmentActionTable.js";
 import { useActiveTracks } from "../../hooks/useWorksets.js";
 import { FAVORITE_SLOTS, favoriteColorAt } from "../../utils/palette.js";
@@ -201,19 +202,6 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     );
   };
 
-  /** B 鍵與效果選單共用的頻閃流程 */
-  const promptBlink = () => {
-    if (multiSelectedBlocks.length !== 1) {
-      console.warn("Please select exactly one block to use Blink effect.");
-      return;
-    }
-    const userInput = window.prompt(
-      `請輸入頻閃間隔 (ms)，必須為 ${TICK_MS} 的倍數：`,
-      "100",
-    );
-    if (userInput !== null) effects.applyBlink(userInput);
-  };
-
   const handlePlayPause = () => {
     if (!isPlaying) {
       setIsPlaying(true);
@@ -330,7 +318,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
 
     // 效果
     { key: "l", handler: effects.toggleLinear },
-    { key: "b", handler: promptBlink },
+    { key: "b", handler: effects.promptBlink },
 
     // 最愛顏色與透明度
     {
@@ -369,6 +357,10 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   ];
 
   useKeyboardShortcuts(shortcuts);
+
+  // 點到色塊以外就取消選取。掛在這裡而不是每條 Timeline 各掛一份——
+  // 清空的是全域選取，跟 listener 掛在誰身上無關（先前是 154 份相同的副本）
+  useDeselectOnOutsideClick();
 
   // 框選：從空隙（或按住 Alt 從任何地方）拉一個矩形，選取跨軌的多個色塊
   useMarqueeSelect({

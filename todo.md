@@ -294,6 +294,12 @@ segment 壓平回 keyframe 之後**緊鄰的色塊之間沒有黑點**，這個�
       （reducer 的 `UPDATECHOSENCOLOR` 自動記、依色相去重，所以拉亮度不會塞爆）。
       順手修掉快捷鍵 7/8 繞回第 1/2 格的靜默錯誤，與 `TransparentButton.css` 裡
       一條套到全站的裸 `*` 選擇器
+- [x] **outside-click listener 收成一份**：`Timeline.jsx` 每個實例都在 document
+      上掛一個「點到 block 以外就取消選取」的 handler，內容完全一樣（154 條軌
+      就是 154 份，每次點擊全部跑一遍、各自做十次 `closest()` 再各自 dispatch）。
+      而那個行為本來就不屬於某一條軌。收成 `hooks/useDeselectOnOutsideClick.js`。
+      順帶把頻閃的輸入框也收成一份——B 鍵與效果選單先前各寫一份，鍵盤那份還
+      卡著舊的「只能選一個」限制
 - [x] **Blink 改 metadata**：`seg.effect = {type:'blink', period}`（`effects.js`），
       只在 `segmentsToKeyframes` 壓平與 `getColorAt` 預覽時展開，UI 維持單一可
       拖曳色塊（左下角一排短豎線當記號）。可以一次套到多個選取的色塊、再套一次
@@ -346,7 +352,6 @@ segment 壓平回 keyframe 之後**緊鄰的色塊之間沒有黑點**，這個�
 
 | # | 項目 | 大小 | 備註 |
 |---|---|---|---|
-| B0 | **154 份重複的 document click listener** | S | `Timeline.jsx` 每個實例都在 document 上掛一個「點到 block 以外就取消選取」的 handler，內容完全一樣。應該提到 audioplayer 掛一次。做框選時發現的 |
 | B1 | **`waveform.jsx` 內部尚未拆** | M | Phase 3 拆了 audioplayer，waveform 留著沒動。它是「整條時間軸只播一個音檔」的單軌設計（單一 `sourceNode`），是 Phase 7 多軌的**唯一前置** |
 | B2 | bundle 1.8MB（gzip 542kB） | S | `npm run build` 會警告 chunk > 500kB。音檔本身就佔了幾十 MB，要處理的話從 `manualChunks` 與音檔改成後端串流兩個方向 |
 

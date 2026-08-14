@@ -12,6 +12,19 @@ import { cleanup } from "@testing-library/react";
 
 afterEach(() => {
   cleanup();
+
+  /*
+   * 把 alert / prompt 的呼叫紀錄與**還沒被消耗的 mockReturnValueOnce** 清掉。
+   *
+   * 少了這行的話 Once 的佇列會跨測試殘留：某個測試排了一個回傳值但那次
+   * prompt 根本沒被呼叫（例如守衛提前擋掉了），那個值就留給**下一個**測試，
+   * 於是下一個測試拿到的是別人排的答案。實測踩過一次——把頻閃的守衛從
+   * applyBlink 往前移到 promptBlink 之後，三個不相干的測試同時變紅，
+   * 而它們自己一行都沒改。
+   */
+  globalThis.prompt.mockReset();
+  globalThis.prompt.mockReturnValue(null);
+  globalThis.alert.mockReset();
 });
 
 // Web Audio：waveform.jsx 會建立 AudioContext

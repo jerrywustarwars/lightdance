@@ -590,10 +590,12 @@ describe("效果選單與亮度階梯", () => {
     expect(menuItem("亮度階梯")).toBeTruthy();
   });
 
-  it("沒有選取色塊時點頻閃不會炸掉", () => {
+  it("沒有選取色塊時點頻閃不會炸掉，而且連問都不問", () => {
     // 選單這條路徑原本沒有守衛，直接解構 multiSelectedBlocks[0] 會 throw
     //（只有鍵盤的 B 有檢查 length === 1）
-    globalThis.prompt.mockReturnValueOnce("100");
+    //
+    // 守衛現在在 promptBlink 的最前面：沒東西可套就不該先跳一個輸入框出來，
+    // 讓使用者填完了才說「請先選取色塊」。
     const store = createTestStore();
     mount(store);
     openEffectMenu();
@@ -601,6 +603,7 @@ describe("效果選單與亮度階梯", () => {
     const before = JSON.stringify(timelineOf(store));
     fireEvent.click(menuItem("頻閃 (B)"));
     expect(JSON.stringify(timelineOf(store))).toBe(before);
+    expect(globalThis.prompt).not.toHaveBeenCalled();
   });
 
   /*

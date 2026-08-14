@@ -205,40 +205,15 @@ const Timeline = forwardRef(
       pointerEvents: "none", // 禁用滑鼠事件
     };
 
-    // 偵測點擊事件，點擊非 timeline-block 區域時取消選中
-    useEffect(() => {
-      const handleOutsideClick = (e) => {
-        // 檢查是否為鼠標事件
-        if (e.type !== "click") {
-          console.warn(
-            "handleOutsideClick should only be used for click events"
-          );
-          return;
-        }
-        // 检查点击是否发生在 .timeline-block 或 .palette-color-picker 区域内
-        if (
-          !e.target.closest(".timeline-block") &&
-          !e.target.closest(".palette-color-picker") &&
-          !e.target.closest(".color-button") &&
-          !e.target.closest(".delete-button") &&
-          !e.target.closest(".timeline-controls") &&
-          !e.target.closest(".waveform-container") &&
-          !e.target.closest(".brightness-control") &&
-          !e.target.closest(".cut-button") &&
-          !e.target.closest(".effect-wrapper") &&
-          !e.target.closest(".uniform-alpha-wrapper")
-        ) {
-          console.log("click outside");
-          dispatch(updateMultiSelectedBlocks([])); // 清除多選
-          dispatch(updateIsColorChangeActive(false)); // 更新 Redux
-        }
-      };
-
-      document.addEventListener("click", handleOutsideClick);
-      return () => {
-        document.removeEventListener("click", handleOutsideClick);
-      };
-    }, []);
+    /*
+     * 「點到色塊以外就取消選取」原本掛在這裡。
+     *
+     * 那讓每一條軌都各掛一份**內容完全相同**的 document listener（工作集開滿
+     * 是 154 份），每次點擊全部跑一遍、各自 dispatch 一次同樣的清空動作。
+     * 而那個行為本來就不屬於某一條軌——清空的是全域選取。
+     *
+     * 現在由 `hooks/useDeselectOnOutsideClick.js` 在 audioplayer 掛一次。
+     */
 
     // 當 zoomValue 或 timelineRef 改變時更新畫布尺寸
     useEffect(() => {

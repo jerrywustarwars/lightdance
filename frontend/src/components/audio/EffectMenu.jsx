@@ -207,19 +207,38 @@ export function useLightEffects() {
     return true;
   };
 
-  /** 目前選取的色塊上的頻閃週期（多個選取時取第一個）；沒有的話是 null */
-  const currentBlinkPeriod = () =>
-    selected.length ? blinkPeriodOf(selected[0].segment) : null;
+  /**
+   * 頻閃的輸入框 —— **B 鍵與效果選單共用這一份**。
+   *
+   * 先前兩邊各寫一份，於是「選幾個色塊才能套」「提示文字寫什麼」在兩條路徑上
+   * 悄悄地不一樣（鍵盤那份還卡著舊的「只能選一個」限制）。放進 hook 裡就只有
+   * 一種行為要維護——這是這個專案處理「按鈕與快捷鍵做同一件事」的既定做法。
+   *
+   * 預設值填**目前選取色塊的週期**（沒有頻閃時填 100）。頻閃現在是可以改的
+   * metadata，所以「調整間隔」是常見動作——把現值放進輸入框，使用者才知道
+   * 自己現在是多少，而不是每次都從 100 重猜。
+   */
+  const promptBlink = () => {
+    if (selected.length === 0) {
+      alert("請先選取色塊，再套用頻閃。");
+      return;
+    }
+    const current = blinkPeriodOf(selected[0].segment);
+    const userInput = window.prompt(
+      `請輸入頻閃間隔 (ms)，必須為 ${TICK_MS} 的倍數。輸入 0 取消頻閃：`,
+      String(current ?? 100),
+    );
+    if (userInput !== null) applyBlink(userInput);
+  };
 
-  return { toggleLinear, applyBlink, applyBrightnessLadder, currentBlinkPeriod };
+  return { toggleLinear, applyBlink, applyBrightnessLadder, promptBlink };
 }
 
 /** 百分比選項：10%、20%、…、100% */
 const PERCENT_OPTIONS = [...Array(10)].map((_, i) => (i + 1) * 10);
 
 function EffectMenu({ effects }) {
-  const { toggleLinear, applyBlink, applyBrightnessLadder, currentBlinkPeriod } =
-    effects;
+  const { toggleLinear, applyBrightnessLadder, promptBlink } = effects;
 
   const [menuVisible, setMenuVisible] = useState(false);
   const [ladderVisible, setLadderVisible] = useState(false);
@@ -240,20 +259,8 @@ function EffectMenu({ effects }) {
     if (menuVisible) setLadderVisible(false);
   };
 
-  /**
-   * 頻閃的輸入框。
-   *
-   * 預設值填**目前選取色塊的週期**（沒有頻閃時填 100）。頻閃現在是可以改的
-   * metadata，所以「調整間隔」是常見動作——把現值放進輸入框，使用者才知道
-   * 自己現在是多少，而不是每次都從 100 重猜。
-   */
-  const promptBlink = () => {
-    const current = currentBlinkPeriod();
-    const userInput = window.prompt(
-      `請輸入頻閃間隔 (ms)，必須為 ${TICK_MS} 的倍數。輸入 0 取消頻閃：`,
-      String(current ?? 100),
-    );
-    if (userInput !== null) applyBlink(userInput);
+  const openBlinkPrompt = () => {
+    promptBlink();
     setMenuVisible(false);
   };
 
@@ -277,7 +284,7 @@ function EffectMenu({ effects }) {
             漸變 (L)
           </div>
 
-          <div className="effect-menu-item" onClick={promptBlink}>
+          <div className="effect-menu-item" onClick={openBlinkPrompt}>
             頻閃 (B)
           </div>
 
