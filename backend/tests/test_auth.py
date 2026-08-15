@@ -181,3 +181,91 @@ def test_壞掉的雜湊不會炸掉只會驗不過(users):
     """手動改過資料庫之類的情況：要回 False，不要拋例外把整個登入弄成 500。"""
     assert auth.verify_password("pw", "$2b$看起來像雜湊但不是") is False
     assert auth.verify_password("pw", None) is False
+
+
+# ============================================================================
+# 密碼遷移的進度檢查（audit_passwords.py）
+# ============================================================================
+
+
+def test_audit_classifies_plaintext_and_hashed():
+    """
+    懶惰遷移的代價是「你不知道什麼時候遷移完」。這支分類要能分得出來，
+    否則沒有辦法知道還剩誰沒換。
+    """
+    from audit_passwords import classify
+
+    hashed, plaintext, missing = classify(
+        [
+            {"username": "alice", "password": auth.hash_password("pw")},
+            {"username": "bob", "password": "明文密碼"},
+            {"username": "carol", "password": ""},
+            {"username": "dave"},
+        ]
+    )
+
+    assert hashed == ["alice"]
+    assert plaintext == ["bob"]
+    assert sorted(missing) == ["carol", "dave"]
+
+
+def test_audit_never_returns_passwords():
+    """
+    ⚠️ 輸出只有帳號名稱。這支腳本的結果可能被貼進聊天室或截圖，
+    把密碼帶出來等於自己製造一次外洩。
+    """
+    from audit_passwords import classify
+
+    secret = "不可以出現在輸出裡"
+    result = classify([{"username": "bob", "password": secret}])
+
+    assert secret not in str(result)
+    assert result[1] == ["bob"]
+
+
+# ============================================================================
+# AUTH_SECRET 漏設時的行為
+# ============================================================================
+
+
+def test_missing_secret_is_fatal_when_required(monkeypatch):
+    """
+    ⚠️ 正式環境漏設秘鑰要**啟動失敗**，不是印一行警告。
+
+    臨時產生的秘鑰讓服務跑得起來，但每次重啟都會換一把、所有人被登出——而那個
+    症狀（「怎麼又要登入」）看起來像網站不穩，不像設定漏了。啟動日誌裡的一行
+    warning 沒有人會看到。`docker-compose.prod.yml` 設了 REQUIRE_AUTH_SECRET=1。
+    """
+    monkeypatch.delenv("AUTH_SECRET", raising=False)
+    monkeypatch.setenv("REQUIRE_AUTH_SECRET", "1")
+
+    with pytest.raises(auth.MissingSecretError):
+        auth._load_secret()
+
+
+def test_missing_secret_is_tolerated_in_development(monkeypatch):
+    """開發環境不必先設定就跑得起來，代價是重啟要重新登入一次。"""
+    monkeypatch.delenv("AUTH_SECRET", raising=False)
+    monkeypatch.delenv("REQUIRE_AUTH_SECRET", raising=False)
+
+    generated = auth._load_secret()
+
+    assert isinstance(generated, str) and len(generated) >= 32
+    # 每次都是不同的一把——這正是重啟會把大家登出的原因
+    assert generated != auth._load_secret()
+
+
+def test_explicit_secret_wins_even_when_required(monkeypatch):
+    monkeypatch.setenv("AUTH_SECRET", "a-real-secret")
+    monkeypatch.setenv("REQUIRE_AUTH_SECRET", "1")
+
+    assert auth._load_secret() == "a-real-secret"
+
+
+def test_require_flag_accepts_the_usual_falsy_spellings(monkeypatch):
+    """`REQUIRE_AUTH_SECRET=0` 或空字串要當成「不強制」，否則開發環境會炸。"""
+    monkeypatch.delenv("AUTH_SECRET", raising=False)
+
+    for value in ("", "0", "false", "False", "  "):
+        monkeypatch.setenv("REQUIRE_AUTH_SECRET", value)
+        assert isinstance(auth._load_secret(), str)

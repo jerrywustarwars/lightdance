@@ -58,10 +58,35 @@ TOKEN_TTL_HOURS = int(os.getenv("AUTH_TOKEN_TTL_HOURS", "12"))
 BCRYPT_ROUNDS = 12
 
 
+class MissingSecretError(RuntimeError):
+    """正式環境沒有設 AUTH_SECRET。啟動就該停下來，不要靜靜地用臨時秘鑰。"""
+
+
 def _load_secret() -> str:
+    """
+    取得簽章秘鑰。
+
+    開發環境沒設就臨時產生一把（不必先設定就跑得起來），代價是重啟之後大家要
+    重新登入一次——在自己的機器上這是可以接受的。
+
+    ⚠️ **正式環境要讓它啟動失敗，不能只印一行警告。** 沒設 AUTH_SECRET 的正式
+    服務每次重啟都會換一把新秘鑰，所有人被登出——而那個症狀（「怎麼又要登入」）
+    完全不像設定漏了，只像是網站不穩。一行 warning 混在啟動日誌裡沒有人會看到。
+
+    所以由 `REQUIRE_AUTH_SECRET` 決定嚴格與否：`docker-compose.prod.yml` 設成 1，
+    部署時漏設秘鑰會當場失敗，而不是上線幾天之後才有人抱怨一直被登出。
+    """
     secret = os.getenv("AUTH_SECRET")
     if secret:
         return secret
+
+    if os.getenv("REQUIRE_AUTH_SECRET", "").strip() not in ("", "0", "false", "False"):
+        raise MissingSecretError(
+            "AUTH_SECRET 沒有設定，而這個環境設了 REQUIRE_AUTH_SECRET。"
+            "請在 .env 裡設一個夠長的隨機字串（例：python -c "
+            "\"import secrets; print(secrets.token_urlsafe(32))\"），否則每次重啟"
+            "都會換一把新秘鑰、把所有人登出。"
+        )
 
     generated = secrets.token_urlsafe(32)
     logger.warning(

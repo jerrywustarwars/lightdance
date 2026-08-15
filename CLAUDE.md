@@ -713,6 +713,42 @@ mouseup 的**共同祖先**——跨軌框選時那是 `.timeline-container`，�
 根目錄底下。**看到不對的就拒絕，不要「清理」**——`....//` 把 `../` 刪一次
 正好變成 `../`。
 
+### 已修（2026-08-15）：憑證不再寫在版控裡
+
+⚠️ **正式資料庫的 root 帳密原本在 repo 裡。** `.env.deployment`（`MONGO_USERNAME=root`
+／`MONGO_PASSWORD=nycuee`）是被追蹤的檔案，`mongo-init/01-init-data.js` 開頭還寫死
+了 `db.auth('root', 'nycuee')`——而這個 repo 是 public fork，等於公開發布。
+
+現在：`.env.deployment` 移出版控（範本留在 `.env.deployment.example`），
+`mongo-init` 改讀 `MONGO_INITDB_ROOT_USERNAME` / `MONGO_INITDB_ROOT_PASSWORD`
+（mongo 官方 image 的 entrypoint 會把它們放進 mongosh 的 `process.env`），
+沒設就直接 throw。`run-deploy.sh` 找不到 env 檔時**停下來**而不是「使用預設設定」
+繼續跑——舊版那條路會用空憑證起 mongo、用臨時秘鑰起後端，而畫面上看起來部署成功。
+
+⚠️ **從 repo 移除 ≠ 收回。** 那組密碼已經公開過（git 歷史、GitHub 的 fork 與快取
+都還在），**必須換掉**，不是改個檔案位置就沒事。
+
+種子帳號的密碼也從明文換成 bcrypt 雜湊——那是最後一個還在**製造**新明文的地方
+（程式那端早就改成 bcrypt，但 `verify_password` 為了相容舊資料連明文也認得，
+所以完全不會有人發現）。
+
+`docker-compose.prod.yml` 加了 `REQUIRE_AUTH_SECRET=1`：漏設 `AUTH_SECRET` 時後端
+**啟動失敗**，而不是臨時產生一把之後每次重啟把所有人登出（那個症狀看起來像網站
+不穩，不像設定漏了）。
+
+### 密碼遷移的進度
+
+遷移是懶惰的：`verify_password` 明文與 bcrypt 都認得，登入成功的當下才把明文
+就地換成雜湊。好處是不停機、不必遷移腳本、沒有人被鎖在外面，代價是**你不知道
+什麼時候遷移完**——從雜湊反推不出明文，所以「一次全部轉檔」做不到，那只能把
+所有人的密碼重設掉。
+
+```bash
+cd backend && uv run python audit_passwords.py --list
+```
+
+唯讀，只印帳號名稱不印密碼（那個輸出會被貼進聊天室或截圖）。還有明文時 exit 1。
+
 ### 還沒處理
 
 - 其他端點的輸入驗證（上傳的 payload 內容、query 參數的範圍）
@@ -748,6 +784,21 @@ public fork——那個檔案永遠不得 import 進 fixture、不得 commit。*
 - 確保安全性問題沒有被引入
 
 ## 更新記錄
+
+- **2026-08-15（深夜三）**：**憑證不再寫在版控裡**。查密碼明文儲存的狀況時發現
+  更嚴重的一層：**正式資料庫的 root 帳密就在 repo 裡**——`.env.deployment`
+  （`MONGO_PASSWORD=nycuee`）是被追蹤的檔案，`mongo-init` 開頭還寫死了
+  `db.auth('root', 'nycuee')`，而這個 repo 是 public fork。已把 env 檔移出版控
+  （範本留 `.env.deployment.example`）、`mongo-init` 改讀環境變數且沒設就 throw、
+  `run-deploy.sh` 找不到 env 檔改成停下來（舊版會「使用預設設定」繼續跑，用空
+  憑證起 mongo、用臨時秘鑰起後端，而畫面上看起來部署成功）。
+  ⚠️ **移出 repo 不等於收回**，那組密碼必須換掉。
+  另外：種子帳號的密碼從明文換成 bcrypt 雜湊（最後一個還在**製造**新明文的地方，
+  因為 `verify_password` 連明文也認得所以一直沒人發現）；
+  `docker-compose.prod.yml` 加 `REQUIRE_AUTH_SECRET=1` 讓漏設秘鑰時**啟動失敗**，
+  而不是每次重啟把所有人登出（那個症狀看起來像網站不穩）；新增
+  `backend/audit_passwords.py` 查還有幾個帳號沒完成懶惰遷移（唯讀、只印帳號名稱）。
+  後端測試 59 → 65 passed
 
 - **2026-08-15（深夜二）**：**MongoDB 的儲存方式**。這個資料庫原本**一個索引都
   沒有**——每次「載入最新版本」都是掃過該使用者的所有光表、載進記憶體、排序、

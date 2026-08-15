@@ -30,3 +30,6 @@ logs/
 .vscode/
 .idea/
 .DS_Store
+
+# 部署用的真實憑證。範本在 .env.deployment.example
+.env.deployment
