@@ -19,6 +19,18 @@ from time import strftime, localtime
 from fastapi.middleware.cors import CORSMiddleware
 
 from paths import UnsafePathError, resolve_within
+from storage import (
+    DEFAULT_LIST_LIMIT,
+    LIST_PROJECTION,
+    MAX_LIST_LIMIT,
+    StorageError,
+    color_document,
+    ensure_indexes,
+    insert_show,
+    now_stamp,
+    prune_history,
+    raw_document,
+)
 from auth import (
     create_access_token,
     hash_password,
@@ -52,17 +64,29 @@ client = MongoClient(uri)
 try:
     client.admin.command('ping')
     print("Pinged your deployment. You successfully connected to MongoDB!")
+    MONGO_REACHABLE = True
 except Exception as e:
     print(e)
+    MONGO_REACHABLE = False
 
 SIZE = 256 # number of LED per board
 
 db = client['test']
 collection_color = db['color']
 collection_raw = db['raw_json']
-collection_pico = db['pico']
-collection_music = db['music']
 user_list = db['users']
+
+# 索引在啟動時建立一次（冪等）。定義與理由在 storage.py——簡單說：這個資料庫
+# 原本一個索引都沒有，每次「載入最新版本」都是把該使用者的所有光表撈出來排序。
+#
+# ⚠️ **連不上就不要試。** `create_index` 連不上時會等滿 server selection 的
+# 逾時（預設 30 秒）才丟例外，三個索引就是一分半——服務起不來、測試也跟著卡。
+# 上面那個 ping 已經知道答案了，直接用它。連不上時服務照樣起得來，
+# 讀寫會各自失敗並回報。
+if MONGO_REACHABLE:
+    ensure_indexes(db)
+else:
+    print("[storage] MongoDB 連不上，略過索引建立（服務仍會啟動）")
 
 # 允許的來源。
 #
@@ -191,37 +215,58 @@ async def read_root():
 # 使用方法：GET /api/timelist/，無需驗證
 # 使用場景：前端載入選單、顯示可用的光表資料列表
 @api_router.get("/timelist/")
-async def list_all_timestamps():
-    # Only include user and update_time fields
-    all_entries = list(collection_color.find({}, {"user": 1, "update_time": 1, "music_filename": 1}))
+async def list_all_timestamps(limit: int = DEFAULT_LIST_LIMIT):
+    """
+    ⚠️ **一定要有上限。** 舊版是 `find({})` 全部撈出來再在 Python 裡排序：
+    這個資料庫從來不刪舊版本，用一學期之後這支端點會把整個歷史一次回給前端。
 
-    for entry in all_entries:
-        entry["_id"] = str(entry["_id"])
-    
-    # Sort the entries by username and update times
-    sorted_entries_pre = sorted(all_entries, key=lambda x: x['update_time'] , reverse=True)
-    sorted_entries = sorted(sorted_entries_pre, key=lambda x: x['user'] )
-    final_response = [{"user": entry["user"], "update_time": entry["update_time"], "music_filename": entry.get("music_filename", 0)} for entry in sorted_entries]
+    排序交給資料庫（`(user, update_time)` 的索引正好就是這個順序），
+    Python 這端不再排一次。
+    """
+    limit = max(1, min(limit, MAX_LIST_LIMIT))
 
-    return {"list": final_response}
+    entries = list(
+        collection_color.find({}, LIST_PROJECTION)
+        .sort([("user", 1), ("update_time", -1)])
+        .limit(limit)
+    )
+
+    return {
+        "list": [
+            {
+                "user": entry["user"],
+                "update_time": entry["update_time"],
+                # 預設值是空字串不是 0：先前用 0，於是同一個欄位在資料庫裡
+                # 同時有字串與整數兩種型別
+                "music_filename": entry.get("music_filename", ""),
+            }
+            for entry in entries
+        ]
+    }
 
 # 取得特定使用者的光表資料時間清單
 # 使用方法：GET /api/timelist/{username}，無需驗證
 # 使用場景：查看特定使用者的所有光表資料版本
 @api_router.get("/timelist/{username}")
-async def list_user_timestamps(username: str):
-	# Only include user and update_time fields
-	all_entries = list(collection_color.find({"user": username}, {"user": 1, "update_time": 1, "music_filename": 1}))
+async def list_user_timestamps(username: str, limit: int = DEFAULT_LIST_LIMIT):
+	limit = max(1, min(limit, MAX_LIST_LIMIT))
 
-	for entry in all_entries:
-		entry["_id"] = str(entry["_id"])
-	
-	# Sort the entries by username and update time
-	sorted_entries = sorted(all_entries, key=lambda x: (x['user'] != username, x['update_time']), reverse=True)
+	entries = list(
+		collection_color.find({"user": username}, LIST_PROJECTION)
+		.sort("update_time", -1)
+		.limit(limit)
+	)
 
-	final_response = [{"user": entry["user"], "update_time": entry["update_time"], "music_filename": entry.get("music_filename", 0)} for entry in sorted_entries]
-
-	return {"list": final_response}
+	return {
+		"list": [
+			{
+				"user": entry["user"],
+				"update_time": entry["update_time"],
+				"music_filename": entry.get("music_filename", ""),
+			}
+			for entry in entries
+		]
+	}
 
 # 取得特定使用者在特定時間的完整光表資料
 # 使用方法：GET /api/items/{username}/{query_time}，無需驗證
@@ -249,28 +294,45 @@ async def get_user_color (username: str, query_time: str):
 async def get_user_color_by_chunk (username: str, query_time: str, chunk: int, player: int):
     CHUNK_SIZE = 10
     
+    start_idx = chunk * CHUNK_SIZE
+
+    if chunk < 0 or player < 0:
+        raise HTTPException(status_code=400, detail="player 與 chunk 不能是負數")
+
+    """
+    ⚠️ 只撈需要的那一段，不要把整份光表拉出來再切。
+
+    舊版是「find_one 整份文件 → jsonable_encoder 整份 → 取第 player 個 →
+    切 10 筆」。一份密集光表實測 43KB，分 100 次載入就從資料庫搬了 100 份
+    完整光表出來——而這支端點存在的理由正是「資料太大要分批」。
+
+    `$slice` 讓 mongo 在伺服器端就切好，`players.$slice` 取的是第一層
+    （哪一位舞者），第二層再用 Python 切（BSON 的 $slice 不能巢狀）。
+    """
+    projection = {"players": {"$slice": [player, 1]}}
+
     if query_time == "LATEST":
         user_data = collection_color.find_one(
-            {"user": username}, 
-            sort=[("update_time", -1)]  # Sort by update_time in descending order to get the latest entry
+            {"user": username},
+            projection,
+            sort=[("update_time", -1)],
         )
     else:
-        user_data = collection_color.find_one({"user": username, "update_time": query_time})
+        user_data = collection_color.find_one(
+            {"user": username, "update_time": query_time}, projection
+        )
 
     if not user_data:
         return {"message": f"user not found: '{username}'"}
 
-    user_json = jsonable_encoder(user_data, custom_encoder={ObjectId: str})
-
-    if "players" not in user_json or player >= len(user_json["players"]):
+    players = user_data.get("players") or []
+    if not players:
         return {"message": f"Invalid player index: {player}"}
 
-    player_data = user_json["players"][player]
-
-    start_idx = chunk * CHUNK_SIZE
-    end_idx = start_idx + CHUNK_SIZE    
-
-    chunk_data = player_data[start_idx:end_idx]
+    chunk_data = jsonable_encoder(
+        players[0][start_idx : start_idx + CHUNK_SIZE],
+        custom_encoder={ObjectId: str},
+    )
 
     return {"player_data": chunk_data}
 
@@ -332,12 +394,10 @@ async def upload_user_color (request: Request, current_user: User = Depends(get_
         music_filename = b.get('music_filename', 0)
 	)
 
-	existing_entries = collection_color.find({"user": user_data.user}).sort("update_time", 1)  # Sort by update time
-	existing_count = collection_color.count_documents({"user": user_data.user})
-
-	if existing_count >= 5:
-		oldest_entry = existing_entries[0]
-	#	collection_color.delete_one({"_id": oldest_entry["_id"]})
+	# 保留策略統一走 storage.prune_history（預設 HISTORY_LIMIT=0，不刪任何東西）。
+	# 這裡原本有一段「撈出所有版本、數一數、取出最舊那一筆」——而真正的刪除
+	# 那一行是註解掉的。等於每次上傳都掃一次該使用者的全部光表，然後什麼也沒做。
+	prune_history(collection_color, user_data.user)
 
 	document = {
 		'user': user_data.user,
@@ -356,56 +416,67 @@ async def upload_user_color (request: Request, current_user: User = Depends(get_
 # 使用方法：POST /api/upload_full，需要 Bearer Token
 @api_router.post("/upload_full")
 async def upload_full_data (data: FullUpload, current_user: User = Depends(get_current_active_user)):
-	current_time = strftime("%Y-%m-%d-%H:%M:%S", localtime())
-	
-	# 1. 使用 Data 模型確保格式與舊端點 100% 一致
-	# 這裡我們利用 Pydantic 的驗證機制來確保資料結構正確
+	"""
+	一次上傳兩份：韌體要播的 `color` 與編輯器要載回來的 `raw_json`，
+	共用同一個 `update_time` 當版本編號。
+
+	⚠️ **兩份要嘛都寫成功、要嘛都不留**（見 storage.insert_show）。舊版是分別
+	try/except、各自印一行錯誤，然後**不管結果一律回 success**——寫壞一份的話
+	會留下「跑得動但打不開」或「打得開但跑不動」的版本，而使用者看到的是綠色的
+	上傳成功訊息，下次才發現東西不見了。
+
+	⚠️ 舊版還有一段「模型驗證失敗就以原始格式存入」的保底方案。那不是保底，
+	是**把驗不過的資料塞進資料庫再回報成功**——驗證存在的唯一理由就是擋掉那種
+	資料。現在驗不過就回 422，讓使用者知道這一版沒存進去。
+	"""
+	current_time = now_stamp()
+
+	# 1. 先把兩份文件都組好、驗完，再開始寫。驗證失敗時資料庫完全沒被碰過
 	try:
-		# 模擬舊有的資料封裝過程
-		# data.players 是 List[List[PlayerData]]
-		# 我們需要將其轉換為 List[Player]，其中每個 Player 包含一個 data 列表
-		formatted_players = [Player(data=player_list) for player_list in data.players]
-		
+		# data.players 是 List[List[PlayerData]]，轉成 List[Player] 之後
+		# 走 Data 模型，形狀與舊端點 100% 一致（韌體的 ABI 靠這個鎖住）
 		color_data_obj = Data(
 			user = current_user.username,
 			last_updated_time = current_time,
-			players = formatted_players,
+			players = [Player(data=player_list) for player_list in data.players],
 			music_filename = str(data.music_filename)
 		)
-
-		document_color = {
-			'user': color_data_obj.user,
-			'update_time': color_data_obj.last_updated_time,
-			'players': [[p.dict() for p in player.data] for player in color_data_obj.players],
-			'music_filename': color_data_obj.music_filename
-		}
-		
-		res_color = collection_color.insert_one(document_color)
-		print(f">>> [SUCCESS] Color DB updated. ID: {res_color.inserted_id}")
-		
 	except Exception as e:
-		print(f">>> [ERROR] Color DB process failed: {e}")
-		# 如果模型驗證失敗，至少嘗試以原始格式存入（保底方案）
-		document_color_fallback = {
-			'user': current_user.username,
-			'update_time': current_time,
-			'players': [[p.dict() if hasattr(p, "dict") else p for p in pl] for pl in data.players],
-			'music_filename': str(data.music_filename)
-		}
-		collection_color.insert_one(document_color_fallback)
+		print(f">>> [REJECT] 光表格式驗證失敗: {e}")
+		raise HTTPException(
+			status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+			detail=f"光表格式不正確，這一版沒有存進去：{e}",
+		)
 
-	# 2. 處理並儲存原始資料 (collection_raw)
-	document_raw = {
-		'user': current_user.username,
-		'update_time': current_time,
-		'raw_data': data.raw_data
-	}
-	
+	document_color = color_document(
+		user = color_data_obj.user,
+		update_time = current_time,
+		players = [[p.dict() for p in player.data] for player in color_data_obj.players],
+		music_filename = color_data_obj.music_filename,
+	)
+	document_raw = raw_document(
+		user = current_user.username,
+		update_time = current_time,
+		raw_data = data.raw_data,
+		music_filename = color_data_obj.music_filename,
+	)
+
+	# 2. 成對寫入。失敗就回滾並回報，不要假裝成功
 	try:
-		res_raw = collection_raw.insert_one(document_raw)
-		print(f">>> [SUCCESS] Raw DB updated. ID: {res_raw.inserted_id}")
-	except Exception as e:
-		print(f">>> [ERROR] Raw DB failed: {e}")
+		insert_show(
+			collection_color,
+			collection_raw,
+			color = document_color,
+			raw = document_raw,
+		)
+	except StorageError as error:
+		raise HTTPException(
+			status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(error)
+		)
+
+	# 3. 超出保留上限的舊版本。預設 HISTORY_LIMIT=0 → 什麼都不刪
+	prune_history(collection_color, current_user.username)
+	prune_history(collection_raw, current_user.username)
 
 	return {
 		'message': 'Full data upload success (synchronous timestamp) d(OuO)y',
@@ -427,12 +498,10 @@ async def upload_raw_data (request: Request, current_user: User = Depends(get_cu
 		raw_data = b['raw_data']
 	)
 
-	existing_entries = collection_color.find({"user": user_data.user}).sort("update_time", 1)  # Sort by update time
-	existing_count = collection_color.count_documents({"user": user_data.user})
-
-	if existing_count >= 5:
-		oldest_entry = existing_entries[0]
-	#	collection_color.delete_one({"_id": oldest_entry["_id"]})
+	# 保留策略統一走 storage.prune_history（預設 HISTORY_LIMIT=0，不刪任何東西）。
+	# 這裡原本有一段「撈出所有版本、數一數、取出最舊那一筆」——而真正的刪除
+	# 那一行是註解掉的。等於每次上傳都掃一次該使用者的全部光表，然後什麼也沒做。
+	prune_history(collection_color, user_data.user)
 
 	document = {
 		'user': user_data.user,

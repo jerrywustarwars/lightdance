@@ -356,6 +356,7 @@ segment 壓平回 keyframe 之後**緊鄰的色塊之間沒有黑點**，這個�
 |---|---|---|---|
 | ~~B3~~ | ~~多曲銜接的 UI~~ | M | **2026-08-15 完成**。`utils/audio/clips.js`（形狀與不變式）+ `hooks/useAudioClips.js`（唯一讀取入口）+ `Playlist.jsx`（可收合，加 / 移除 / 排序 / 改名 / 接縫）+ 時間軸的 `ClipMarkers`。波形改畫整場（`stitchPeaks`） |
 | ~~B2~~ | ~~bundle 1.8MB（gzip 542kB）~~ | S | **2026-08-15 完成**。路由層 `lazy`（`/model` 的 three + model-viewer 佔了 746KB）+ 刪掉沒用到的 lodash import。初始 chunk 1817 → 475 KB（gzip 547 → 156 KB），`npm run audit:bundle` 守著 |
+| B5 | **`.dict()` → `.model_dump()`** | S | Pydantic v2 已標記棄用（每次跑測試 10 則警告），v3 會直接壞掉。模型是扁平的整數欄位，兩者輸出相同，但那條路徑是韌體 ABI，要配 golden 驗一次 |
 | B4 | **dist 有 91MB 的 mp3** | S | `musicsrc/` 十一首示範曲被複製進 build，其中一首是商業歌曲而這個 repo 是 public fork。不影響載入速度（選到才抓），但每次部署都要搬 91MB。拿掉的話音樂改走後端 `/music` |
 
 ### C. 安全性（**從專案開始到現在一件都沒動**）

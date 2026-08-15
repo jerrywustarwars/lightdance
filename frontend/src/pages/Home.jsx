@@ -180,7 +180,15 @@ function Home({ rgba, setRgba, setButtonState }) {
   async function handleOutput() {
     console.log("UPLOAD_RAW:", API_ENDPOINTS.UPLOAD_RAW);
     console.log("UPLOAD_ITEMS:", API_ENDPOINTS.UPLOAD_ITEMS);
-    setIsDirty(false);
+
+    /*
+     * ⚠️ **不要在這裡就把「尚未儲存」關掉。**
+     *
+     * 這一行原本在函式開頭，也就是在真的送出去之前。上傳失敗時沒有人把它設回來，
+     * 於是橫幅消失、`beforeunload` 的提醒也不再出現——畫面說「已儲存」而伺服器上
+     * 什麼都沒有。使用者關掉分頁就真的沒了（本地備份還在 IndexedDB，但他不會
+     * 知道要去找）。現在只有 `response.ok` 那一條路徑才清掉。
+     */
 
     // raw_data 現在存 segments（前端的黑盒子，後端不解析），標上 schemaVersion
     // 讓載入端知道格式。不再需要 sanitizeActionTableTimes——segment 的邊界
@@ -264,8 +272,20 @@ function Home({ rgba, setRgba, setButtonState }) {
         alert("原始檔與播放檔皆上傳成功！");
         console.log("upload(full) : ", JSON.stringify(fullUploadData));
       } else {
-        alert("上傳失敗，資料已自動備份至本地。");
-        console.error("Upload Error:", response.status);
+        /*
+         * 把後端說的原因帶出來。422 是「光表格式不對，這一版沒存進去」、
+         * 503 是「資料庫寫不進去，等一下再試」——兩者要做的事完全不同，
+         * 只說「上傳失敗」的話使用者不知道該重試還是該回報。
+         */
+        const detail = await response
+          .json()
+          .then((body) => body?.detail)
+          .catch(() => null);
+
+        alert(
+          `上傳失敗，資料已自動備份至本地。\n\n${detail ?? `伺服器回應 ${response.status}`}`,
+        );
+        console.error("Upload Error:", response.status, detail);
       }
     } catch (error) {
       alert("網路斷線，資料已自動備份至本地。");
