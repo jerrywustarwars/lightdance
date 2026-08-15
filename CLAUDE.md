@@ -195,7 +195,7 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 ```bash
 cd frontend
 npm run dev            # 另一個終端機
-npm run e2e            # 55 項：放色 / 選取 / 框選 / 剪下 / undo / 快捷鍵 /
+npm run e2e            # 56 項：放色 / 選取 / 框選 / 剪下 / undo / 快捷鍵 /
                        #        重新整理 / 拖曳 resize / 多段一起搬 / 頻閃 /
                        #        刻度尺 / 倍速 / 波形 / 道具 / 調色盤 /
                        #        工作集 / 行高 / 播放清單 / Output / /edit /
@@ -437,7 +437,9 @@ dispatch 等於每秒做幾十次那個運算。
 換算，不是「起點 + 長度換算出來的桶數」，後者會在最右邊留下沒填到的桶。
 
 UI 是可收合的（`components/audio/Playlist.jsx`）：排燈時幾乎不會動歌單，
-常駐六列等於用最貴的版面放最少用的功能。時間軸上的接縫由 `ClipMarkers` 標出來，
+常駐六列等於用最貴的版面放最少用的功能。點面板外面會收起來，而那個 listener
+必須掛在 **capture 階段**——`Timeline` 與 `MarqueeSelect` 的 mousedown 都會
+`stopPropagation()`，而時間軸正好是面板蓋住的那塊區域。時間軸上的接縫由 `ClipMarkers` 標出來，
 和 `TimeRuler` / `ShiftMarkers` 同一個座標系。
 
 ### 路由層 lazy 與大小預算
@@ -695,7 +697,7 @@ public fork——那個檔案永遠不得 import 進 fixture、不得 commit。*
   `clips.js`（它是領域問題不是渲染細節）、外部 JSON 進來時補齊缺的欄位、
   刪掉沒有人用的 `clipIndexAt` 與 `isDerived`，並補上三條 lazy 路由的煙霧測試
   ——`/`、`/dashboard`、`/model` 在切 chunk 之後沒有任何測試走過。
-  e2e 50 → 55。測試 615 → 622 passed
+  e2e 50 → 56。測試 615 → 622 passed
 
 - **2026-08-15（下午）**：**初始 JS 從 1817 收到 475 KB**（gzip 547 → 156）。
   用 sourcemap 逐套件統計之後發現 **746 KB 是 `/model` 那一頁的 `three` 與

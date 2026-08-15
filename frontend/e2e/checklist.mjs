@@ -1094,8 +1094,13 @@ const run = async () => {
       `${Math.round(await durationOf())}ms`,
     );
 
-    await toggle.click();
-    await page.waitForTimeout(200);
+    // 點面板外面要收起來：它蓋住前兩條軌道，忘記它開著的話那幾條點不到
+    await page.mouse.click(900, 700);
+    await page.waitForTimeout(300);
+    record(
+      "點面板外面就收起播放清單",
+      (await page.locator("[data-testid='playlist-panel']").count()) === 0,
+    );
   }
 
   // ── Output ────────────────────────────────────────────

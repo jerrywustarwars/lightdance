@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faMusic } from "@fortawesome/free-solid-svg-icons";
@@ -133,11 +133,47 @@ function useMusicLibrary() {
   return files;
 }
 
+/**
+ * 點面板外面就收起來。
+ *
+ * 展開的面板是 320×200，正下方就是時間刻度尺與前兩條軌道——忘記它開著的話，
+ * 那幾條軌會變成「看得到但點不到」。工具列上其他的選單都小得多（效果選單只有
+ * 110px），所以那些沒有這個問題，這裡有。
+ *
+ * ⚠️ 監聽的是 `mousedown` 而不是 `click`。`click` 的 target 是 mousedown 與
+ * mouseup 的**共同祖先**，在面板裡按下、拖到面板外放開（拖接縫滑桿就會這樣）
+ * 會算成「點在外面」，面板在拖曳結束的瞬間自己收起來。
+ *
+ * ⚠️ 而且要掛在 **capture 階段**。`Timeline` 與 `MarqueeSelect` 的 mousedown
+ * 都會 `stopPropagation()`，冒泡到不了 document——而時間軸正好就是面板蓋住的
+ * 那塊區域，掛在冒泡階段的話「點面板外面」在最需要它的地方剛好沒作用。
+ * （e2e 實測就是這樣紅的。）
+ */
+function useCloseOnOutsideClick(ref, open, close) {
+  useEffect(() => {
+    if (!open) return;
+
+    const onMouseDown = (event) => {
+      if (!ref.current?.contains(event.target)) close();
+    };
+
+    document.addEventListener("mousedown", onMouseDown, true);
+    return () => document.removeEventListener("mousedown", onMouseDown, true);
+  }, [ref, open, close]);
+}
+
 function Playlist({ onListChange }) {
   const playlist = usePlaylist();
   const library = useMusicLibrary();
   const [open, setOpen] = useState(false);
   const [picked, setPicked] = useState("");
+  const wrapperRef = useRef(null);
+
+  useCloseOnOutsideClick(
+    wrapperRef,
+    open,
+    useCallback(() => setOpen(false), []),
+  );
 
   const { clips } = playlist;
   const selectable = picked || library[0] || "";
@@ -161,7 +197,7 @@ function Playlist({ onListChange }) {
   };
 
   return (
-    <div className="playlist-wrapper">
+    <div className="playlist-wrapper" ref={wrapperRef}>
       <button
         className="playlist-button"
         onClick={() => setOpen((visible) => !visible)}
