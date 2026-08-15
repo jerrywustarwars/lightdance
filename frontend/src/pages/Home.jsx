@@ -134,7 +134,10 @@ function Home({ rgba, setRgba, setButtonState }) {
    * 都會立刻亮起「尚未儲存」，橫幅就再也沒有意義了。
    */
   const playlistSignature = (data.audioClips ?? [])
-    .map((clip) => `${clip.sourceFile}:${clip.name}`)
+    .map(
+      (clip) =>
+        `${clip.sourceFile}:${clip.name}:${clip.bpm}:${clip.beatAnchor}:${clip.beatsPerBar}`,
+    )
     .join("|");
 
   useEffect(() => {

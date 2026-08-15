@@ -1094,6 +1094,40 @@ const run = async () => {
       `${Math.round(await durationOf())}ms`,
     );
 
+    /*
+     * 節拍格線。30 秒、120 BPM、四拍一小節 → 每 2 秒一條小節線。
+     *
+     * 格線是墊在色塊底下的參考線，所以要驗三件事：畫得出來、小節線的數量對得上
+     * 速度、而且**不吃滑鼠事件**（攔到的話色塊就拖不動了）。
+     */
+    const bars = await page.locator(".beat-line.is-bar").count();
+    const lines = await page.locator(".beat-line").count();
+
+    /*
+     * 30 秒、120 BPM、四拍一小節 → 每 2 秒一條小節線，含頭尾共 16 條；
+     * 這個縮放程度畫得到半拍，所以總共 30000/250 + 1 = 121 條。
+     *
+     * 數量寫死是刻意的：先前 `beatLines` 的 key 沒帶 clipId，兩首歌在接縫
+     * 同一毫秒各有一條線時 React 會**留下上一個狀態的節點**（實測多出 5 條、
+     * 小節線多 2 條）。只檢查「有沒有線」的話這種錯誤完全看不出來。
+     */
+    record(
+      "節拍格線畫得出來，小節線數量對得上速度",
+      bars === 16 && lines === 121,
+      `${lines} 條（期望 121），其中小節線 ${bars} 條（期望 16）`,
+    );
+
+    const gridEatsClicks = await page.evaluate(() => {
+      const line = document.querySelector(".beat-line");
+      if (!line) return true;
+      const r = line.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left, r.top + r.height / 2);
+      return top?.classList.contains("beat-line") ?? false;
+    });
+    record("格線不吃滑鼠事件（色塊還拖得動）", gridEatsClicks === false);
+
+    await shot(page, "beat-grid");
+
     // 點面板外面要收起來：它蓋住前兩條軌道，忘記它開著的話那幾條點不到
     await page.mouse.click(900, 700);
     await page.waitForTimeout(300);

@@ -1,5 +1,12 @@
 import { TICK_MS } from "../../constants/time.js";
 import { totalDuration } from "./schedule.js";
+import {
+  DEFAULT_BEATS_PER_BAR,
+  DEFAULT_BPM,
+  clampAnchor,
+  clampBeatsPerBar,
+  clampBpm,
+} from "./tempo.js";
 
 /**
  * 音訊 clip 清單的形狀與不變式 —— **唯一定義處**。
@@ -73,7 +80,52 @@ export const createClip = ({
   gain,
   fadeIn: 0,
   fadeOut: 0,
+  /*
+   * 節拍格線（見 `utils/audio/tempo.js`）。速度掛在歌上而不是掛在時間上：
+   * `beatAnchor` 是「第一拍落在這首歌開始後第幾毫秒」，重排歌單時跟著走。
+   */
+  bpm: DEFAULT_BPM,
+  beatAnchor: 0,
+  beatsPerBar: DEFAULT_BEATS_PER_BAR,
 });
+
+/**
+ * 改一首歌的節拍設定。
+ *
+ * 只動 metadata，**位置一律不變**——速度跟播放順序沒有關係，重排是 `resequence`
+ * 的事。沒有真的改到東西時回傳原 reference（和其他寫入函式同一個約定）。
+ */
+export function setClipTempo(clips, id, patch = {}) {
+  const list = clips ?? [];
+
+  let changed = false;
+  const next = list.map((clip) => {
+    if (clip.id !== id) return clip;
+
+    const fixed = { ...clip };
+    if (patch.bpm !== undefined) fixed.bpm = clampBpm(patch.bpm);
+    if (patch.beatAnchor !== undefined) {
+      // anchor 存的是「這首歌開始之後第幾毫秒」，呼叫端給的可能是表演時間
+      fixed.beatAnchor = clampAnchor(patch.beatAnchor);
+    }
+    if (patch.beatsPerBar !== undefined) {
+      fixed.beatsPerBar = clampBeatsPerBar(patch.beatsPerBar);
+    }
+
+    if (
+      fixed.bpm === clip.bpm &&
+      fixed.beatAnchor === clip.beatAnchor &&
+      fixed.beatsPerBar === clip.beatsPerBar
+    ) {
+      return clip;
+    }
+
+    changed = true;
+    return fixed;
+  });
+
+  return changed ? next : list;
+}
 
 /** 一個 clip 實際會用到的長度（壞資料一律退回一格，不讓 NaN 流進位置運算） */
 const lengthOf = (clip) => {
@@ -305,6 +357,12 @@ function normalizeClips(clips) {
     if (!Number.isFinite(fixed.lengthMs)) fixed.lengthMs = lengthOf(clip);
     if (!Number.isFinite(fixed.start)) fixed.start = 0;
     if (!Number.isFinite(fixed.end)) fixed.end = fixed.start + fixed.lengthMs;
+    // 節拍格線的設定。舊的存檔完全沒有這幾欄
+    if (!Number.isFinite(fixed.bpm)) fixed.bpm = DEFAULT_BPM;
+    if (!Number.isFinite(fixed.beatAnchor)) fixed.beatAnchor = 0;
+    if (!Number.isFinite(fixed.beatsPerBar)) {
+      fixed.beatsPerBar = DEFAULT_BEATS_PER_BAR;
+    }
 
     const same = Object.keys(fixed).every((key) => fixed[key] === clip[key]);
     if (same) return clip;

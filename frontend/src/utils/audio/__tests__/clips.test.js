@@ -13,6 +13,7 @@ import {
   renameClip,
   resequence,
   sameClipTimeline,
+  setClipTempo,
   totalDuration,
 } from "../clips.js";
 
@@ -28,6 +29,9 @@ const clip = (id, lengthMs, extra = {}) => ({
   gain: 1,
   fadeIn: 0,
   fadeOut: 0,
+  bpm: 120,
+  beatAnchor: 0,
+  beatsPerBar: 4,
   ...extra,
 });
 
@@ -326,6 +330,53 @@ describe("renameClip", () => {
     expect(renameClip(list, "a", "a")).toBe(list);
     expect(renameClip(list, "nope", "x")).toBe(list);
     expect(renameClip(undefined, "a", "x")).toEqual([]);
+  });
+});
+
+describe("setClipTempo", () => {
+  const list = resequence([clip("a", 10000), clip("b", 10000)]);
+
+  it("改速度不動位置——速度跟播放順序沒有關係", () => {
+    const out = setClipTempo(list, "a", { bpm: 128 });
+
+    expect(out[0].bpm).toBe(128);
+    expect(out.map((c) => [c.start, c.end])).toEqual(
+      list.map((c) => [c.start, c.end]),
+    );
+  });
+
+  it("只動指名的那一首", () => {
+    const out = setClipTempo(list, "a", { bpm: 128 });
+    expect(out[1]).toBe(list[1]);
+  });
+
+  it("值會收斂：BPM 夾範圍、anchor 對齊網格、一小節至少一拍", () => {
+    const out = setClipTempo(list, "a", {
+      bpm: 9999,
+      beatAnchor: 1234,
+      beatsPerBar: 0,
+    });
+
+    expect(out[0].bpm).toBe(300);
+    expect(out[0].beatAnchor).toBe(1250);
+    expect(out[0].beatsPerBar).toBe(1);
+  });
+
+  it("沒指定的欄位不動", () => {
+    const out = setClipTempo(list, "a", { bpm: 100 });
+    expect(out[0].beatsPerBar).toBe(list[0].beatsPerBar);
+    expect(out[0].beatAnchor).toBe(list[0].beatAnchor);
+  });
+
+  it("值沒變、找不到 id、空清單都回原 reference", () => {
+    expect(setClipTempo(list, "a", { bpm: list[0].bpm })).toBe(list);
+    expect(setClipTempo(list, "nope", { bpm: 200 })).toBe(list);
+    expect(setClipTempo(list, "a", {})).toBe(list);
+    expect(setClipTempo(undefined, "a", { bpm: 100 })).toEqual([]);
+  });
+
+  it("速度不影響播放，不該讓引擎重排", () => {
+    expect(sameClipTimeline(list, setClipTempo(list, "a", { bpm: 128 }))).toBe(true);
   });
 });
 

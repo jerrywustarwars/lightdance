@@ -8,6 +8,7 @@ import {
 import "./audioplayer.css";
 import Waveform from "./waveform.jsx";
 import Playlist, { ClipMarkers } from "./Playlist.jsx";
+import BeatGrid from "./BeatGrid.jsx";
 import PlayerControls from "./PlayerControls.jsx";
 import { useTimeShift, ShiftToolButton, ShiftMarkers } from "./ShiftTool.jsx";
 import EffectMenu, { useLightEffects } from "./EffectMenu.jsx";
@@ -450,6 +451,8 @@ function AudioPlayer({ setButtonState, timelineRef }) {
             width: `${100 * zoomLevel}%`, // 根据 zoomValue 动态调整容器宽度
           }}
         >
+          {/* 節拍格線墊在最底下：它是參考線，不能蓋住色塊也不能吃滑鼠事件 */}
+          <BeatGrid />
           <TimeRuler onSeek={seekTo} />
           {/* 每首歌從哪裡開始。只有兩首以上才畫得出東西 */}
           <ClipMarkers />

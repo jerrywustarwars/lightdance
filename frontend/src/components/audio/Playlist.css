@@ -50,7 +50,7 @@
   left: 0;
   margin-top: var(--space-2);
   z-index: 1000;
-  min-width: 320px;
+  min-width: 360px;
   padding: var(--space-3);
   background: var(--bg-control);
   border: 1px solid var(--border-strong);
@@ -90,6 +90,51 @@
   padding: var(--space-1) var(--space-2);
   background: var(--bg-panel);
   border-radius: var(--radius-sm);
+  /* 節拍那一列換到第二行——它是這一首的細節，不該跟名字擠在同一排 */
+  flex-wrap: wrap;
+}
+
+/*
+ * 節拍設定。整列獨佔第二行（`flex-basis: 100%`），左邊留一個和序號同寬的
+ * 內縮，看起來就會像是掛在這首歌底下的細節而不是另一個項目。
+ */
+.playlist-tempo {
+  flex: 1 0 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-left: 24px;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.playlist-tempo label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  /* 這一列排不下時要讓數字欄位縮，不是把「每小節」折成一個字一行 */
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.playlist-tempo input {
+  width: 52px;
+  background: var(--bg-control);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 1px var(--space-1);
+  font-size: var(--fs-xs);
+}
+
+.playlist-tempo .ld-btn {
+  margin-left: auto;
+  padding: 0 var(--space-2);
+  min-height: 20px;
+  height: 20px;
+  font-size: var(--fs-xs);
+  line-height: 1;
 }
 
 .playlist-index {

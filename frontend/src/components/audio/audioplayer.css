@@ -39,6 +39,15 @@
   display: flex;
   flex-direction: column;
   position: relative;
+  /*
+   * 底色從 `.timeline-container` 搬上來，`BeatGrid` 才有地方待。
+   *
+   * 格線是**墊在軌道底下**的參考線，而軌道容器原本帶著一層不透明的底色——
+   * 格線畫在它下面就完全看不到，畫在它上面又會蓋住色塊。底色上移之後，
+   * 軌道區與格線是同一層的兄弟節點，DOM 順序決定誰在上面（格線在前）。
+   */
+  background-color: var(--bg-canvas);
+  border-radius: 10px;
 }
 
 .timeline-container {
@@ -46,7 +55,7 @@
   position: relative;
   width: 100%;
   height: 80%;
-  background-color: var(--bg-canvas);
+  /* 底色在 `.main-controlPanel`，這裡保持透明讓節拍格線透出來 */
   overflow-y: scroll;
   border-radius: 10px;
   padding-bottom: 10px;

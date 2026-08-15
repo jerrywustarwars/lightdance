@@ -234,6 +234,40 @@ const collectProblems = () => {
     }
   }
 
+  /*
+   * 控制項的文字標籤被折行也算壞掉。
+   *
+   * 和提示的折行檢查同一個病因與同一套量法：一個兩三個字的標籤被擠成一個字
+   * 一行（實測「每小節」在播放清單裡折成三行），畫面上它「有出現」，所以純粹
+   * 看有沒有被裁切是抓不到的。
+   *
+   * 只看**短標籤**（不到 12 個字），長文字本來就該折行。
+   */
+  for (const label of document.querySelectorAll("label")) {
+    const text = (label.textContent || "").trim();
+    if (!text || text.length > 12) continue;
+
+    const r = label.getBoundingClientRect();
+    if (r.height < 2) continue;
+
+    const cs = getComputedStyle(label);
+    const lineHeight = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.4;
+    // 標籤裡常常包著輸入框，用它自己的內容高度當基準會誤判，
+    // 所以拿「最高的子元素」與行高取大值
+    const tallestChild = [...label.children].reduce(
+      (max, el) => Math.max(max, el.getBoundingClientRect().height),
+      0,
+    );
+    const oneLine = Math.max(lineHeight, tallestChild) + 4;
+
+    if (r.height > oneLine) {
+      clippedTips.push({
+        text: text.slice(0, 20),
+        reason: `標籤被折成多行（高 ${Math.round(r.height)}px，一行應該是 ${Math.round(oneLine)}px）`,
+      });
+    }
+  }
+
   // ── 4. 該對齊卻沒對齊的成對元素 ────────────────────
   //
   // 舞者開關與光衣是一一對應的：第 i 個開關控制第 i 位舞者。它們的**中心**

@@ -16,7 +16,9 @@ import {
   moveClip,
   removeClip,
   renameClip,
+  setClipTempo,
 } from "../../utils/audio/clips.js";
+import { MAX_BPM, MIN_BPM } from "../../utils/audio/tempo.js";
 import { TICK_MS } from "../../constants/time.js";
 import "./Playlist.css";
 
@@ -71,6 +73,7 @@ export function usePlaylist() {
     remove: (id) => commit(removeClip(clips, id, options)),
     move: (id, delta) => commit(moveClip(clips, id, delta, options)),
     rename: (id, name) => commit(renameClip(clips, id, name)),
+    setTempo: (id, patch) => commit(setClipTempo(clips, id, patch)),
     setOverlap: (ms) => dispatch(updateAudioOverlap(ms)),
   };
 }
@@ -160,6 +163,55 @@ function useCloseOnOutsideClick(ref, open, close) {
     document.addEventListener("mousedown", onMouseDown, true);
     return () => document.removeEventListener("mousedown", onMouseDown, true);
   }, [ref, open, close]);
+}
+
+/**
+ * 一首歌的節拍設定。
+ *
+ * 速度掛在歌上（使用者拍板：同一個音檔不變速），所以它屬於這一列而不是另外
+ * 開一條速度軌。`beatAnchor` 存的是「這首歌開始之後第幾毫秒」，用播放頭來指定
+ * ——把紅線移到第一個重拍上再按一下，比要求使用者填一個毫秒數容易得多。
+ */
+function TempoRow({ clip, onChange }) {
+  const currentTime = useSelector((state) => state.profiles.currentTime);
+  const withinClip = currentTime >= clip.start && currentTime <= clip.end;
+
+  return (
+    <div className="playlist-tempo">
+      <label>
+        BPM
+        <input
+          type="number"
+          min={MIN_BPM}
+          max={MAX_BPM}
+          value={clip.bpm}
+          onChange={(e) => onChange({ bpm: e.target.value })}
+        />
+      </label>
+      <label>
+        每小節
+        <input
+          type="number"
+          min={1}
+          max={32}
+          value={clip.beatsPerBar}
+          onChange={(e) => onChange({ beatsPerBar: e.target.value })}
+        />
+      </label>
+      <button
+        className="ld-btn ld-btn--ghost"
+        disabled={!withinClip}
+        onClick={() => onChange({ beatAnchor: currentTime - clip.start })}
+        title={
+          withinClip
+            ? "把播放頭現在的位置當成第一拍"
+            : "播放頭不在這首歌的範圍內"
+        }
+      >
+        以播放頭為第一拍
+      </button>
+    </div>
+  );
 }
 
 function Playlist({ onListChange }) {
@@ -260,6 +312,11 @@ function Playlist({ onListChange }) {
                 >
                   ✕
                 </button>
+                {/* 節拍設定不影響播放，所以不走 change()（不必停止播放） */}
+                <TempoRow
+                  clip={clip}
+                  onChange={(patch) => playlist.setTempo(clip.id, patch)}
+                />
               </li>
             ))}
             {clips.length === 0 && (
