@@ -352,7 +352,7 @@ segment 壓平回 keyframe 之後**緊鄰的色塊之間沒有黑點**，這個�
 
 | # | 項目 | 大小 | 備註 |
 |---|---|---|---|
-| B3 | **多曲銜接的 UI** | M | 引擎已經是 clip 時間軸（接續 + 接縫短暫重疊），資料模型與播放都通了。剩下的是介面：可收合的波形區、每段標歌名、加歌 / 排順序 / 調接縫 |
+| ~~B3~~ | ~~多曲銜接的 UI~~ | M | **2026-08-15 完成**。`utils/audio/clips.js`（形狀與不變式）+ `hooks/useAudioClips.js`（唯一讀取入口）+ `Playlist.jsx`（可收合，加 / 移除 / 排序 / 改名 / 接縫）+ 時間軸的 `ClipMarkers`。波形改畫整場（`stitchPeaks`） |
 | B2 | bundle 1.8MB（gzip 542kB） | S | `npm run build` 會警告 chunk > 500kB。音檔本身就佔了幾十 MB，要處理的話從 `manualChunks` 與音檔改成後端串流兩個方向 |
 
 ### C. 安全性（**從專案開始到現在一件都沒動**）
