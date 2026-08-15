@@ -6,7 +6,13 @@ import {
   updateAudioOverlap,
   updateMusicFilename,
 } from "../actions.js";
-import { MAX_OVERLAP_MS, createClip, resequence } from "../../utils/audio/clips.js";
+import {
+  MAX_OVERLAP_MS,
+  createClip,
+  migrateClips,
+  removeClip,
+  resequence,
+} from "../../utils/audio/clips.js";
 
 /**
  * 音訊時間軸在 reducer 層的行為。
@@ -44,14 +50,35 @@ describe("UPDATEAUDIOCLIPS", () => {
     expect(state.data.music_filename).toBe("b.mp3");
   });
 
-  it("清空清單時保留原本的 music_filename，不會變成 undefined", () => {
+  /*
+   * 這一則守的是一個實際踩到的 bug。
+   *
+   * `music_filename` 是清單的投影，而**投影必須是全域的**：空清單投影出來是
+   * 空字串。先前這裡寫的是「空清單就保留舊檔名」，於是讀取端的 `migrateClips`
+   * 看到「沒有 clip 但有 music_filename」，判定成還沒遷移的舊單曲專案，
+   * 幫忙生一個 clip 回來——使用者按下移除，那首歌自己長回來。
+   */
+  it("清空清單時 music_filename 一起清掉，移除的歌不會自己長回來", () => {
     const state = reduce(
       [updateAudioClips(clipsOf("a.mp3")), updateAudioClips([])],
       initial(),
     );
 
     expect(state.data.audioClips).toEqual([]);
-    expect(state.data.music_filename).toBe("a.mp3");
+    expect(state.data.music_filename).toBe("");
+    // 讀取端看到的也必須是空的
+    expect(migrateClips(state.data.audioClips, state.data.music_filename)).toEqual([]);
+  });
+
+  it("移除最後一首之後，讀取端不會再把它變出來", () => {
+    const clips = clipsOf("solo.mp3");
+    let state = profiles(initial(), updateAudioClips(clips));
+    state = profiles(
+      state,
+      updateAudioClips(removeClip(state.data.audioClips, clips[0].id)),
+    );
+
+    expect(migrateClips(state.data.audioClips, state.data.music_filename)).toEqual([]);
   });
 
   it("同一份清單再 dispatch 一次是同一個 state", () => {

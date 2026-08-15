@@ -1065,6 +1065,35 @@ const run = async () => {
       `${Math.round(overlapped)}ms → ${Math.round(backToOne)}ms`,
     );
 
+    /*
+     * 移除**最後一首**是自己的一個邊界，不是「再移除一次」而已。
+     *
+     * `music_filename` 是清單的投影，而空清單的投影是空字串。先前那裡保留了
+     * 舊檔名，於是讀取端把「沒有 clip 但有 music_filename」判定成還沒遷移的
+     * 舊單曲專案，幫忙生一個 clip 回來——**按下移除，那首歌自己長回來**。
+     * 只移除到剩一首的測試完全看不到這件事。
+     */
+    await page.click(".playlist-item:nth-child(1) .ld-btn--danger");
+    await page.waitForTimeout(1200);
+
+    record(
+      "移除最後一首之後它不會自己長回來",
+      (await page.locator(".playlist-item").count()) === 0 &&
+        (await durationOf()) === 0,
+      `${await page.locator(".playlist-item").count()} 首・${await durationOf()}ms`,
+    );
+
+    // 加回來，後面的 Output 與 /edit 兩項才有音樂可用
+    await page.selectOption("[data-testid='playlist-panel'] select", { index: 0 });
+    await page.click("[data-testid='playlist-panel'] .playlist-add button");
+    await page.waitForTimeout(1500);
+
+    record(
+      "加回來之後時間軸恢復",
+      Math.abs((await durationOf()) - oneSong) < 200,
+      `${Math.round(await durationOf())}ms`,
+    );
+
     await toggle.click();
     await page.waitForTimeout(200);
   }
@@ -1108,6 +1137,26 @@ const run = async () => {
       `${before} → ${after}`,
     );
     await shot(page, "edit-table");
+  }
+
+  /*
+   * 每一條 lazy 路由都要真的打得開。
+   *
+   * `App.jsx` 把 `/`、`/dashboard`、`/model` 切成獨立 chunk 之後，載入失敗
+   * （chunk 抓不到、模組沒有 default export）**不會在建置時被發現**——畫面
+   * 只是一片空白加一則 console 錯誤。這幾頁先前沒有任何測試走過。
+   */
+  for (const [path, label] of [
+    ["/", "Welcome"],
+    ["/dashboard", "Dashboard"],
+    ["/model", "3D 模型"],
+  ]) {
+    await page.goto(`${BASE}${path}`, { waitUntil: "networkidle" });
+    await page.waitForTimeout(600);
+    const rendered = await page.evaluate(
+      () => document.getElementById("root")?.childElementCount ?? 0,
+    );
+    record(`lazy 路由 ${path} 打得開（${label}）`, rendered > 0, `${rendered} 個節點`);
   }
 
   writeFileSync(join(OUT, "console-errors.txt"), errors.join("\n") || "(無)");

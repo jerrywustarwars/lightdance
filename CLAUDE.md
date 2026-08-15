@@ -195,10 +195,11 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 ```bash
 cd frontend
 npm run dev            # 另一個終端機
-npm run e2e            # 50 項：放色 / 選取 / 框選 / 剪下 / undo / 快捷鍵 /
+npm run e2e            # 55 項：放色 / 選取 / 框選 / 剪下 / undo / 快捷鍵 /
                        #        重新整理 / 拖曳 resize / 多段一起搬 / 頻閃 /
                        #        刻度尺 / 倍速 / 波形 / 道具 / 調色盤 /
-                       #        工作集 / 行高 / 播放清單 / Output / /edit
+                       #        工作集 / 行高 / 播放清單 / Output / /edit /
+                       #        lazy 路由打得開
 npm run audit:layout   # 5 項：控制項被蓋住 / 元素溢出容器 / 提示被裁掉或折行 /
                        #      成對元素沒對齊（含軌名列↔時間軸逐列）/
                        #      各塊邊緣與各排內容左緣沒對齊
@@ -401,7 +402,10 @@ React**——這樣才能拿假的 AudioContext 在 jsdom 裡驗排程，而「�
 `fadeIn`/`fadeOut` 記的是這個**實際值**，位置與包絡由同一個數字推導。
 
 ⚠️ **`music_filename` 是 clip 清單的投影，不是另一份真相。** 後端的 raw_data、
-舊的本地備份、Dashboard 的清單都認得那個欄位，所以 reducer 讓它永遠等於第一首。
+舊的本地備份、Dashboard 的清單都認得那個欄位，所以 reducer 讓它永遠等於第一首
+——**空清單投影出來是空字串**。留著舊檔名的話讀取端會把「沒有 clip 但有
+music_filename」判成還沒遷移的舊單曲專案而生一個 clip 回來，於是**移除最後一首
+之後它自己長回來**（只移除到剩一首的測試看不到這件事）。
 反過來，舊的單曲入口 `updateMusicFilename` 會換掉整張清單，但**第一首已經是它時
 不動**——多曲專案載入時 envelope 的 `music_filename` 就是第一首，不擋的話先
 dispatch 的那一下會把後面幾首丟掉。
@@ -410,6 +414,19 @@ dispatch 的那一下會把後面幾首丟掉。
 `createClip` 先給一格佔位，`waveform.jsx` 解碼完用 `applyMeasuredLengths` 補回
 store。那個函式在沒有任何一條改變時回傳**原 reference**——不擋住的話
 「dispatch → store 變 → 重新載入 → 再 dispatch」會轉成無窮迴圈。
+
+⚠️ **遷移出來的 clip 要有決定性的 id。** `useAudioClips` 是每個呼叫端各跑一次的
+（波形、播放清單、接縫標記三個），隨機 id 會讓同一個舊專案在三個元件眼裡是三個
+不同的 clip——三邊畫面都正常，只是對「這是哪一首」沒有共識，而那正是這個 hook
+要消滅的東西。舊模型一場表演只有一首歌，所以檔名就是身分（`legacy:<檔名>`）。
+
+⚠️ **接縫滑桿拖曳中不 dispatch**（和逐軌行高把手同一個做法）。改接縫會讓整張
+清單重排、波形重新拼一次，而 `stitchPeaks` 要跑 20 萬個桶乘上歌數——每格像素都
+dispatch 等於每秒做幾十次那個運算。
+
+⚠️ **`engine.setClips` 播放中會停下來，但停的是引擎自己的旗標**，React 的
+`isPlaying` 不會跟著變（會變成「按鈕顯示播放中但沒有聲音」）。載入 effect 只要
+重跑就會呼叫它，所以先用 `sameClipTimeline` 擋掉沒有內容變化的那些。
 
 ⚠️ **store 存檔名，引擎收 URL。** 換一個部署、換一個使用者，同一份光表的音樂還是
 同幾首歌，而網址前綴會變。解析在 `waveform.jsx` 的 `useResolvedClips`，量到的
@@ -660,6 +677,25 @@ public fork——那個檔案永遠不得 import 進 fixture、不得 commit。*
 - 確保安全性問題沒有被引入
 
 ## 更新記錄
+
+- **2026-08-15（晚）**：**多曲銜接的複查**，抓到兩個「畫面看起來完全正常」的錯誤。
+  ① **移除最後一首之後它自己長回來**：`music_filename` 是清單的投影，但空清單時
+  reducer 保留了舊檔名，於是讀取端的 `migrateClips` 把「沒有 clip 但有
+  music_filename」判成還沒遷移的舊單曲專案，幫忙生一個回來——投影必須是全域的，
+  空清單投影出來是空字串。只移除到剩一首的測試完全看不到（e2e 補了這個邊界，
+  故意改回去驗過會指出「1 首・30000ms」）。② **遷移出來的 clip 用隨機 id**，
+  而 `useAudioClips` 是三個呼叫端各跑一次的，同一個舊專案在波形、播放清單、接縫
+  標記眼裡是三個不同的 clip；改成由檔名推導的決定性 id。
+  另外修掉四件事：清單清空時載入 effect 只是 early return，引擎手上還留著上一份
+  clip、duration 與波形都是舊的（按播放會播到剛移除的那首）；接縫滑桿每一格像素
+  都 dispatch，而那會讓 `stitchPeaks` 跑 20 萬桶乘上歌數（改成停下來才寫，
+  和逐軌行高把手同一個做法）；`renameClip` 沒變也回傳新陣列，讓呼叫端的
+  「沒變就不 dispatch」失效；歌單改動不算「尚未儲存」（用歌單本身的欄位當簽章，
+  避開解碼後寫回長度造成的假陽性）。順手把 `sameClipTimeline` 從元件搬進
+  `clips.js`（它是領域問題不是渲染細節）、外部 JSON 進來時補齊缺的欄位、
+  刪掉沒有人用的 `clipIndexAt` 與 `isDerived`，並補上三條 lazy 路由的煙霧測試
+  ——`/`、`/dashboard`、`/model` 在切 chunk 之後沒有任何測試走過。
+  e2e 50 → 55。測試 615 → 622 passed
 
 - **2026-08-15（下午）**：**初始 JS 從 1817 收到 475 KB**（gzip 547 → 156）。
   用 sourcemap 逐套件統計之後發現 **746 KB 是 `/model` 那一頁的 `three` 與

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faMusic } from "@fortawesome/free-solid-svg-icons";
@@ -75,6 +75,40 @@ export function usePlaylist() {
   };
 }
 
+/**
+ * 接縫滑桿：拖的時候只更新自己，停下來才寫進 store。
+ *
+ * ⚠️ **每一格像素都 dispatch 是不行的。** 改接縫會讓整張清單重排，而重排之後
+ * 波形要重新拼一次——`stitchPeaks` 要跑 20 萬個桶乘上歌數。滑桿的 `onChange`
+ * 在拖曳中每秒會觸發幾十次，等於每秒做幾十次那個運算，手感會整個卡住。
+ *
+ * 和逐軌行高把手是同一個做法（拖曳中只改自己、放開才 dispatch），只是這裡用
+ * 「停止變動 `COMMIT_DELAY_MS`」判斷放開——range input 沒有可靠的「拖曳結束」
+ * 事件（鍵盤操作、程式設值都不會有 pointerup）。
+ */
+const COMMIT_DELAY_MS = 200;
+
+function useSeamSlider(overlapMs, commit) {
+  const [draft, setDraft] = useState(null);
+  const commitRef = useRef(commit);
+  commitRef.current = commit;
+
+  useEffect(() => {
+    if (draft === null) return;
+    const timer = setTimeout(() => {
+      commitRef.current(draft);
+      setDraft(null);
+    }, COMMIT_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [draft]);
+
+  return {
+    // 拖曳中顯示自己的值，放手之後回頭跟著 store
+    value: draft ?? overlapMs,
+    preview: setDraft,
+  };
+}
+
 /** 後端上這個使用者有哪些音檔可以選 */
 function useMusicLibrary() {
   const userName = useSelector((state) => state.profiles.user);
@@ -116,6 +150,10 @@ function Playlist({ onListChange }) {
     onListChange?.();
     fn();
   };
+
+  const seam = useSeamSlider(playlist.overlapMs, (ms) =>
+    change(() => playlist.setOverlap(ms)),
+  );
 
   const handleRename = (clip) => {
     const name = window.prompt("這一首叫什麼名字？", clip.name);
@@ -228,11 +266,11 @@ function Playlist({ onListChange }) {
               min={0}
               max={MAX_OVERLAP_MS}
               step={TICK_MS}
-              value={playlist.overlapMs}
-              onChange={(e) => change(() => playlist.setOverlap(Number(e.target.value)))}
+              value={seam.value}
+              onChange={(e) => seam.preview(Number(e.target.value))}
             />
             <span className="playlist-seam-value">
-              {(playlist.overlapMs / 1000).toFixed(2)}s
+              {(seam.value / 1000).toFixed(2)}s
             </span>
           </div>
         </div>

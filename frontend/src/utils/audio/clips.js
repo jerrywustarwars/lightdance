@@ -58,10 +58,11 @@ export const createClip = ({
   sourceFile,
   durationMs,
   name,
+  id,
   sourceOffset = 0,
   gain = 1,
 }) => ({
-  id: makeId(),
+  id: id || makeId(),
   name: name || nameFromFile(sourceFile),
   sourceFile,
   sourceOffset,
@@ -186,24 +187,56 @@ export function moveClip(clips, id, delta, options) {
   return resequence(next, options);
 }
 
-/** 改名（空字串會退回從檔名推出來的名字，不允許無名的 clip） */
+/**
+ * 改名（空字串會退回從檔名推出來的名字，不允許無名的 clip）。
+ *
+ * 名字沒有真的變時回傳**原 reference**，和 `moveClip` / `applyMeasuredLengths`
+ * 一致——呼叫端統一用 `next === clips` 判斷「要不要 dispatch」，只要有一個函式
+ * 每次都給新陣列，那個判斷就會靜靜地失效。
+ */
 export function renameClip(clips, id, name) {
   const list = clips ?? [];
   const trimmed = String(name ?? "").trim();
-  return list.map((clip) =>
-    clip.id === id
-      ? { ...clip, name: trimmed || nameFromFile(clip.sourceFile) }
-      : clip,
-  );
+
+  let changed = false;
+  const next = list.map((clip) => {
+    if (clip.id !== id) return clip;
+    const nextName = trimmed || nameFromFile(clip.sourceFile);
+    if (nextName === clip.name) return clip;
+    changed = true;
+    return { ...clip, name: nextName };
+  });
+
+  return changed ? next : list;
 }
 
-/** 某個時間點播到第幾首（接縫重疊時算**後面**那一首，跟著使用者的注意力走） */
-export function clipIndexAt(clips, timeMs) {
-  const list = clips ?? [];
-  for (let i = list.length - 1; i >= 0; i--) {
-    if (list[i].start <= timeMs) return i;
-  }
-  return list.length ? 0 : -1;
+/**
+ * 兩份清單在**播放上**是不是同一件事。
+ *
+ * 只比排程真正會用到的欄位：檔案、在表演時間軸上的位置、音檔內的起點、接縫的
+ * 淡入淡出、音量。改個名字不影響播放，不該讓引擎重排。
+ *
+ * 存在的理由是 `engine.setClips` 播放中會停下來（排好的 `when` 是用舊清單算的），
+ * 但它停的是引擎自己的旗標，React 的 `isPlaying` 不會跟著變——變成「按鈕顯示
+ * 播放中但沒有聲音」。呼叫端用這個判斷來擋掉沒有內容變化的那些呼叫。
+ */
+export function sameClipTimeline(a, b) {
+  const left = a ?? [];
+  const right = b ?? [];
+  if (left.length !== right.length) return false;
+
+  return left.every((clip, index) => {
+    const other = right[index];
+    return (
+      clip.sourceFile === other.sourceFile &&
+      clip.start === other.start &&
+      clip.end === other.end &&
+      clip.sourceOffset === other.sourceOffset &&
+      clip.fadeIn === other.fadeIn &&
+      clip.fadeOut === other.fadeOut &&
+      clip.gain === other.gain
+    );
+  });
 }
 
 export { totalDuration };
@@ -216,9 +249,69 @@ export { totalDuration };
  * 否則從檔名生一個 clip。
  *
  * 長度這裡還不知道（要解碼才有），先給 0，載入時再補上並 resequence。
+ *
+ * ⚠️ **已經是清單的話位置照收，不重排。** 位置雖然是推導出來的（順序 + 長度 +
+ * 接縫），但重排需要知道當時的 `overlapMs`，而那是另一個欄位、由載入路徑分開
+ * dispatch。這裡重排等於拿預設值 0 把存好的接縫抹掉。存檔那一端每次寫入都跑過
+ * `resequence`，所以正常資料本來就是一致的；真的歪掉（有人手改 JSON）的話，
+ * 解碼完 `applyMeasuredLengths` 一發現長度對不上就會整份重排回來。
  */
 export function migrateClips(audioClips, musicFilename) {
-  if (Array.isArray(audioClips) && audioClips.length > 0) return audioClips;
+  if (Array.isArray(audioClips) && audioClips.length > 0) {
+    return normalizeClips(audioClips);
+  }
   if (!musicFilename) return [];
-  return resequence([createClip({ sourceFile: musicFilename, durationMs: 0 })]);
+
+  /*
+   * ⚠️ 遷移出來的 clip 必須有**決定性的 id**，不能用隨機的。
+   *
+   * 這個函式是 `useAudioClips` 每個呼叫端各跑一次的（波形、播放清單、接縫標記
+   * 目前就是三個）。id 隨機的話，同一個「還沒遷移的舊單曲專案」在三個元件眼裡
+   * 是三個不同的 clip——而畫面上三邊都正常，只是它們對「這是哪一首」沒有共識。
+   * 那正是這個 hook 想消滅的東西。
+   *
+   * 檔名在這個情境下就是身分（舊模型一場表演只有一首歌），所以拿它當 id。
+   */
+  return resequence([
+    createClip({
+      sourceFile: musicFilename,
+      durationMs: 0,
+      id: `legacy:${musicFilename}`,
+    }),
+  ]);
+}
+
+/**
+ * 補齊從外部 JSON 進來的 clip 缺的欄位。
+ *
+ * 這裡是**外部資料進到程式裡的那道門**：伺服器的 raw_data、IndexedDB 的舊備份、
+ * 使用者手動改過的檔案都從這裡進來，而它們只保證「曾經被某一版的程式寫出來」。
+ * 少一個 `name` 不會丟例外，只會讓播放清單上出現一列空白；少一個 `gain` 會讓
+ * 音量包絡算出 `NaN` 然後整首歌靜音——都是不會報錯的那種壞法。
+ *
+ * 全部都齊時回傳**原 reference**，正常路徑上不會多配置一份陣列。
+ */
+function normalizeClips(clips) {
+  let changed = false;
+
+  const next = clips.map((clip) => {
+    const fixed = { ...clip };
+    if (!fixed.id) fixed.id = makeId();
+    if (!fixed.name) fixed.name = nameFromFile(fixed.sourceFile);
+    if (!Number.isFinite(fixed.sourceOffset)) fixed.sourceOffset = 0;
+    if (!Number.isFinite(fixed.gain)) fixed.gain = 1;
+    if (!Number.isFinite(fixed.fadeIn)) fixed.fadeIn = 0;
+    if (!Number.isFinite(fixed.fadeOut)) fixed.fadeOut = 0;
+    if (!Number.isFinite(fixed.lengthMs)) fixed.lengthMs = lengthOf(clip);
+    if (!Number.isFinite(fixed.start)) fixed.start = 0;
+    if (!Number.isFinite(fixed.end)) fixed.end = fixed.start + fixed.lengthMs;
+
+    const same = Object.keys(fixed).every((key) => fixed[key] === clip[key]);
+    if (same) return clip;
+
+    changed = true;
+    return fixed;
+  });
+
+  return changed ? next : clips;
 }

@@ -125,6 +125,22 @@ function Home({ rgba, setRgba, setButtonState }) {
     setIsDirty(true);
   }, [actionTable]);
 
+  /*
+   * 歌單也是專案資料（它會一起進 raw_data），改了就是還沒存。
+   *
+   * ⚠️ 這裡刻意**不看整份 `audioClips`**，只看「歌單本身」那幾個欄位。音檔解碼
+   * 完之後 `waveform.jsx` 會把量到的長度寫回 store，那會動到 `lengthMs` 與
+   * `start`/`end`——那是推導出來的資料不是使用者的編輯，看整份的話每次載入專案
+   * 都會立刻亮起「尚未儲存」，橫幅就再也沒有意義了。
+   */
+  const playlistSignature = (data.audioClips ?? [])
+    .map((clip) => `${clip.sourceFile}:${clip.name}`)
+    .join("|");
+
+  useEffect(() => {
+    setIsDirty(true);
+  }, [playlistSignature, data.audioOverlapMs]);
+
   useEffect(() => {
     const handleBeforeUnload = (e) => {
       // persist 的寫入有 2 秒 debounce，而 debouncedStorage.setItem 會立刻

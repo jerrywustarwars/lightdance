@@ -31,13 +31,7 @@ export function useAudioClips() {
     [stored, musicFilename],
   );
 
-  return {
-    clips,
-    overlapMs,
-    durationMs: totalDuration(clips),
-    /** 這份清單是不是還沒進 store（遷移出來的暫定值） */
-    isDerived: clips !== stored,
-  };
+  return { clips, overlapMs, durationMs: totalDuration(clips) };
 }
 
 export default useAudioClips;

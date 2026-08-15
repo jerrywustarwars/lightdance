@@ -7,7 +7,10 @@ import {
   peaksFromChannel,
   stitchPeaks,
 } from "../../utils/audio/peaks.js";
-import { applyMeasuredLengths } from "../../utils/audio/clips.js";
+import {
+  applyMeasuredLengths,
+  sameClipTimeline,
+} from "../../utils/audio/clips.js";
 import { totalDuration } from "../../utils/audio/schedule.js";
 import { useAudioClips } from "../../hooks/useAudioClips.js";
 import { TICK_MS } from "../../constants/time.js";
@@ -75,6 +78,10 @@ const AudioWaveform = ({
   const wasPlayingRef = useRef(false);
   // 檔名 → 整首歌的峰值。換歌單順序時不必重算（見載入 effect）
   const peaksCacheRef = useRef(new Map());
+  // 載入 effect 要讀播放頭，但**不能把它放進相依陣列**——播放時每 40ms 就變一次，
+  // 整條音訊會被重新載入。用 ref 讀最新值即可
+  const currentTimeRef = useRef(currentTime);
+  currentTimeRef.current = currentTime;
   // 監聽滾動並更新`scrollPosition`
   useEffect(() => {
     const handleScroll = () => {
@@ -155,14 +162,39 @@ const AudioWaveform = ({
    * 「dispatch → store 變 → 重新載入 → 再 dispatch」會轉成無窮迴圈）。
    */
   useEffect(() => {
-    if (!engine || clips.length === 0) return;
+    if (!engine) return;
     let cancelled = false;
 
     setIsLoaded(false);
 
+    /*
+     * 一首歌都沒有的時候要**主動把東西清掉**，不能只是 return。
+     *
+     * 早退的話引擎手上還留著上一份 clip（按播放會播到剛剛移除的那首歌）、
+     * redux 的 `duration` 還是舊值、`fullPeaks` 還是舊波形——畫面上看起來
+     * 一切正常，只是那條時間軸已經不對應任何音訊了。
+     */
+    if (clips.length === 0) {
+      engine.setClips([]);
+      dispatch(updateDuration(0));
+      dispatch(updateFullpeaks([]));
+      dispatch(updateCurrentTime(0));
+      return;
+    }
+
     const files = [...new Set(clips.map((clip) => clip.sourceFile))];
 
-    Promise.all(files.map((file) => engine.load(file).then((buffer) => [file, buffer])))
+    Promise.all(
+      files.map((file) =>
+        engine.load(file).then(
+          (buffer) => [file, buffer],
+          // 一場表演現在有好幾個檔案，錯誤訊息不指名的話根本不知道是哪一首壞了
+          (error) => {
+            throw new Error(`載入音檔失敗：${file}`, { cause: error });
+          },
+        ),
+      ),
+    )
       .then((entries) => {
         if (cancelled) return;
 
@@ -170,8 +202,17 @@ const AudioWaveform = ({
           entries.map(([file, buffer]) => [file, buffer.duration * 1000]),
         );
 
-        // 峰值逐檔快取：換順序、調接縫只是把同一份峰值重新拼一次，
-        // 不必為了畫圖再把幾百萬個取樣點掃過一遍
+        /*
+         * 峰值逐檔快取：換順序、調接縫只是把同一份峰值重新拼一次，不必為了畫圖
+         * 再把幾百萬個取樣點掃過一遍。
+         *
+         * 同時**清掉已經不在清單裡的**——每首歌的峰值是 20 萬個數字（約 1.6MB），
+         * 換過十幾首歌之後留著全部等於白佔十幾 MB。
+         */
+        const wanted = new Set(files);
+        for (const file of peaksCacheRef.current.keys()) {
+          if (!wanted.has(file)) peaksCacheRef.current.delete(file);
+        }
         for (const [file, buffer] of entries) {
           if (!peaksCacheRef.current.has(file)) {
             peaksCacheRef.current.set(file, getPeaks(buffer));
@@ -183,9 +224,25 @@ const AudioWaveform = ({
         if (measured !== clips) onClipsMeasured?.(measured);
 
         const durationMs = totalDuration(measured);
-        engine.setClips(measured);
+
+        /*
+         * ⚠️ 只有**真的不一樣**才交給引擎。
+         *
+         * `engine.setClips` 播放中會停下來（排好的 `when` 是用舊清單算的，
+         * 不停就會聽到已經不存在的東西），但它停的是引擎自己的旗標，React 的
+         * `isPlaying` 不會跟著變——變成「按鈕顯示播放中但沒有聲音」。
+         * 這個 effect 只要重跑就會呼叫它，所以在這裡擋掉沒有內容變化的那些。
+         */
+        if (!sameClipTimeline(engine.getClips(), measured)) {
+          engine.setClips(measured);
+        }
         setIsLoaded(true);
         dispatch(updateDuration(durationMs));
+
+        // 表演變短時把播放頭收回範圍內，否則紅線會停在時間軸外面
+        if (currentTimeRef.current > durationMs) {
+          dispatch(updateCurrentTime(Math.floor(durationMs / TICK_MS) * TICK_MS));
+        }
         dispatch(
           updateFullpeaks(
             stitchPeaks(
@@ -480,16 +537,21 @@ function Wave({
 
   /*
    * 解碼後量到的長度要寫回 store，但寫回去的必須是**檔名版**的 clip——
-   * 上面那層把 sourceFile 換成了 URL，原樣存進去的話換一台機器就打不開了。
-   * 兩份清單逐項對應，所以照 index 把長度貼回原本那一份。
+   * 上面那層把 sourceFile 換成了 URL，原樣存進去的話換一台機器（或換一個
+   * 使用者）就打不開了。
+   *
+   * 用 `id` 對回原本那一份，不用 index：兩份清單目前確實是逐項對應的，但那是
+   * 「`resequence` 不增刪項目」這個實作細節帶來的巧合，而 id 是 clip 身上
+   * 本來就有的身分。哪天中間多一道過濾，index 版會靜靜地把檔名接錯到別首歌。
    */
   const handleMeasured = useCallback(
     (measured) => {
+      const fileById = new Map(clips.map((clip) => [clip.id, clip.sourceFile]));
       dispatch(
         updateAudioClips(
-          measured.map((clip, index) => ({
+          measured.map((clip) => ({
             ...clip,
-            sourceFile: clips[index]?.sourceFile ?? clip.sourceFile,
+            sourceFile: fileById.get(clip.id) ?? clip.sourceFile,
           })),
         ),
       );

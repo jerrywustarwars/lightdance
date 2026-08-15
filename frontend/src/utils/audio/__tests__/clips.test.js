@@ -5,7 +5,6 @@ import {
   MAX_OVERLAP_MS,
   addClip,
   applyMeasuredLengths,
-  clipIndexAt,
   createClip,
   migrateClips,
   moveClip,
@@ -13,6 +12,7 @@ import {
   removeClip,
   renameClip,
   resequence,
+  sameClipTimeline,
   totalDuration,
 } from "../clips.js";
 
@@ -317,32 +317,51 @@ describe("renameClip", () => {
     expect(renameClip(list, "a", "   ")[0].name).toBe("a"); // a.mp3 → a
     expect(renameClip(list, "a", null)[0].name).toBe("a");
   });
+
+  /*
+   * 呼叫端統一用 `next === clips` 判斷要不要 dispatch，所以每個函式都要遵守
+   * 「沒變就回原 reference」。只要有一個每次都給新陣列，那個判斷就靜靜失效。
+   */
+  it("名字沒變、或找不到 id 時回傳原 reference", () => {
+    expect(renameClip(list, "a", "a")).toBe(list);
+    expect(renameClip(list, "nope", "x")).toBe(list);
+    expect(renameClip(undefined, "a", "x")).toEqual([]);
+  });
 });
 
-describe("clipIndexAt", () => {
-  const list = resequence([clip("a", 1000), clip("b", 1000), clip("c", 1000)]);
+describe("sameClipTimeline", () => {
+  const list = resequence([clip("a", 1000), clip("b", 1000)], { overlapMs: 200 });
 
-  it("落在哪一首就回哪一首", () => {
-    expect(clipIndexAt(list, 0)).toBe(0);
-    expect(clipIndexAt(list, 999)).toBe(0);
-    expect(clipIndexAt(list, 1000)).toBe(1);
-    expect(clipIndexAt(list, 2500)).toBe(2);
+  it("同一份清單當然一樣", () => {
+    expect(sameClipTimeline(list, list)).toBe(true);
   });
 
-  it("接縫重疊時算後面那一首——使用者的注意力在下一段", () => {
-    const seamed = resequence([clip("a", 2000), clip("b", 2000)], { overlapMs: 500 });
-
-    expect(seamed[1].start).toBe(1500);
-    expect(clipIndexAt(seamed, 1600)).toBe(1); // 兩首都在響，算後面那首
+  it("內容相同但是不同物件也算一樣", () => {
+    expect(sameClipTimeline(list, list.map((c) => ({ ...c })))).toBe(true);
   });
 
-  it("超過結尾算最後一首", () => {
-    expect(clipIndexAt(list, 999999)).toBe(2);
+  it("改名字不影響播放，算一樣", () => {
+    const renamed = renameClip(list, "a", "開場");
+    expect(sameClipTimeline(list, renamed)).toBe(true);
   });
 
-  it("空清單回 -1", () => {
-    expect(clipIndexAt([], 0)).toBe(-1);
-    expect(clipIndexAt(undefined, 0)).toBe(-1);
+  it("位置、檔案、接縫、音量任何一項變了就不一樣", () => {
+    const bump = (patch) => [{ ...list[0], ...patch }, list[1]];
+
+    expect(sameClipTimeline(list, bump({ start: 50 }))).toBe(false);
+    expect(sameClipTimeline(list, bump({ end: 999 }))).toBe(false);
+    expect(sameClipTimeline(list, bump({ sourceFile: "x.mp3" }))).toBe(false);
+    expect(sameClipTimeline(list, bump({ sourceOffset: 3 }))).toBe(false);
+    expect(sameClipTimeline(list, bump({ fadeIn: 10 }))).toBe(false);
+    expect(sameClipTimeline(list, bump({ fadeOut: 10 }))).toBe(false);
+    expect(sameClipTimeline(list, bump({ gain: 0.5 }))).toBe(false);
+  });
+
+  it("長度不同就不一樣，空清單之間一樣", () => {
+    expect(sameClipTimeline(list, list.slice(0, 1))).toBe(false);
+    expect(sameClipTimeline([], [])).toBe(true);
+    expect(sameClipTimeline(undefined, [])).toBe(true);
+    expect(sameClipTimeline(undefined, list)).toBe(false);
   });
 });
 
@@ -366,6 +385,48 @@ describe("migrateClips", () => {
 
   it("遷移出來的長度先是一格，等解碼完再補", () => {
     expect(migrateClips(null, "a.mp3")[0].lengthMs).toBe(TICK_MS);
+  });
+
+  /*
+   * `useAudioClips` 是每個呼叫端各跑一次的（波形、播放清單、接縫標記三個）。
+   * 遷移用隨機 id 的話，同一個舊專案在三個元件眼裡是三個不同的 clip——三邊
+   * 畫面都正常，只是對「這是哪一首」沒有共識，而那正是那個 hook 要消滅的東西。
+   */
+  it("遷移是決定性的：不同呼叫端得到同一個 clip", () => {
+    expect(migrateClips([], "show.mp3")).toEqual(migrateClips(null, "show.mp3"));
+  });
+
+  it("新加的歌各有各的 id（決定性只適用於遷移）", () => {
+    const a = createClip({ sourceFile: "a.mp3", durationMs: 1000 });
+    const b = createClip({ sourceFile: "a.mp3", durationMs: 1000 });
+    expect(a.id).not.toBe(b.id);
+  });
+
+  /*
+   * 這裡是外部 JSON 進到程式裡的那道門。少一個欄位都不會丟例外，只會靜靜地
+   * 壞掉——少 `name` 是清單上一列空白，少 `gain` 是音量包絡算出 NaN 然後整首
+   * 歌沒有聲音。
+   */
+  it("外部資料缺欄位時補齊，不讓 undefined 流進播放路徑", () => {
+    const [out] = migrateClips(
+      [{ sourceFile: "opening.mp3", start: 0, end: 4000 }],
+      "opening.mp3",
+    );
+
+    expect(out).toMatchObject({
+      name: "opening",
+      sourceOffset: 0,
+      gain: 1,
+      fadeIn: 0,
+      fadeOut: 0,
+      lengthMs: 4000,
+    });
+    expect(out.id).toBeTruthy();
+  });
+
+  it("欄位本來就齊全時回傳原 reference", () => {
+    const list = resequence([clip("a", 1000)]);
+    expect(migrateClips(list, "a.mp3")).toBe(list);
   });
 });
 

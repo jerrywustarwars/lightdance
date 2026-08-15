@@ -143,7 +143,15 @@ export const profiles = (state = initialState, action) => {
         data: {
           ...state.data,
           audioClips,
-          music_filename: audioClips[0]?.sourceFile ?? state.data.music_filename,
+          /*
+           * ⚠️ 空清單要把 `music_filename` 一起清掉，**不能保留舊的檔名**。
+           *
+           * 投影必須是全域的：讀取端 `migrateClips` 看到「沒有 clip 但有
+           * music_filename」時，會把那個檔名當成還沒遷移的舊單曲專案，
+           * 於是幫你生一個 clip 出來——結果是**移除最後一首之後它自己長回來**。
+           * 留著舊檔名等於同時宣稱「沒有歌」和「有一首歌」。
+           */
+          music_filename: audioClips[0]?.sourceFile ?? "",
         },
       };
     }

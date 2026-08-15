@@ -249,7 +249,11 @@ describe("loadProjectData 的音訊時間軸", () => {
       audioOverlapMs: 250,
     });
 
-    expect(loaded.audioClips).toBe(audioClips);
+    // 內容原樣保留（缺的欄位由 migrateClips 補齊，所以不比 reference）
+    expect(loaded.audioClips).toHaveLength(2);
+    expect(loaded.audioClips.map((c) => c.sourceFile)).toEqual(["a.mp3", "b.mp3"]);
+    expect(loaded.audioClips.map((c) => c.start)).toEqual([0, 1000]);
+    expect(loaded.audioClips[0].name).toBe("開場");
     expect(loaded.overlapMs).toBe(250);
   });
 
