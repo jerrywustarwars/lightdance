@@ -47,7 +47,8 @@
     "test:watch": "vitest",
     "test:update-golden": "node scripts/generate-golden.mjs",
     "e2e": "node e2e/checklist.mjs",
-    "audit:layout": "node e2e/layout-audit.mjs"
+    "audit:layout": "node e2e/layout-audit.mjs",
+    "audit:bundle": "node e2e/bundle-budget.mjs"
   },
   "eslintConfig": {
     "extends": [

@@ -6,7 +6,7 @@ import People from "../components/People.jsx";
 import DancerToggle from "../components/DancerToggle.jsx";
 import { MdOutput, MdInput, MdKeyboard } from "react-icons/md";
 import { FiEdit } from "react-icons/fi";
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { FaSignOutAlt } from "react-icons/fa";
 import { useDispatch, useSelector } from "react-redux";
 import { updateActionTable, updateMusicFilename } from "../redux/actions";
@@ -16,9 +16,13 @@ import "bootstrap/dist/js/bootstrap.bundle.min.js";
 import "bootstrap/dist/css/bootstrap.min.css";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faRobot } from "@fortawesome/free-solid-svg-icons";
-import { set } from "lodash";
 import { LuPlus, LuMusic, LuChevronRight } from "react-icons/lu";
-import ShortcutModal from "../components/ShortcutModal.jsx";
+/*
+ * 快捷鍵說明是個很少打開的 modal，但它帶著整套 markdown 轉譯器
+ * （`react-markdown` + `remark-gfm` + micromark/mdast，實測約 80KB）。
+ * 那些東西不該躺在編輯器的熱路徑上，所以按需求才抓。
+ */
+const ShortcutModal = lazy(() => import("../components/ShortcutModal.jsx"));
 import { API_ENDPOINTS } from "../config/api.js";
 import { localMusicFiles } from "../components/audio/musicData.js";
 import {
@@ -487,10 +491,15 @@ function Home({ rgba, setRgba, setButtonState }) {
           </div>
         </div>
       )}
-      <ShortcutModal
-        isOpen={showShortcuts}
-        onClose={() => setShowShortcuts(false)}
-      />
+      {/* 沒打開就完全不 render——lazy 只有在真的用到時才會去抓那個 chunk */}
+      {showShortcuts && (
+        <Suspense fallback={null}>
+          <ShortcutModal
+            isOpen={showShortcuts}
+            onClose={() => setShowShortcuts(false)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

@@ -202,6 +202,7 @@ npm run e2e            # 50 項：放色 / 選取 / 框選 / 剪下 / undo / 快
 npm run audit:layout   # 5 項：控制項被蓋住 / 元素溢出容器 / 提示被裁掉或折行 /
                        #      成對元素沒對齊（含軌名列↔時間軸逐列）/
                        #      各塊邊緣與各排內容左緣沒對齊
+npm run audit:bundle   # 初始 JS 的大小預算（不需要 dev server，自己跑一次 build）
 ```
 
 兩支都會把截圖存在 `frontend/e2e/shots/`。動過 CSS、版面或快捷鍵之後請跑一次
@@ -422,6 +423,30 @@ UI 是可收合的（`components/audio/Playlist.jsx`）：排燈時幾乎不會�
 常駐六列等於用最貴的版面放最少用的功能。時間軸上的接縫由 `ClipMarkers` 標出來，
 和 `TimeRuler` / `ShiftMarkers` 同一個座標系。
 
+### 路由層 lazy 與大小預算
+
+開編輯器要下載多少 JS 是個**只會往上爬**的數字：每個人加一個 import 都只多幾十
+KB，沒有人會為了幾十 KB 反對一個功能。實測爬到 1817 KB（gzip 547 KB）時，
+其中 **746 KB 是 `/model` 那一頁的 `three` 與 `@google/model-viewer`**——
+排燈的人從頭到尾不會打開那一頁。另外 `Home.jsx` 還有一行完全沒用到的
+`import { set } from "lodash"`（72 KB）。
+
+分割線畫在**路由**上（`App.jsx` 的 `lazy`），不是靠 `manualChunks` 手動分組：
+路由本來就是「使用者現在需要哪些程式碼」的天然邊界，不必維護一份會過期的清單。
+`ShortcutModal` 也是 lazy 的（它帶著整套 markdown 轉譯器約 155 KB），而且
+**沒打開就完全不 render**——只寫 `lazy` 但無條件 render 的話 chunk 照樣會被抓。
+
+⚠️ **`Home` 不要 lazy。** 它是唯一的熱路徑，切出去只會讓每次進編輯器多一趟
+往返。分割的目的是把用不到的移走，不是把所有東西都切開。
+
+結果：初始 chunk 1817 → **475 KB**（gzip 547 → 156 KB）。`npm run audit:bundle`
+守著這個數字（超過就 exit 1，實測把 `/model` 改回 eager 會被抓到）。
+
+**還沒處理**：`dist/` 有 **91 MB 的 mp3**（`components/audio/musicsrc/` 十一首
+示範曲，其中一首是商業歌曲，而這個 repo 是 public fork）。它們不進 JS chunk、
+不影響載入速度，只有選到才會抓，但每次部署都要搬 91 MB。要拿掉的話音樂改走
+後端的 `/music`（`localMusicMap` 是「不需後端也能播」的開發便利，不是產品需求）。
+
 ### 提示（tooltip）與 Bootstrap 撞名
 
 ⚠️ **`.tooltip` 的規則寫成 `.tooltip.tooltip`，那個重複是故意的。** Bootstrap 也
@@ -635,6 +660,18 @@ public fork——那個檔案永遠不得 import 進 fixture、不得 commit。*
 - 確保安全性問題沒有被引入
 
 ## 更新記錄
+
+- **2026-08-15（下午）**：**初始 JS 從 1817 收到 475 KB**（gzip 547 → 156）。
+  用 sourcemap 逐套件統計之後發現 **746 KB 是 `/model` 那一頁的 `three` 與
+  `@google/model-viewer`**——排燈的人從頭到尾不會打開那一頁；`Home.jsx` 另外有
+  一行完全沒用到的 `import { set } from "lodash"`（72 KB）。分割線畫在**路由**上
+  （`App.jsx` 的 `lazy`）而不是靠 `manualChunks` 手動分組，路由本來就是「現在
+  需要哪些程式碼」的天然邊界。`ShortcutModal` 也切出去（整套 markdown 轉譯器
+  155 KB）並改成沒打開就不 render——只寫 lazy 但無條件 render 的話 chunk 照樣
+  會被抓。`Home` 刻意不切，它是唯一的熱路徑。新增 `npm run audit:bundle` 守著
+  這個數字（實測把 `/model` 改回 eager 會 exit 1）。順帶量到 `dist/` 有 **91 MB
+  的 mp3**（十一首示範曲，其中一首是商業歌曲而這個 repo 是 public fork）——
+  不影響載入速度，但每次部署都要搬，記進 todo 的 B4。
 
 - **2026-08-15**：**多曲銜接**。音訊時間軸從「一個 `music_filename`」升級成一串
   clip（`utils/audio/clips.js` + `hooks/useAudioClips.js` + `Playlist.jsx`），
