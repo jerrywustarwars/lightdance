@@ -3,7 +3,12 @@ import "bootstrap/dist/js/bootstrap.bundle.min.js";
 import "bootstrap/dist/css/bootstrap.min.css";
 import { MdInput } from "react-icons/md";
 import { useDispatch, useSelector } from "react-redux";
-import { updateActionTable, updateMusicFilename } from "../redux/actions.js";
+import {
+  updateActionTable,
+  updateAudioClips,
+  updateAudioOverlap,
+  updateMusicFilename,
+} from "../redux/actions.js";
 import { API_ENDPOINTS } from "../config/api.js";
 import { getAllLocalBackups } from "../utils/indexedDB.js";
 import { PART_COUNT } from "../constants/parts.js";
@@ -122,13 +127,18 @@ function Dropdown({ userName, setIsDirty, isDirty, setIsLoaded, isLoaded }) {
   const handleLoadLocal = (backup) => {
     if (backup.rawData) {
       // 統一走遷移入口：舊備份是 keyframe、新備份是 segment，由形狀自動辨認
-      const { segmentTable, musicFilename: musicFile } = loadProjectData(
-        backup.rawData,
-        { duration },
-      );
+      const {
+        segmentTable,
+        musicFilename: musicFile,
+        audioClips,
+        overlapMs,
+      } = loadProjectData(backup.rawData, { duration });
 
       dispatch(updateActionTable(segmentTable));
       dispatch(updateMusicFilename(musicFile));
+      // 音訊時間軸要在 music_filename 之後——後者在檔名不同時會把清單重設成單曲
+      dispatch(updateAudioOverlap(overlapMs));
+      dispatch(updateAudioClips(audioClips));
       setIsDirty(false); // 載入後暫時重置 dirty 狀態
       alert(`已載入本地暫存: ${musicFile}`);
     }
@@ -176,12 +186,18 @@ function Dropdown({ userName, setIsDirty, isDirty, setIsLoaded, isLoaded }) {
 
         // 統一走遷移入口：伺服器上同時存在 v1（keyframe）與 v2（segment）
         // 兩種 raw_data，由形狀自動辨認並轉成 segments
-        const { segmentTable } = loadProjectData(actionData, { duration });
+        const { segmentTable, audioClips, overlapMs } = loadProjectData(
+          actionData,
+          { duration },
+        );
         console.log("Final ActionData:", segmentTable);
         console.log("Final MusicFilename:", musicFilename);
 
         dispatch(updateActionTable(segmentTable));
         dispatch(updateMusicFilename(musicFilename));
+        // 音訊時間軸要在 music_filename 之後——後者在檔名不同時會把清單重設成單曲
+        dispatch(updateAudioOverlap(overlapMs));
+        dispatch(updateAudioClips(audioClips));
       })
       .catch((error) => {
         // This will now catch both HTTP errors and backend errors from the response body

@@ -216,3 +216,54 @@ describe("Phase 4 閘門：v1 載入 → 匯出，韌體看到的東西不變", 
     }
   });
 });
+
+/**
+ * 音訊時間軸也走同一個入口。
+ *
+ * 三條載入路徑各自處理的話，只要有一條忘了跑遷移，五首歌的專案會被靜靜地載成
+ * 一首——而畫面看起來完全正常（有一首歌、波形也畫得出來）。
+ */
+describe("loadProjectData 的音訊時間軸", () => {
+  const emptyTable = [];
+
+  it("舊的單曲存檔收成一個 clip", () => {
+    const { audioClips } = loadProjectData({
+      actionTable: emptyTable,
+      music_filename: "show.mp3",
+    });
+
+    expect(audioClips).toHaveLength(1);
+    expect(audioClips[0]).toMatchObject({ sourceFile: "show.mp3", start: 0 });
+  });
+
+  it("新的多曲存檔原樣通過，不會被收成一首", () => {
+    const audioClips = [
+      { id: "1", name: "開場", sourceFile: "a.mp3", start: 0, end: 1000, lengthMs: 1000 },
+      { id: "2", name: "主秀", sourceFile: "b.mp3", start: 1000, end: 3000, lengthMs: 2000 },
+    ];
+
+    const loaded = loadProjectData({
+      actionTable: emptyTable,
+      music_filename: "a.mp3",
+      audioClips,
+      audioOverlapMs: 250,
+    });
+
+    expect(loaded.audioClips).toBe(audioClips);
+    expect(loaded.overlapMs).toBe(250);
+  });
+
+  it("完全沒有音樂資訊時是空清單，不是一個指向 undefined 的 clip", () => {
+    expect(loadProjectData({ actionTable: emptyTable }).audioClips).toEqual([]);
+  });
+
+  it("接縫壞掉時退回 0，不讓 NaN 流進排程", () => {
+    const loaded = loadProjectData({
+      actionTable: emptyTable,
+      music_filename: "a.mp3",
+      audioOverlapMs: "abc",
+    });
+
+    expect(loaded.overlapMs).toBe(0);
+  });
+});

@@ -7,7 +7,7 @@ import {
 } from "../../redux/actions.js";
 import "./audioplayer.css";
 import Waveform from "./waveform.jsx";
-import MusicSelector from "./MusicSelector.jsx";
+import Playlist, { ClipMarkers } from "./Playlist.jsx";
 import PlayerControls from "./PlayerControls.jsx";
 import { useTimeShift, ShiftToolButton, ShiftMarkers } from "./ShiftTool.jsx";
 import EffectMenu, { useLightEffects } from "./EffectMenu.jsx";
@@ -404,9 +404,10 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       */}
       <div className="controls">
         <div className="tool-group">
-          <MusicSelector
-            onTrackChange={() => {
-              // 換歌時停止播放，讓 waveform 重新載入音檔
+          <Playlist
+            onListChange={() => {
+              // 動歌單時停止播放：已排好的 clip 是用舊清單算的，繼續播會聽到
+              // 剛刪掉的那一首（排程一次排完整場，見 utils/audio/engine.js）
               if (isPlaying) setIsPlaying(false);
             }}
           />
@@ -450,6 +451,8 @@ function AudioPlayer({ setButtonState, timelineRef }) {
           }}
         >
           <TimeRuler onSeek={seekTo} />
+          {/* 每首歌從哪裡開始。只有兩首以上才畫得出東西 */}
+          <ClipMarkers />
           <ShiftMarkers shift={shift} />
           {/* 快捷鍵統一由 useKeyboardShortcuts 掛在 document 上，
               這裡不再重複註冊 onKeyDown（原本同一個 handler 綁了兩次） */}

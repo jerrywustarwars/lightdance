@@ -5,6 +5,7 @@ import {
   normalizePeaks,
   peaksForViewport,
   resamplePeaks,
+  stitchPeaks,
   visibleRange,
 } from "../peaks.js";
 
@@ -155,6 +156,100 @@ describe("整條管線", () => {
       64,
     );
     expect(out.length).toBeLessThanOrEqual(64);
+    expect(out.every(Number.isFinite)).toBe(true);
+  });
+});
+
+describe("stitchPeaks（多首歌拼成一條波形）", () => {
+  /** 一整排相同值的峰值，方便看出哪一段是哪一首 */
+  const flat = (value, length = 100) => new Array(length).fill(value);
+
+  it("每一首落在自己的時間位置上", () => {
+    const out = stitchPeaks(
+      [
+        { peaks: flat(1), start: 0, lengthMs: 1000 },
+        { peaks: flat(0.5), start: 1000, lengthMs: 1000 },
+      ],
+      { durationMs: 2000, buckets: 100 },
+    );
+
+    expect(out).toHaveLength(100);
+    // 前半是第一首（正規化後 1），後半是第二首（0.5）
+    expect(out[10]).toBeCloseTo(1, 5);
+    expect(out[60]).toBeCloseTo(0.5, 5);
+  });
+
+  it("接縫重疊處取兩首的較大值——那段時間兩首確實都在響", () => {
+    const out = stitchPeaks(
+      [
+        { peaks: flat(0.2), start: 0, lengthMs: 1000 },
+        { peaks: flat(1), start: 800, lengthMs: 1000 },
+      ],
+      { durationMs: 1800, buckets: 180 },
+    );
+
+    // 80~100 是重疊區：安靜的第一首與大聲的第二首疊在一起，取大的那個
+    expect(out[90]).toBeCloseTo(1, 5);
+  });
+
+  it("很短的歌也畫得出來，不會留一塊空白", () => {
+    const out = stitchPeaks(
+      [
+        { peaks: flat(1, 1000), start: 0, lengthMs: 60000 },
+        { peaks: flat(1, 3), start: 60000, lengthMs: 200 },
+      ],
+      { durationMs: 60200, buckets: 1000 },
+    );
+
+    // 第二首佔的那幾個桶不能是 0（來源只有 3 個值、目標比它多）
+    const tail = out.slice(Math.floor((60000 / 60200) * 1000));
+    expect(tail.length).toBeGreaterThan(0);
+    expect(tail.every((v) => v > 0)).toBe(true);
+  });
+
+  it("整體正規化過，最大值是 1", () => {
+    const out = stitchPeaks(
+      [
+        { peaks: flat(0.1), start: 0, lengthMs: 1000 },
+        { peaks: flat(0.3), start: 1000, lengthMs: 1000 },
+      ],
+      { durationMs: 2000, buckets: 100 },
+    );
+
+    expect(Math.max(...out)).toBe(1);
+  });
+
+  it("沒有東西可拼、或總長是 0 時回傳空陣列（不是一整排 NaN）", () => {
+    expect(stitchPeaks([], { durationMs: 1000 })).toEqual([]);
+    expect(stitchPeaks(null, { durationMs: 1000 })).toEqual([]);
+    expect(
+      stitchPeaks([{ peaks: flat(1), start: 0, lengthMs: 1000 }], {
+        durationMs: 0,
+      }),
+    ).toEqual([]);
+  });
+
+  it("壞掉的 piece 跳過就好，不要讓整條波形消失", () => {
+    const out = stitchPeaks(
+      [
+        { peaks: [], start: 0, lengthMs: 1000 },
+        { peaks: null, start: 1000, lengthMs: 1000 },
+        { peaks: flat(1), start: 2000, lengthMs: 1000 },
+      ],
+      { durationMs: 3000, buckets: 90 },
+    );
+
+    expect(out).toHaveLength(90);
+    expect(out.every(Number.isFinite)).toBe(true);
+    expect(Math.max(...out)).toBe(1);
+  });
+
+  it("每個值都是有限數——NaN 進 fillRect 不會報錯，只是什麼都不畫", () => {
+    const out = stitchPeaks(
+      [{ peaks: flat(0), start: 0, lengthMs: 1000 }],
+      { durationMs: 1000, buckets: 50 },
+    );
+
     expect(out.every(Number.isFinite)).toBe(true);
   });
 });

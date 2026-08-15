@@ -146,11 +146,13 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 
 | 檔案 | 內容 |
 |---|---|
-| `peaks.js` | 峰值運算（兩層降取樣，純函式） |
+| `peaks.js` | 峰值運算（兩層降取樣，純函式）＋ 多首歌拼成一條波形 |
 | `clock.js` | 「現在播到第幾毫秒」的唯一算法 |
+| `clips.js` | 播放清單的形狀與不變式（順序 → 位置、接縫） |
 | `schedule.js` | clip 時間軸 → `start(when, offset, duration)` 的參數與音量包絡 |
 | `engine.js` | 所有 Web Audio 狀態（**不是 hook、不認得 React**，所以測得到） |
 | `hooks/useAudioEngine.js` | 薄薄一層：建立引擎、同步 volume/rate、卸載時清掉 |
+| `hooks/useAudioClips.js` | 播放清單的唯一讀取入口（順手做形狀遷移） |
 
 ### 文件檔案
 - **`README.md`**：專案說明文件（散文式，重點在資料模型與驗收方式）
@@ -193,11 +195,11 @@ IndexedDB（localforage）自動備份，30 天自動清理。Redux 透過 redux
 ```bash
 cd frontend
 npm run dev            # 另一個終端機
-npm run e2e            # 45 項：放色 / 選取 / 框選 / 剪下 / undo / 快捷鍵 /
+npm run e2e            # 50 項：放色 / 選取 / 框選 / 剪下 / undo / 快捷鍵 /
                        #        重新整理 / 拖曳 resize / 多段一起搬 / 頻閃 /
                        #        刻度尺 / 倍速 / 波形 / 道具 / 調色盤 /
-                       #        工作集 / 行高 / Output / /edit
-npm run audit:layout   # 5 項：控制項被蓋住 / 元素溢出容器 / 提示被裁掉 /
+                       #        工作集 / 行高 / 播放清單 / Output / /edit
+npm run audit:layout   # 5 項：控制項被蓋住 / 元素溢出容器 / 提示被裁掉或折行 /
                        #      成對元素沒對齊（含軌名列↔時間軸逐列）/
                        #      各塊邊緣與各排內容左緣沒對齊
 ```
@@ -382,6 +384,58 @@ React**——這樣才能拿假的 AudioContext 在 jsdom 裡驗排程，而「�
 播放鍵會在接縫處自己跳掉。
 
 **行為改變**：播放中 seek 現在會**繼續播**（引擎重排），不再變成暫停。
+
+### 播放清單（多曲銜接）
+
+一場表演是五、六首歌接續播放，所以音訊時間軸是一串 clip。形狀與不變式在
+**`utils/audio/clips.js`**（唯一定義處），讀取一律走 **`hooks/useAudioClips.js`**。
+
+**使用者排的是順序，不是時間點。** 每次動到清單就 `resequence()` 重算一次
+首尾相接的位置，`start`/`end` 是推導出來的——換掉第三首時，後面每一首的位置
+自己跟著移，不必要求使用者手動改一遍。
+
+⚠️ **接縫的實際長度是逐條算的，不是直接用 `overlapMs`。** 兩首各自要留下一段
+沒被疊到的部分（`min(overlapMs, 前一首 − 一格, 後一首 − 一格)`），否則短的那一首
+會整首被蓋在重疊區裡，三首接在一起時甚至排得出「第三首比第二首還早開始」。
+`fadeIn`/`fadeOut` 記的是這個**實際值**，位置與包絡由同一個數字推導。
+
+⚠️ **`music_filename` 是 clip 清單的投影，不是另一份真相。** 後端的 raw_data、
+舊的本地備份、Dashboard 的清單都認得那個欄位，所以 reducer 讓它永遠等於第一首。
+反過來，舊的單曲入口 `updateMusicFilename` 會換掉整張清單，但**第一首已經是它時
+不動**——多曲專案載入時 envelope 的 `music_filename` 就是第一首，不擋的話先
+dispatch 的那一下會把後面幾首丟掉。
+
+⚠️ **長度要解碼才知道，所以位置是載入之後才確定的。** 加一首歌的當下只有檔名，
+`createClip` 先給一格佔位，`waveform.jsx` 解碼完用 `applyMeasuredLengths` 補回
+store。那個函式在沒有任何一條改變時回傳**原 reference**——不擋住的話
+「dispatch → store 變 → 重新載入 → 再 dispatch」會轉成無窮迴圈。
+
+⚠️ **store 存檔名，引擎收 URL。** 換一個部署、換一個使用者，同一份光表的音樂還是
+同幾首歌，而網址前綴會變。解析在 `waveform.jsx` 的 `useResolvedClips`，量到的
+長度寫回去時要換回檔名版。
+
+波形畫的是**整場**：每首歌的峰值逐檔快取，再由 `stitchPeaks` 依位置拼成一條
+（重疊處取兩首的較大值——那段時間兩首確實都在響）。桶的範圍由起點與終點各自
+換算，不是「起點 + 長度換算出來的桶數」，後者會在最右邊留下沒填到的桶。
+
+UI 是可收合的（`components/audio/Playlist.jsx`）：排燈時幾乎不會動歌單，
+常駐六列等於用最貴的版面放最少用的功能。時間軸上的接縫由 `ClipMarkers` 標出來，
+和 `TimeRuler` / `ShiftMarkers` 同一個座標系。
+
+### 提示（tooltip）與 Bootstrap 撞名
+
+⚠️ **`.tooltip` 的規則寫成 `.tooltip.tooltip`，那個重複是故意的。** Bootstrap 也
+定義 `.tooltip`（`white-space: normal`、`text-align: start`、`opacity: 0`）而且比
+`styles/tooltip.css` 晚載入——權重相同時後到的贏，所以那份檔案的
+`white-space: nowrap` **從來沒有生效過**。後果是每一則提示都照宿主的寬度折行：
+34px 的按鈕配 8 個字實測折成 48×96 的一長條。它「有出現」，所以沒有人覺得壞掉。
+和 `.btn` 撞名是同一個病因。
+
+靠邊的規則用**後代選擇器**（`.lefttool-container .tooltip`），不要用
+`> *:first-child >`——`.lefttool-container` 底下多包了一層 `.leftupcorner`，
+舊的寫法從來沒對上過。巢狀深度會隨重構改變，「這一欄貼著畫面左緣」才是真正的依據。
+
+版面稽核第三項會量提示有沒有被折行（拿實際高度跟行高比，不寫死像素）。
 
 ### 播放時鐘
 
@@ -581,6 +635,25 @@ public fork——那個檔案永遠不得 import 進 fixture、不得 commit。*
 - 確保安全性問題沒有被引入
 
 ## 更新記錄
+
+- **2026-08-15**：**多曲銜接**。音訊時間軸從「一個 `music_filename`」升級成一串
+  clip（`utils/audio/clips.js` + `hooks/useAudioClips.js` + `Playlist.jsx`），
+  五、六首歌接續播放、接縫可以重疊做交叉淡入淡出。使用者排的是**順序**，起訖
+  時間由 `resequence` 推導——換掉第三首時後面每一首自己跟著移。播放引擎早就是
+  clip 時間軸（一次排完整場、每個 clip 各自一個 gain node），所以這次只補了資料
+  模型與 UI，排程一行沒改。波形改畫**整場**：峰值逐檔快取，`stitchPeaks` 依位置
+  拼成一條，重疊處取兩首的較大值。UI 是可收合的——排燈時幾乎不會動歌單，常駐六列
+  等於用最貴的版面放最少用的功能。踩到三個順序問題：接縫直接用 `overlapMs` 的話，
+  很短的歌會整首被蓋掉甚至讓清單的時間順序反過來（改成逐條夾在兩首之內）；
+  `updateMusicFilename` 無條件重設清單的話，多曲專案載入時先 dispatch 的那一下
+  會把後面幾首丟掉；`applyMeasuredLengths` 沒有「沒變就回傳原 reference」的話，
+  「量長度 → dispatch → 重新載入」會轉成無窮迴圈。
+  順帶修掉一個全站的靜默 bug：`.tooltip` 和 Bootstrap 撞名而且比它早載入，
+  於是 `white-space: nowrap` **從來沒有生效過**——每一則提示都照宿主的寬度折行
+  （34px 的按鈕配 8 個字實測 48×96）。靠邊的規則也從來沒對上過（少算了一層
+  `.leftupcorner`），修好折行之後那則提示立刻跑出畫面被稽核抓到。
+  版面稽核第三項加上折行檢查（拿高度跟行高比，故意改回去驗過會指出 19 則）。
+  e2e 45 → 50。測試 542 → 615 passed
 
 - **2026-08-14（深夜四）**：**Phase 6 兩項功能**。**框選**：拉一個矩形選取跨軌的
   多個色塊（幾何在 `utils/segments/marquee.js`，事件在 `MarqueeSelect.jsx`）。
@@ -818,8 +891,13 @@ audioTracks = [
 ```
 與燈光 segment **幾乎同構**，只差 payload 欄位。
 
-### 與目前 waveform.jsx 的距離
-目前 [waveform.jsx](frontend/src/components/audio/waveform.jsx) 是「整條 timeline 只播一個音檔」的單軌設計（單一 sourceNode）。多軌時要改寫成：一個 AudioContext + N 個 AudioBufferSourceNode mix + 每軌獨立 gain node，預先 decode 引用音檔 cache 成 AudioBuffer。
+### 與目前的距離
+
+單一 `sourceNode` 的假設已經沒有了：引擎現在是一條 clip 時間軸，一次排完整場、
+每個 clip 各自一個 gain node、解碼結果逐檔快取（見「播放清單」一節）。所以「一軌
+上接續多首歌」已經做好了，缺的只有**多條軌同時混音**——`audioTracks` 是在
+`clips` 外面再包一層，把 `setClips` 換成 `setTracks` 並讓 `scheduleFrom` 走每一軌。
+clip 的欄位（`sourceOffset` / `gain` / `fadeIn` / `fadeOut`）已經照草案留好了。
 
 ### 與後端的關係
 - 後端音檔池（`MUSIC_FILE_PATH=/music`）維持不變

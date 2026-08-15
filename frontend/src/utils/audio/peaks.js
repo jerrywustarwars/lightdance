@@ -77,6 +77,70 @@ export const peaksFromChannel = (channelData, buckets) =>
   normalizePeaks(computePeaks(channelData, buckets));
 
 /**
+ * 把多首歌的峰值依各自在時間軸上的位置拼成一條。
+ *
+ * 波形是**整場表演**的圖，不是「目前這首歌」的圖——五首歌接在一起時使用者要
+ * 看到的是一條從 0 到全長的波形，接縫在哪裡一眼看得出來。
+ *
+ * @param {Array} pieces `[{peaks, start, lengthMs}]`，`start` 是表演時間（ms）
+ * @param {object} options durationMs: 整場總長；buckets: 輸出幾個桶
+ * @returns {number[]} 正規化後的峰值
+ *
+ * 接縫重疊處取**兩首的較大值**：那段時間兩首確實都在響，取大值畫出來的形狀
+ * 才對得上聽到的東西（取平均會讓接縫憑空凹下去一塊）。
+ */
+export function stitchPeaks(pieces, { durationMs = 0, buckets = 200000 } = {}) {
+  if (!Array.isArray(pieces) || pieces.length === 0) return [];
+  if (!(durationMs > 0) || !(buckets > 0)) return [];
+
+  const out = new Array(buckets).fill(0);
+
+  for (const piece of pieces) {
+    const peaks = piece?.peaks;
+    const lengthMs = piece?.lengthMs ?? 0;
+    if (!Array.isArray(peaks) || peaks.length === 0 || !(lengthMs > 0)) continue;
+
+    /*
+     * 桶的範圍由**起點與終點各自換算**，不是「起點 + 長度換算出來的桶數」。
+     * 後者會在最後一首的尾巴留下一兩個沒被填到的桶（兩次四捨五入湊不齊），
+     * 而沒填到就是 0 —— 波形的最右邊會憑空缺一小塊。
+     */
+    const start = piece.start ?? 0;
+    const from = Math.max(
+      0,
+      Math.min(buckets, Math.floor((start / durationMs) * buckets)),
+    );
+    const to = Math.max(
+      from + 1,
+      Math.min(buckets, Math.round(((start + lengthMs) / durationMs) * buckets)),
+    );
+    const count = Math.min(buckets - from, to - from);
+    if (count <= 0) continue;
+
+    /*
+     * 目標桶數可能比來源多（很短的歌），這時 `resamplePeaks` 會原樣回傳而不補值
+     * ——直接用的話後面那一段會留著 0，波形上出現一塊憑空的空白。所以放大時
+     * 改用最近鄰重複取樣。
+     */
+    const scaled =
+      peaks.length >= count
+        ? resamplePeaks(peaks, count)
+        : Array.from(
+            { length: count },
+            (_, i) => peaks[Math.floor((i * peaks.length) / count)],
+          );
+
+    for (let i = 0; i < scaled.length; i++) {
+      const at = from + i;
+      if (at >= buckets) break;
+      if (scaled[i] > out[at]) out[at] = scaled[i];
+    }
+  }
+
+  return normalizePeaks(out);
+}
+
+/**
  * 目前捲到的那一段對應峰值陣列的哪一段。
  *
  * @param {object} view

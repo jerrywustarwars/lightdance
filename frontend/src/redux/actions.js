@@ -38,6 +38,22 @@ export const updateMusicFilename = (value) => ({
   payload: value,
 });
 
+/**
+ * 整條音訊時間軸（一場表演接續播放的那幾首歌）。
+ *
+ * 形狀與不變式在 `utils/audio/clips.js`，讀取一律走 `hooks/useAudioClips.js`。
+ */
+export const updateAudioClips = (clips) => ({
+  type: "UPDATEAUDIOCLIPS",
+  payload: clips,
+});
+
+/** 接縫重疊多久（ms）。改這個會把整張清單重排一次 */
+export const updateAudioOverlap = (overlapMs) => ({
+  type: "UPDATEAUDIOOVERLAP",
+  payload: overlapMs,
+});
+
 export const updateTimelineBlocks = ({ armorIndex, partIndex, value }) => ({
   type: UPDATETIMELINEBLOCKS,
   payload: { armorIndex, partIndex, value },

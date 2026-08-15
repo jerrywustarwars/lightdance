@@ -47,12 +47,19 @@ describe("AudioPlayer 掛載", () => {
     expect(document.querySelector(".timeline-container")).toBeTruthy();
   });
 
-  it("渲染音樂選擇器", () => {
+  it("播放清單預設是收起的，展開才看得到歌單", () => {
     mount();
-    // 選項來自 API，測試環境沒有真的音樂清單，所以只確認選擇器本身存在
-    expect(
-      document.querySelector(".current-track-display select"),
-    ).toBeTruthy();
+
+    const toggle = document.querySelector("[data-testid='playlist-toggle']");
+    expect(toggle).toBeTruthy();
+    // 收起時整份清單不在 DOM 上——它常駐會吃掉工具列的版面
+    expect(document.querySelector("[data-testid='playlist-panel']")).toBeNull();
+
+    act(() => {
+      toggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(document.querySelector("[data-testid='playlist-panel']")).toBeTruthy();
   });
 });
 

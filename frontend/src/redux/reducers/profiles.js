@@ -1,4 +1,10 @@
 import { PLAYER_COUNT } from "../../constants/parts.js";
+import {
+  DEFAULT_OVERLAP_MS,
+  MAX_OVERLAP_MS,
+  createClip,
+  resequence,
+} from "../../utils/audio/clips.js";
 import { pushRecentColor } from "../../utils/palette.js";
 import { DEFAULT_ROW_H, clampRowHeight } from "../../utils/tracks.js";
 import {
@@ -16,8 +22,13 @@ const initialState = {
   fullPeaks: [],
   duration: 0,
   data: {
+    // 相容欄位：永遠等於 audioClips 的第一首。後端的 raw_data 與舊備份都認得它
     music_filename: "2026_show.mp3",
     actionTable: [],
+    // 整場表演的音訊時間軸（見 utils/audio/clips.js）
+    audioClips: [],
+    // 接縫重疊多久。0 = 硬切
+    audioOverlapMs: DEFAULT_OVERLAP_MS,
   },
   timelineBlocks: {},
   multiSelectedBlocks: [],
@@ -118,11 +129,71 @@ export const profiles = (state = initialState, action) => {
         redoStack: state.history.length > 1 ? [] : state.redoStack,
       };
     }
-    case "UPDATEMUSICFILENAME":
+    /*
+     * 音訊時間軸。`music_filename` 一併同步成第一首——後端的 raw_data、舊的
+     * 本地備份、Dashboard 的清單都認得那個欄位，讓它變成「clip 清單的投影」
+     * 比逐個呼叫端各自維護兩份可靠。
+     */
+    case "UPDATEAUDIOCLIPS": {
+      const audioClips = Array.isArray(action.payload) ? action.payload : [];
+      if (audioClips === state.data.audioClips) return state;
+
       return {
         ...state,
-        data: { ...state.data, music_filename: action.payload },
+        data: {
+          ...state.data,
+          audioClips,
+          music_filename: audioClips[0]?.sourceFile ?? state.data.music_filename,
+        },
       };
+    }
+
+    case "UPDATEAUDIOOVERLAP": {
+      const audioOverlapMs = Math.max(
+        0,
+        Math.min(MAX_OVERLAP_MS, Number(action.payload) || 0),
+      );
+      if (audioOverlapMs === state.data.audioOverlapMs) return state;
+
+      return {
+        ...state,
+        data: {
+          ...state.data,
+          audioOverlapMs,
+          // 重疊改了位置就得跟著改，兩者不能各存各的
+          audioClips: resequence(state.data.audioClips, {
+            overlapMs: audioOverlapMs,
+          }),
+        },
+      };
+    }
+
+    /*
+     * 舊的單曲入口（載入專案時會用到）。
+     *
+     * 換歌 = 換掉整張清單，因為那是「這場表演的音樂是這個檔案」的意思。
+     * 但**第一首已經是它時什麼都不做**：多曲專案載入時 envelope 的
+     * `music_filename` 就是第一首，不擋的話會把後面幾首整個丟掉。
+     */
+    case "UPDATEMUSICFILENAME": {
+      const filename = action.payload;
+      if (state.data.audioClips?.[0]?.sourceFile === filename) {
+        return { ...state, data: { ...state.data, music_filename: filename } };
+      }
+
+      return {
+        ...state,
+        data: {
+          ...state.data,
+          music_filename: filename,
+          audioClips: filename
+            ? resequence([createClip({ sourceFile: filename })], {
+                overlapMs: state.data.audioOverlapMs,
+              })
+            : [],
+        },
+      };
+    }
     case "UPDATETIMELINEBLOCKS":
       return {
         ...state,

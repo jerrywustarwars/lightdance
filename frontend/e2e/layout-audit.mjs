@@ -204,6 +204,31 @@ const collectProblems = () => {
     if (!reason && (tr.left < 0 || tr.right > innerWidth || tr.top < 0)) {
       reason = "跑出畫面";
     }
+
+    /*
+     * 被折成多行也算壞掉。
+     *
+     * 提示的寬度應該由內容決定（`white-space: nowrap`），但 `.tooltip` 這個
+     * 類別名稱 Bootstrap 也在用，而它比較晚載入——撞名的話 `white-space` 會被
+     * 蓋成 `normal`，提示就照宿主的寬度折行：34px 的按鈕配 8 個字實測折成
+     * 48×96 的一長條。它「有出現」，所以純粹的裁切檢查抓不到。
+     *
+     * 判斷方式是拿實際高度跟「一行該有多高」比，不寫死像素——字級或 padding
+     * 之後改了這條檢查仍然成立。
+     */
+    if (!reason) {
+      const cs = getComputedStyle(tip);
+      const lineHeight =
+        parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.4;
+      const chrome =
+        parseFloat(cs.paddingTop) +
+        parseFloat(cs.paddingBottom) +
+        parseFloat(cs.borderTopWidth) +
+        parseFloat(cs.borderBottomWidth);
+      if (tr.height > lineHeight + chrome + 2) {
+        reason = `被折成多行（高 ${Math.round(tr.height)}px，一行應該是 ${Math.round(lineHeight + chrome)}px）`;
+      }
+    }
     if (reason) {
       clippedTips.push({ text: (tip.textContent || "").trim().slice(0, 20), reason });
     }
@@ -349,7 +374,7 @@ const stubApi = (context) =>
       });
     if (url.includes("/api/token")) return json({ access_token: "tester" });
     if (url.includes("/api/get_music_list"))
-      return json({ list: ["test.wav"] });
+      return json({ music_list: ["test.wav", "encore.wav"] });
     if (url.includes("/api/get_music/"))
       return route.fulfill({
         status: 200,
@@ -417,6 +442,19 @@ const run = async () => {
       continue;
     }
     await page.waitForTimeout(2500);
+
+    /*
+     * 把播放清單展開再量。
+     *
+     * 收合的東西不量等於沒量——它展開之後是一塊 320px 寬、貼在工具列下方的
+     * 面板，正下方就是時間刻度尺與軌道。會不會蓋住下面的控制項、會不會被
+     * `overflow` 裁掉，只有在展開的狀態下看得出來。
+     */
+    await page
+      .locator("[data-testid='playlist-toggle']")
+      .click({ timeout: 3000 })
+      .catch(() => {});
+    await page.waitForTimeout(500);
 
     const { unclickable, overflow, clippedTips, misaligned, edges } =
       await page.evaluate(collectProblems);

@@ -1,11 +1,19 @@
-import React, { useEffect, useRef, useState, memo } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { API_ENDPOINTS } from "../../config/api.js";
 import { localMusicMap } from "./musicData.js";
-import { peaksForViewport, peaksFromChannel } from "../../utils/audio/peaks.js";
+import {
+  peaksForViewport,
+  peaksFromChannel,
+  stitchPeaks,
+} from "../../utils/audio/peaks.js";
+import { applyMeasuredLengths } from "../../utils/audio/clips.js";
+import { totalDuration } from "../../utils/audio/schedule.js";
+import { useAudioClips } from "../../hooks/useAudioClips.js";
 import { TICK_MS } from "../../constants/time.js";
 
 import {
+  updateAudioClips,
   updateCurrentTime,
   updateDuration,
   updateFullpeaks,
@@ -23,7 +31,9 @@ function getPeaks(audioBuffer, buckets = 200000) {
 
 // AudioWaveform 組件
 const AudioWaveform = ({
-  url,
+  clips,
+  overlapMs = 0,
+  onClipsMeasured,
   engine,
   isPlaying,
   zoomValue,
@@ -63,6 +73,8 @@ const AudioWaveform = ({
   const animationRef = useRef(null);
   // 上一次 effect 跑的時候是不是在播——用來分辨「真的暫停」與「掛載時的初始狀態」
   const wasPlayingRef = useRef(false);
+  // 檔名 → 整首歌的峰值。換歌單順序時不必重算（見載入 effect）
+  const peaksCacheRef = useRef(new Map());
   // 監聽滾動並更新`scrollPosition`
   useEffect(() => {
     const handleScroll = () => {
@@ -131,31 +143,61 @@ const AudioWaveform = ({
   }, [zoomValue, canvasWidth, duration, scrollRef]);
 
   /*
-   * 載入音檔。
+   * 載入整條音訊時間軸。
    *
    * 解碼走**引擎的快取**，不自己再解一次——同一個檔案被下載兩次、解碼兩次是
-   * 純粹的浪費，而解碼是整個載入流程裡最貴的一步。
+   * 純粹的浪費，而解碼是整個載入流程裡最貴的一步。同一首歌在清單裡出現兩次
+   * （安可）也只會下載解碼一次。
    *
-   * 目前一首歌 = 一個 clip；多曲銜接時這裡會變成把多個 clip 交給引擎，
-   * 而總長度改由 `engine.durationMs()` 決定（見 utils/audio/schedule.js）。
+   * ⚠️ **長度要量到才知道，所以位置是載入之後才確定的。** 加一首歌的當下只有
+   * 檔名，`createClip` 先給一格佔位；這裡解碼完把真正的長度補回 store
+   * （`applyMeasuredLengths` 在沒有任何一條改變時回傳原 reference，否則
+   * 「dispatch → store 變 → 重新載入 → 再 dispatch」會轉成無窮迴圈）。
    */
   useEffect(() => {
-    if (!url || !engine) return;
+    if (!engine || clips.length === 0) return;
     let cancelled = false;
 
     setIsLoaded(false);
-    engine
-      .load(url)
-      .then((buffer) => {
+
+    const files = [...new Set(clips.map((clip) => clip.sourceFile))];
+
+    Promise.all(files.map((file) => engine.load(file).then((buffer) => [file, buffer])))
+      .then((entries) => {
         if (cancelled) return;
-        const durationMs = buffer.duration * 1000;
-        engine.setClips([
-          { id: url, start: 0, end: durationMs, sourceFile: url, sourceOffset: 0 },
-        ]);
+
+        const lengthByFile = new Map(
+          entries.map(([file, buffer]) => [file, buffer.duration * 1000]),
+        );
+
+        // 峰值逐檔快取：換順序、調接縫只是把同一份峰值重新拼一次，
+        // 不必為了畫圖再把幾百萬個取樣點掃過一遍
+        for (const [file, buffer] of entries) {
+          if (!peaksCacheRef.current.has(file)) {
+            peaksCacheRef.current.set(file, getPeaks(buffer));
+          }
+        }
+
+        // 量到的長度補回去。位置與接縫由 clips.js 的 resequence 統一決定
+        const measured = applyMeasuredLengths(clips, lengthByFile, { overlapMs });
+        if (measured !== clips) onClipsMeasured?.(measured);
+
+        const durationMs = totalDuration(measured);
+        engine.setClips(measured);
         setIsLoaded(true);
         dispatch(updateDuration(durationMs));
-        dispatch(updateFullpeaks(getPeaks(buffer)));
-        dispatch(updateCurrentTime(0));
+        dispatch(
+          updateFullpeaks(
+            stitchPeaks(
+              measured.map((clip) => ({
+                peaks: peaksCacheRef.current.get(clip.sourceFile),
+                start: clip.start,
+                lengthMs: clip.lengthMs,
+              })),
+              { durationMs },
+            ),
+          ),
+        );
       })
       .catch((error) => {
         console.error("載入api音樂失敗", error);
@@ -164,7 +206,7 @@ const AudioWaveform = ({
     return () => {
       cancelled = true;
     };
-  }, [url, engine, dispatch]);
+  }, [clips, overlapMs, engine, dispatch, onClipsMeasured]);
 
   // 根據 zoomValue 重繪波形
   // useEffect(() => {
@@ -401,6 +443,28 @@ const AudioWaveform = ({
   );
 };
 
+/**
+ * 把 clip 上的**檔名**換成這台機器抓得到的 URL。
+ *
+ * store 裡存的是檔名而不是完整網址：換一個部署、換一個使用者，同一份光表的
+ * 音樂還是同幾首歌，而 URL 的前綴會變。網址是「現在怎麼拿到它」，屬於執行期。
+ */
+function useResolvedClips(clips) {
+  const userName = useSelector((state) => state.profiles.user);
+
+  return useMemo(
+    () =>
+      clips.map((clip) => ({
+        ...clip,
+        // 優先用本地打包檔，不需後端；否則從後端 API 取得
+        sourceFile:
+          localMusicMap[clip.sourceFile] ??
+          `${API_ENDPOINTS.BASE}/get_music/${userName}/${clip.sourceFile}`,
+      })),
+    [clips, userName],
+  );
+}
+
 function Wave({
   engine,
   isPlaying,
@@ -410,17 +474,35 @@ function Wave({
   onTimeUpdate,
   onSeek,
 }) {
-  // const musicIndex = useSelector((state) => state.profiles.data?.music_index ?? 2);
-  const musicFilename = useSelector((state) => state.profiles.data?.music_filename || "2026_funding.mp3");
-  const userName = useSelector((state) => state.profiles.user);
-  const dynamicUrl = `${API_ENDPOINTS.BASE}/get_music/${userName}/${musicFilename}`;
-  // 優先用本地打包檔，不需後端；否則從後端 API 取得
-  const resolvedUrl = localMusicMap[musicFilename] ?? dynamicUrl;
+  const dispatch = useDispatch();
+  const { clips, overlapMs } = useAudioClips();
+  const resolvedClips = useResolvedClips(clips);
+
+  /*
+   * 解碼後量到的長度要寫回 store，但寫回去的必須是**檔名版**的 clip——
+   * 上面那層把 sourceFile 換成了 URL，原樣存進去的話換一台機器就打不開了。
+   * 兩份清單逐項對應，所以照 index 把長度貼回原本那一份。
+   */
+  const handleMeasured = useCallback(
+    (measured) => {
+      dispatch(
+        updateAudioClips(
+          measured.map((clip, index) => ({
+            ...clip,
+            sourceFile: clips[index]?.sourceFile ?? clip.sourceFile,
+          })),
+        ),
+      );
+    },
+    [dispatch, clips],
+  );
 
   return (
     <div>
       <AudioWaveform
-        url={resolvedUrl}
+        clips={resolvedClips}
+        overlapMs={overlapMs}
+        onClipsMeasured={handleMeasured}
         engine={engine}
         isPlaying={isPlaying}
         scrollRef={scrollRef}

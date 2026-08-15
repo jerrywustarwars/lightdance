@@ -1,4 +1,5 @@
 import { PART_COUNT, PLAYER_COUNT } from "../../constants/parts.js";
+import { migrateClips } from "../audio/clips.js";
 import { normalizeActionTable } from "../actionTable/normalizeActionTable.js";
 import { actionTableToSegments } from "../segments/convert.js";
 import { validateSegments } from "../segments/core.js";
@@ -91,7 +92,8 @@ export function toSegmentTable(table, { duration = 0 } = {}) {
  * envelope 的歷史包袱：可能是 `{schemaVersion, actionTable, music_filename}`、
  * 可能只是 `{actionTable}`、也可能整包就是裸的 actionTable。
  *
- * @returns {{segmentTable: Array, musicFilename: string|undefined}}
+ * @returns {{segmentTable: Array, musicFilename: string|undefined,
+ *            audioClips: Array, overlapMs: number}}
  */
 export function loadProjectData(payload, { duration = 0 } = {}) {
   const envelope =
@@ -126,7 +128,19 @@ export function loadProjectData(payload, { duration = 0 } = {}) {
     }
   }
 
-  return { segmentTable, musicFilename: envelope.music_filename };
+  /*
+   * 音訊時間軸。舊的存檔只有一個 `music_filename`（單曲），新的帶著整份
+   * `audioClips`——`migrateClips` 靠形狀分辨，和光表用同一套原則。
+   *
+   * 這件事一定要在這裡做：三條載入路徑各自處理的話，只要有一條忘了，
+   * 五首歌的專案會被靜靜地載成一首（而且畫面看起來完全正常）。
+   */
+  return {
+    segmentTable,
+    musicFilename: envelope.music_filename,
+    audioClips: migrateClips(envelope.audioClips, envelope.music_filename),
+    overlapMs: Number(envelope.audioOverlapMs) || 0,
+  };
 }
 
 /**

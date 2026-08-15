@@ -126,8 +126,9 @@ const stubApi = (context) =>
     if (url.includes("/api/token")) return json({ access_token: "tester" });
     if (url.includes("/api/users/me"))
       return json({ username: "tester", disabled: false });
+    // 真實 API 回的是 music_list（不是 list）——播放清單的「加入」要靠它
     if (url.includes("/api/get_music_list"))
-      return json({ list: ["test.wav"] });
+      return json({ music_list: ["test.wav", "encore.wav"] });
     if (url.includes("/api/get_music/"))
       return route.fulfill({
         status: 200,
@@ -976,6 +977,96 @@ const run = async () => {
     );
   } else {
     record("拖把手只調整那一條軌道的高度", false, "找不到把手");
+  }
+
+  // ── 播放清單（多曲銜接）────────────────────────────────
+  // 一場表演是五、六首歌接續播放。這一段驗的是「加一首歌，整場真的變長」——
+  // duration 是波形、刻度尺、色塊位置換算的共同分母，它沒跟著長的話畫面上
+  // 每一項都會安靜地錯位。
+  {
+    /*
+     * 從畫面上的 `m:ss:mmm` 讀總長，不去翻 redux。
+     *
+     * 使用者看到的就是這個數字，而它同時是波形與刻度尺的分母——讀它等於一次
+     * 驗到「資料對了」與「畫面上真的更新了」兩件事。
+     */
+    const durationOf = async () => {
+      const text = await page.locator(".duration-box").first().innerText();
+      const [m, s, ms] = text.trim().split(":").map(Number);
+      return m * 60000 + s * 1000 + ms;
+    };
+
+    const toggle = page.locator("[data-testid='playlist-toggle']");
+    const panelBefore = await page.locator("[data-testid='playlist-panel']").count();
+    await toggle.click();
+    await page.waitForTimeout(300);
+    const panelAfter = await page.locator("[data-testid='playlist-panel']").count();
+
+    record(
+      "播放清單收起時不佔版面，展開才是完整歌單",
+      panelBefore === 0 && panelAfter === 1,
+      `收起 ${panelBefore} / 展開 ${panelAfter}`,
+    );
+
+    const oneSong = await durationOf();
+
+    // 加第二首（stub 回同一個音檔，所以總長應該剛好變兩倍）
+    await page.selectOption("[data-testid='playlist-panel'] select", {
+      index: 1,
+    });
+    await page.click("[data-testid='playlist-panel'] .playlist-add button");
+    await page.waitForTimeout(1500);
+
+    const twoSongs = await durationOf();
+    const rows = await page.locator(".playlist-item").count();
+
+    record(
+      "加一首歌之後整場變長",
+      rows === 2 && twoSongs > oneSong * 1.8,
+      `${rows} 首・${Math.round(oneSong)}ms → ${Math.round(twoSongs)}ms`,
+    );
+
+    const markers = await page.locator(".clip-marker").count();
+    record(
+      "時間軸上看得到接縫在哪",
+      markers === 1, // 第一首的起點是 0，和刻度尺重疊，所以只畫第二首起
+      `${markers} 個標記`,
+    );
+
+    // 接縫重疊：往前疊之後整場會變短，而且短掉的正好是重疊那一段
+    /*
+     * ⚠️ 這裡一定要用 `fill()`。直接寫 `el.value = ...` 再補一個 change 事件
+     * 是**沒有用的**——React 會攔截 value 的 setter 來追蹤受控元件，繞過它設值
+     * 之後 React 認為值沒變，onChange 不會跑。而畫面上滑桿的把手確實移動了，
+     * 所以這種寫法會變成「看起來有動、其實什麼都沒發生」的假測試。
+     */
+    const seam = page.locator("#playlist-overlap");
+    await seam.fill("2000");
+    await page.waitForTimeout(1200);
+    const overlapped = await durationOf();
+
+    record(
+      "調接縫重疊之後整場跟著變短",
+      Math.abs(twoSongs - overlapped - 2000) < 200,
+      `${Math.round(twoSongs)}ms → ${Math.round(overlapped)}ms（少了 ${Math.round(twoSongs - overlapped)}ms）`,
+    );
+
+    await shot(page, "playlist");
+
+    // 移除第二首，回到單曲——後面的 Output 與 /edit 兩項不受影響
+    await page.click(".playlist-item:nth-child(2) .ld-btn--danger");
+    await page.waitForTimeout(1200);
+    const backToOne = await durationOf();
+
+    record(
+      "移除之後整場長度縮回去",
+      (await page.locator(".playlist-item").count()) === 1 &&
+        Math.abs(backToOne - oneSong) < 200,
+      `${Math.round(overlapped)}ms → ${Math.round(backToOne)}ms`,
+    );
+
+    await toggle.click();
+    await page.waitForTimeout(200);
   }
 
   // ── Output ────────────────────────────────────────────
