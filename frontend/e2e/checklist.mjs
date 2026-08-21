@@ -123,6 +123,12 @@ const stubApi = (context) =>
         body: JSON.stringify(body),
       });
 
+    if (url.includes("/api/register"))
+      return route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({ access_token: "tester", username: "newcomer" }),
+      });
     if (url.includes("/api/token")) return json({ access_token: "tester" });
     if (url.includes("/api/users/me"))
       return json({ username: "tester", disabled: false });
@@ -208,11 +214,59 @@ const run = async () => {
     (r) => r.url().includes("/api/upload") && uploads.push(r.url()),
   );
 
+  /*
+   * ── 建立帳號 ────────────────────────────────────────
+   *
+   * 登入頁多了一個註冊模式。要驗的是「切過去、填完、送出之後真的進得了 app」
+   * ——後端建完會直接回權杖，所以不必再打一次登入表單。
+   *
+   * 順帶擋住一個回歸：標題與送出鈕的文字都是「登入」，用 `text=登入` 選會同時
+   * 對到兩個（Playwright 的 strict mode 直接失敗）。實測就是這樣紅的。
+   */
+  await page.goto(`${BASE}/login`, { waitUntil: "networkidle" });
+  await page.click("[data-testid='auth-switch']");
+  await page.waitForTimeout(200);
+
+  const registerFields = await page.locator("form input").count();
+  record(
+    "登入頁切得到建立帳號（多出確認密碼與邀請碼）",
+    registerFields === 4,
+    `${registerFields} 個欄位（帳號 / 密碼 / 確認 / 邀請碼）`,
+  );
+
+  await page.fill('input[type="text"] >> nth=0', "newcomer");
+  await page.fill('input[type="password"] >> nth=0', "password123");
+  await page.fill('input[type="password"] >> nth=1', "不一樣的密碼");
+  await page.click("[data-testid='auth-submit']");
+  await page.waitForTimeout(300);
+
+  record(
+    "兩次密碼不同時擋在前端，不會送出去",
+    (await page.locator(".alert-danger").count()) === 1 &&
+      page.url().includes("/login"),
+    (await page.locator(".alert-danger").innerText().catch(() => "")).trim(),
+  );
+
+  await page.fill('input[type="password"] >> nth=1', "password123");
+  await shot(page, "register-form");
+
+  await page.click("[data-testid='auth-submit']");
+  await page.waitForURL("**/dashboard", { timeout: 15000 });
+
+  // 名字是從伺服器的回應來的，不是前端自己填的——這一行同時驗到那條路
+  const welcome = await page.locator(".welcome-message").innerText();
+  record(
+    "建立帳號後直接進到 dashboard（不必再登入一次）",
+    welcome.includes("newcomer"),
+    welcome.trim(),
+  );
+
   // ── 登入 ──────────────────────────────────────────────
   await page.goto(`${BASE}/login`, { waitUntil: "networkidle" });
   await page.fill('input[type="text"]', "tester");
   await page.fill('input[type="password"]', "pw");
-  await page.click("text=登入");
+  // 標題與送出鈕的文字都是「登入」，所以指名那顆按鈕而不是用文字比對
+  await page.click("[data-testid='auth-submit']");
   await page.waitForURL("**/dashboard", { timeout: 15000 });
   record("登入", true);
 

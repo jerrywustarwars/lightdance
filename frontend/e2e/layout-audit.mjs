@@ -448,7 +448,8 @@ const run = async () => {
     await page.goto(`${BASE}/login`, { waitUntil: "networkidle" });
     await page.fill('input[type="text"]', "tester");
     await page.fill('input[type="password"]', "pw");
-    await page.click("text=登入");
+    // 標題與送出鈕的文字都是「登入」，指名按鈕而不是用文字比對
+    await page.click("[data-testid='auth-submit']");
     await page.waitForURL("**/dashboard", { timeout: 15000 });
     // /home 掛載時會檢查 redux 裡的 token，而 redux-persist 的寫入是非同步的。
     // 登入完立刻整頁載入 /home 有機會讀不到 token 而被彈回首頁——這是 app

@@ -89,6 +89,18 @@ class FullUpload(BaseModel):
     music_filename: Union[str, int]
 
 
+class RegisterRequest(BaseModel):
+    """
+    建立帳號。
+
+    `invite_code` 只有在後端設了 `REGISTER_CODE` 時才會被檢查——沒設就是開放
+    註冊（見 main.py 的 /api/register）。
+    """
+    username: str
+    password: str
+    invite_code: Union[str, None] = None
+
+
 class Item(BaseModel):
     """
     時間軸項目資料

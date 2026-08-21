@@ -43,8 +43,12 @@ import os
 import secrets
 from datetime import datetime, timedelta, timezone
 
+import re
+
 import bcrypt
 import jwt
+
+from paths import safe_component
 
 logger = logging.getLogger(__name__)
 
@@ -180,3 +184,71 @@ def read_token(token: str) -> str | None:
 
     username = payload.get("sub")
     return username if isinstance(username, str) and username else None
+
+
+# ---------------------------------------------------------------------------
+# 建立帳號時的輸入規則
+# ---------------------------------------------------------------------------
+
+#: 使用者名稱的合法字元。**刻意很嚴格**，理由見 `validate_credentials`
+USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{2,31}$")
+
+USERNAME_MIN, USERNAME_MAX = 3, 32
+
+#: 密碼長度下限。bcrypt 的輸入上限是 72 bytes，超過的部分會被**默默截斷**
+PASSWORD_MIN, PASSWORD_MAX = 8, 72
+
+
+class InvalidCredentialsError(ValueError):
+    """帳號或密碼不符合規則。訊息會直接顯示給使用者，所以要講得夠具體。"""
+
+
+def validate_credentials(username: str, password: str) -> tuple[str, str]:
+    """
+    檢查要建立的帳號名稱與密碼，通過就回傳去掉前後空白的那一組。
+
+    ## 使用者名稱為什麼管這麼嚴
+
+    它不只是一個顯示用的名字，而是同時被當成三種東西用：
+
+    1. **網址片段**：`/api/raw/{username}/LATEST`
+    2. **檔案路徑片段**：`{MUSIC_FILE_PATH}/{username}/`（見 paths.py）
+    3. **資料庫的查詢鍵**：`{"user": username}`
+
+    第二項是關鍵——`safe_component` 會擋掉 `/`、`\\`、`..`、NUL，但那是**最後
+    一道防線**，不該是唯一一道。與其讓一個叫 `..foo` 或含空白的帳號建起來、
+    之後在某條路徑上出問題，不如一開始就只允許保守的字元集。
+
+    開頭限定英數是為了避免 `.hidden` 這類在檔案系統上有特殊意義的名字。
+
+    ## 密碼長度上限不是刁難
+
+    **bcrypt 只看前 72 個 byte**，超過的部分直接被丟掉而且不會有任何錯誤。
+    允許使用者設一個 100 字的密碼，實際上只有前 72 byte 有效——他以為自己
+    很安全，而後面 28 個字完全沒作用。明確擋掉比默默截斷誠實。
+
+    注意算的是 **byte 不是字元**：中文一個字 3 bytes，24 個中文字就滿了。
+    """
+    username = (username or "").strip()
+    password = password or ""
+
+    if not USERNAME_PATTERN.match(username):
+        raise InvalidCredentialsError(
+            f"帳號要 {USERNAME_MIN}~{USERNAME_MAX} 個字，"
+            "只能用英文、數字、底線、句點、連字號，且開頭必須是英文或數字"
+        )
+
+    # 進資料庫之前先用路徑那一關驗一次。這裡不該再出錯（上面的字元集更嚴），
+    # 但兩層規則哪天走岔了，這一行會在建立帳號時就擋下來而不是等到讀音檔
+    safe_component(username, label="帳號")
+
+    if len(password) < PASSWORD_MIN:
+        raise InvalidCredentialsError(f"密碼至少要 {PASSWORD_MIN} 個字")
+
+    if len(password.encode("utf-8")) > PASSWORD_MAX:
+        raise InvalidCredentialsError(
+            f"密碼太長（bcrypt 只認前 {PASSWORD_MAX} 個 byte，"
+            "中文一個字算 3 個）。請改短一點，不然後面的字其實沒有作用"
+        )
+
+    return username, password

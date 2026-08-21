@@ -3,12 +3,13 @@ from pymongo import MongoClient
 from fastapi import Request, FastAPI, HTTPException, Depends, Path, status, Form, APIRouter
 from fastapi import File, UploadFile
 # 從 models.py 匯入所有資料模型
-from models import PlayerData, Player, Data, RAW, Item, User, UserInDB, FullUpload
+from models import PlayerData, Player, Data, RAW, Item, User, UserInDB, FullUpload, RegisterRequest
 # typing.List 已在 models.py 中使用
 # from app import app
 # from flask import Flask, send_file, render_template
 import json
 import os
+import secrets
 import shutil
 import random
 from dotenv import load_dotenv
@@ -19,6 +20,8 @@ from time import strftime, localtime
 from fastapi.middleware.cors import CORSMiddleware
 
 from paths import UnsafePathError, resolve_within
+from pymongo.errors import DuplicateKeyError, PyMongoError
+
 from storage import (
     DEFAULT_LIST_LIMIT,
     LIST_PROJECTION,
@@ -28,14 +31,17 @@ from storage import (
     ensure_indexes,
     insert_show,
     now_stamp,
+    now_utc,
     prune_history,
     raw_document,
 )
 from auth import (
+    InvalidCredentialsError,
     create_access_token,
     hash_password,
     needs_rehash,
     read_token,
+    validate_credentials,
     verify_password,
 )
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm #
@@ -187,6 +193,73 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         )
 
     return {"access_token": create_access_token(user.username), "token_type": "bearer"}
+
+# 建立帳號
+# 使用方法：POST /api/register，無需驗證（可用 REGISTER_CODE 加一道邀請碼）
+# 使用場景：新成員自己開帳號，不必找人手動塞進資料庫
+@api_router.post("/register", status_code=status.HTTP_201_CREATED)
+async def register(payload: RegisterRequest):
+    """
+    建立一個新帳號，成功之後直接回一張權杖（不必再登入一次）。
+
+    ## 誰可以註冊
+
+    由 `REGISTER_CODE` 環境變數決定：
+
+    - **沒設**（預設）＝ 開放註冊，任何知道網址的人都能開帳號
+    - **有設** ＝ 要在表單裡填對那組邀請碼才建得起來
+
+    ⚠️ 這個服務的讀取端點大多不需要認證（`timelist` / `raw` / `items` 都是
+    公開的），所以「多一個帳號」本身洩漏不了東西；真正的成本是**有人可以無限
+    開帳號並上傳光表**佔掉資料庫。部署在公開 IP 上時建議設一組邀請碼。
+
+    ## 為什麼不先查有沒有重複
+
+    有查（為了給一句好懂的訊息），但**真正的保證是 `users.username` 的唯一
+    索引**。「先 find_one 再 insert」中間有一段空窗，兩個人同時註冊同一個名字
+    會兩邊都通過檢查——而重複的帳號會讓 `find_one` 回哪一個變成沒有定義的行為，
+    密碼對不上的那位就登不進來了。
+    """
+    required_code = os.getenv("REGISTER_CODE", "").strip()
+    if required_code:
+        provided = (payload.invite_code or "").strip()
+        # 比 bytes 不比 str：compare_digest 遇到非 ASCII 會丟 TypeError，
+        # 而邀請碼是人取的（和 auth.verify_password 踩過的是同一個坑）
+        if not secrets.compare_digest(
+            provided.encode("utf-8"), required_code.encode("utf-8")
+        ):
+            raise HTTPException(status_code=403, detail="邀請碼不正確")
+
+    try:
+        username, password = validate_credentials(payload.username, payload.password)
+    except (InvalidCredentialsError, UnsafePathError) as error:
+        raise HTTPException(status_code=422, detail=str(error))
+
+    if user_list.find_one({"username": username}, {"_id": 1}):
+        raise HTTPException(status_code=409, detail=f"帳號「{username}」已經有人用了")
+
+    try:
+        user_list.insert_one(
+            {
+                "username": username,
+                # 一開始就是 bcrypt。這個路徑不會產生任何明文
+                "password": hash_password(password),
+                "disabled": False,
+                "created_at": now_utc(),
+            }
+        )
+    except DuplicateKeyError:
+        # 上面查完到這裡之間有人搶先了。唯一索引擋下來的就是這種情形
+        raise HTTPException(status_code=409, detail=f"帳號「{username}」已經有人用了")
+    except PyMongoError as error:
+        print(f">>> [ERROR] 建立帳號失敗: {error}")
+        raise HTTPException(status_code=503, detail="資料庫暫時無法寫入，請稍後再試")
+
+    return {
+        "access_token": create_access_token(username),
+        "token_type": "bearer",
+        "username": username,
+    }
 
 # 取得當前登入使用者的基本資訊
 # 使用方法：GET /api/users/me，需要 Bearer Token
