@@ -248,6 +248,25 @@ const run = async () => {
   );
 
   await page.fill('input[type="password"] >> nth=1', "password123");
+  await page.click("[data-testid='auth-submit']");
+  await page.waitForTimeout(300);
+
+  /*
+   * 邀請碼是必填的。這裡驗的是「空的時候擋在前端」——後端一樣會擋（回 403
+   * 邀請碼不正確），但那要繞一趟網路才換到一句說錯方向的話：使用者其實是
+   * 根本沒填。stub 的 /api/register 一律回 201，所以如果沒擋住就會直接進
+   * dashboard，這則就抓得到。
+   */
+  record(
+    "沒填邀請碼時擋在前端，不會送出去",
+    page.url().includes("/login") &&
+      (await page.locator(".alert-danger").innerText().catch(() => "")).includes(
+        "邀請碼",
+      ),
+    (await page.locator(".alert-danger").innerText().catch(() => "")).trim(),
+  );
+
+  await page.fill('input[type="text"] >> nth=1', "test-invite-code");
   await shot(page, "register-form");
 
   await page.click("[data-testid='auth-submit']");

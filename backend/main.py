@@ -195,7 +195,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     return {"access_token": create_access_token(user.username), "token_type": "bearer"}
 
 # 建立帳號
-# 使用方法：POST /api/register，無需驗證（可用 REGISTER_CODE 加一道邀請碼）
+# 使用方法：POST /api/register，需要填對 REGISTER_CODE 那組邀請碼
 # 使用場景：新成員自己開帳號，不必找人手動塞進資料庫
 @api_router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(payload: RegisterRequest):
@@ -204,14 +204,22 @@ async def register(payload: RegisterRequest):
 
     ## 誰可以註冊
 
-    由 `REGISTER_CODE` 環境變數決定：
+    **邀請碼是必填的**，由 `REGISTER_CODE` 環境變數提供：
 
-    - **沒設**（預設）＝ 開放註冊，任何知道網址的人都能開帳號
     - **有設** ＝ 要在表單裡填對那組邀請碼才建得起來
+    - **沒設** ＝ 這個站台**不開放自行註冊**（回 503），帳號要請管理員手動建
 
-    ⚠️ 這個服務的讀取端點大多不需要認證（`timelist` / `raw` / `items` 都是
-    公開的），所以「多一個帳號」本身洩漏不了東西；真正的成本是**有人可以無限
-    開帳號並上傳光表**佔掉資料庫。部署在公開 IP 上時建議設一組邀請碼。
+    ⚠️ 沒設的時候是**關起來**而不是打開。舊版的預設是「沒設 = 開放註冊」，
+    那條路是 fail-open 的：漏設一個環境變數的後果是全世界都能在你的資料庫裡
+    開帳號，而畫面上什麼異常都沒有（註冊成功、登入成功、一切正常）。設定漏了
+    應該要撞牆，不應該悄悄變成最寬鬆的那個狀態——和 `AUTH_SECRET` 在
+    `REQUIRE_AUTH_SECRET=1` 下啟動失敗是同一個理由。
+
+    ⚠️ 邀請碼擋的是**濫用**不是機密：這個服務的讀取端點大多不需要認證
+    （`timelist` / `raw` / `items` 都是公開的），所以「多一個帳號」本身洩漏
+    不了東西，真正的成本是有人可以無限開帳號並上傳光表佔掉資料庫。也因為
+    如此，**這組碼不要進版控**——這個 repo 是 public fork，寫進去的那一刻
+    它就不再是一道門了。值放在 `.env.deployment`（已 gitignore）。
 
     ## 為什麼不先查有沒有重複
 
@@ -221,14 +229,21 @@ async def register(payload: RegisterRequest):
     密碼對不上的那位就登不進來了。
     """
     required_code = os.getenv("REGISTER_CODE", "").strip()
-    if required_code:
-        provided = (payload.invite_code or "").strip()
-        # 比 bytes 不比 str：compare_digest 遇到非 ASCII 會丟 TypeError，
-        # 而邀請碼是人取的（和 auth.verify_password 踩過的是同一個坑）
-        if not secrets.compare_digest(
-            provided.encode("utf-8"), required_code.encode("utf-8")
-        ):
-            raise HTTPException(status_code=403, detail="邀請碼不正確")
+    if not required_code:
+        # 503 而不是 403：這不是「你填錯了」，是這個站台根本沒開這條路。
+        # 訊息要講得出下一步，否則使用者只會一直重填邀請碼
+        raise HTTPException(
+            status_code=503,
+            detail="這個站台沒有開放自行註冊（未設定邀請碼），請找管理員開帳號",
+        )
+
+    provided = (payload.invite_code or "").strip()
+    # 比 bytes 不比 str：compare_digest 遇到非 ASCII 會丟 TypeError，
+    # 而邀請碼是人取的（和 auth.verify_password 踩過的是同一個坑）
+    if not secrets.compare_digest(
+        provided.encode("utf-8"), required_code.encode("utf-8")
+    ):
+        raise HTTPException(status_code=403, detail="邀請碼不正確")
 
     try:
         username, password = validate_credentials(payload.username, payload.password)

@@ -80,10 +80,21 @@ const Login = () => {
   // 而使用者看到的是「帳號已經有人用了」——用了那個名字的正是他自己
   const busyRef = useRef(false);
 
+  /*
+   * 改任何一欄就把錯誤收掉。不收的話「請填寫邀請碼」會在使用者填好之後
+   * 繼續掛在那一欄底下——欄位是滿的、訊息說它是空的，看起來像壞掉
+   * （實際上只是要等下一次送出才更新）。
+   */
+  const edit = (setter) => (event) => {
+    setter(event.target.value);
+    if (error) setError("");
+  };
+
   const switchMode = (next) => {
     setMode(next);
     setError("");
     setConfirm("");
+    setInviteCode("");
   };
 
   const handleLogin = async () => {
@@ -117,13 +128,23 @@ const Login = () => {
       return;
     }
 
+    /*
+     * 邀請碼是必填的。空白在後端一樣會被擋（compare_digest 對不上空字串），
+     * 但那要繞一趟網路才換到「邀請碼不正確」——而使用者其實是根本沒填。
+     * 前端先擋是為了那句訊息說得準，真正的把關仍然在後端。
+     */
+    if (!inviteCode.trim()) {
+      setError("請填寫邀請碼");
+      return;
+    }
+
     const response = await fetch(API_ENDPOINTS.REGISTER, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         username,
         password,
-        invite_code: inviteCode || null,
+        invite_code: inviteCode.trim(),
       }),
     });
 
@@ -180,7 +201,7 @@ const Login = () => {
           <Form.Control
             type="text"
             value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            onChange={edit(setUsername)}
             autoFocus
             autoComplete="username"
             style={{ fontSize: "18px" }}
@@ -197,7 +218,7 @@ const Login = () => {
           <Form.Control
             type="password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={edit(setPassword)}
             autoComplete={isRegister ? "new-password" : "current-password"}
             style={{ fontSize: "18px" }}
           />
@@ -213,21 +234,23 @@ const Login = () => {
               <Form.Control
                 type="password"
                 value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
+                onChange={edit(setConfirm)}
                 autoComplete="new-password"
                 style={{ fontSize: "18px" }}
               />
             </Form.Group>
 
-            {/* 只有後端設了 REGISTER_CODE 時才需要填，所以標成選填 */}
+            {/* 必填。值來自後端的 REGISTER_CODE，沒設的話那支端點回 503 */}
             <Form.Group className="mb-4">
-              <Form.Label className="text-white">邀請碼（選填）</Form.Label>
+              <Form.Label className="text-white">邀請碼</Form.Label>
               <Form.Control
                 type="text"
                 value={inviteCode}
-                onChange={(e) => setInviteCode(e.target.value)}
+                onChange={edit(setInviteCode)}
+                autoComplete="off"
                 style={{ fontSize: "18px" }}
               />
+              <Form.Text className="text-white-50">向負責人索取</Form.Text>
             </Form.Group>
           </>
         )}

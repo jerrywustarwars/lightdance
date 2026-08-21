@@ -30,7 +30,9 @@ def users(monkeypatch):
 
     collection.find_one = find_one
     monkeypatch.setattr(main, "user_list", collection)
-    monkeypatch.delenv("REGISTER_CODE", raising=False)
+    # 邀請碼是必填的，所以「能建帳號」的測試都得先有一組碼可以填。
+    # 沒設的情形另外驗（見下面的「沒設邀請碼 = 關閉註冊」）
+    monkeypatch.setenv("REGISTER_CODE", TEST_CODE)
     return collection
 
 
@@ -39,8 +41,17 @@ def client():
     return TestClient(main.app)
 
 
+#: `users` fixture 預設設好的邀請碼。每則測試都要填對它才建得起來
+TEST_CODE = "test-invite-code"
+
+
 def post(client, **over):
-    body = {"username": "newcomer", "password": "password123", **over}
+    body = {
+        "username": "newcomer",
+        "password": "password123",
+        "invite_code": TEST_CODE,
+        **over,
+    }
     return client.post("/api/register", json=body)
 
 
@@ -184,19 +195,46 @@ def test_database_failure_is_reported_not_swallowed(client, users):
 # ============================================================================
 
 
-def test_open_registration_when_no_code_is_configured(client, users):
-    """預設開放註冊，不設定就能直接用。"""
-    assert post(client).status_code == 201
+def test_registration_is_closed_when_no_code_is_configured(client, users, monkeypatch):
+    """
+    ⚠️ 這則守的是 **fail-closed**。
+
+    舊版「沒設 REGISTER_CODE = 開放註冊」是 fail-open 的：漏設一個環境變數的
+    後果是任何知道網址的人都能在資料庫裡開帳號，而那條路壞掉時畫面上完全正常
+    ——註冊成功、登入成功、什麼異常都沒有。設定漏了應該要撞牆。
+
+    回 503 不是 403：這不是「你填錯了」，是這個站台根本沒開這條路，訊息要講得
+    出下一步（找管理員），否則使用者只會一直重填邀請碼。
+    """
+    monkeypatch.delenv("REGISTER_CODE", raising=False)
+
+    response = post(client)
+
+    assert response.status_code == 503
+    assert users.documents == []
+    assert "管理員" in response.json()["detail"]
 
 
-def test_requires_the_code_when_configured(client, users, monkeypatch):
-    monkeypatch.setenv("REGISTER_CODE", "nycuee2026")
+def test_a_blank_code_is_also_closed(client, users, monkeypatch):
+    """整串空白等於沒設。不 strip 的話 `REGISTER_CODE=" "` 會變成一組空白邀請碼。"""
+    monkeypatch.setenv("REGISTER_CODE", "   ")
 
-    assert post(client).status_code == 403
+    assert post(client, invite_code="   ").status_code == 503
+    assert users.documents == []
+
+
+def test_requires_the_right_code(client, users):
+    assert post(client, invite_code=None).status_code == 403
+    assert post(client, invite_code="").status_code == 403
     assert post(client, invite_code="wrong").status_code == 403
     assert users.documents == []
 
-    assert post(client, invite_code="nycuee2026").status_code == 201
+    assert post(client, invite_code=TEST_CODE).status_code == 201
+
+
+def test_surrounding_whitespace_in_the_code_is_forgiven(client, users):
+    """使用者是從聊天室複製貼上的，前後多一個空白很常見。"""
+    assert post(client, invite_code=f"  {TEST_CODE}  ").status_code == 201
 
 
 def test_invite_code_with_non_ascii_does_not_crash(client, users, monkeypatch):
