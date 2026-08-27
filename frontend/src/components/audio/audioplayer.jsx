@@ -376,15 +376,19 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     tracks: showPart,
   });
 
-  const listitem = showPart.map((setting) => (
+  const listitem = showPart.map((setting, index) => (
     <Timeline
       key={setting.id}
       armorIndex={setting.armorIndex}
       partIndex={setting.partIndex}
       zoomValue={zoomLevel}
-      ref={elRefs.current[showPart.findIndex((s) => s.id === setting.id)]}
+      ref={elRefs.current[index]}
       height={trackHeight(setting, rowHeight)}
       isCopying={copyPaste.isCopying}
+      // 換軌拖曳的落點是在**可見軌道清單**上算的（拖到眼睛看到的那一列），
+      // 所以每條軌要知道自己是第幾列、清單長什麼樣
+      tracks={showPart}
+      rowIndex={index}
     />
   ));
 

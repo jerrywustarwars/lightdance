@@ -143,6 +143,42 @@ export function useSegmentArmorTimelines(armorIndex) {
 }
 
 /**
+ * 整張表的**讀寫**，但**不訂閱** —— 給 154 條 Timeline 的拖曳路徑用。
+ *
+ * 跨軌拖曳要動到別條軌的資料，可是 Timeline 不能訂閱整張表：那等於每一次
+ * 編輯都喚醒全部 154 個實例，而逐部位訂閱正是為了避免這件事
+ * （見 `docs/frontend-rendering-optimization.md`）。
+ *
+ * 拖曳需要的是「按下去的那一刻表長什麼樣」與「放開時寫回去」，兩者都是
+ * **事件發生當下**才需要，不需要 render 時就持有。所以這裡只拿 `store`
+ * 與 `dispatch`，一個 `useSelector` 都沒有。
+ *
+ * ⚠️ 讀取一律用 `readTable()` 現讀，不要把它的結果存進 ref 留到之後用：
+ * 拖曳中間可能有別的東西改了表（undo、播放清單、另一條軌的編輯）。
+ */
+export function useTableCommit() {
+  const dispatch = useDispatch();
+  const store = useStore();
+
+  const readTable = useCallback(
+    () => store.getState().profiles.data?.actionTable ?? EMPTY,
+    [store],
+  );
+
+  const commitTable = useCallback(
+    (nextTable, meta) => {
+      const current = store.getState().profiles.data.actionTable;
+      if (nextTable === current) return;
+      if (wouldShrinkTable(nextTable, current)) return;
+      dispatch(updateActionTable(nextTable, meta));
+    },
+    [dispatch, store],
+  );
+
+  return { readTable, commitTable };
+}
+
+/**
  * 整張 segment 表，以及寫回整張表的 commit。
  *
  * 給真正需要跨部位的操作用（複製貼上、區間平移）。單一部位的編輯請用

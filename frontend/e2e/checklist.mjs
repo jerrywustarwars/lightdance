@@ -804,6 +804,126 @@ const run = async () => {
     await page.mouse.click(rows[0].left + rows[0].width * 0.9, rows[0].top + 20);
     await page.waitForTimeout(400);
     record("點一下空隙仍然是取消選取", (await selectedCount()) === 0, "");
+
+    /*
+     * ── 跨軌拖曳 ────────────────────────────────────────
+     *
+     * 框選早就能一次選到好幾條軌，但拖曳原本只動點到的那一條——選了三條只有
+     * 一條會走，而且不報錯。這兩項驗的是：
+     *
+     * ① 水平：整批共用同一個位移量（樂句在幾條軌上搬完仍然對得齊）
+     * ② 垂直：拖到別的列上就是換軌，色塊真的換到那一條時間軸底下
+     *
+     * 兩項都只有真瀏覽器驗得到——jsdom 沒有 `elementFromPoint`，
+     * 而「游標停在哪一列」整件事就是問它。
+     */
+
+    /** 每個亮著的色塊在第幾列（用 .timeline 的 data-row-index） */
+    const litByRow = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll(".timeline-block[data-segment-id]")]
+          .filter((el) =>
+            /rgba?\((?!\s*0,\s*0,\s*0)/.test(el.style.background || ""),
+          )
+          .map((el) => {
+            const r = el.getBoundingClientRect();
+            const row = el.closest(".timeline[data-row-index]");
+            return {
+              row: Number(row?.dataset.rowIndex ?? -1),
+              x: Math.round(r.x),
+              cx: Math.round(r.x + r.width / 2),
+              cy: Math.round(r.y + r.height / 2),
+            };
+          })
+          .sort((a, b) => a.row - b.row || a.x - b.x),
+      );
+
+    // ① 水平：框選兩軌之後整批一起搬
+    await page.mouse.move(rows[0].left + rows[0].width * 0.95, rows[0].top + 20);
+    await page.mouse.down();
+    await page.mouse.move(x2, rows[1].bottom - 20, { steps: 12 });
+    await page.mouse.up();
+    await page.waitForTimeout(400);
+
+    const beforeCrossDrag = await litByRow();
+    const rowsInSelection = new Set(beforeCrossDrag.map((b) => b.row)).size;
+
+    if (rowsInSelection >= 2) {
+      const grab = beforeCrossDrag[0];
+      await page.keyboard.press("m");
+      await page.waitForTimeout(200);
+      await page.mouse.click(grab.cx, grab.cy);
+      await page.waitForTimeout(150);
+      await page.mouse.move(grab.cx + 80, grab.cy, { steps: 10 });
+      await page.waitForTimeout(150);
+      await page.mouse.click(grab.cx + 80, grab.cy);
+      await page.waitForTimeout(600);
+
+      const afterCrossDrag = await litByRow();
+      const perRow = new Map();
+      for (const b of afterCrossDrag) {
+        if (!perRow.has(b.row)) perRow.set(b.row, []);
+        perRow.get(b.row).push(b);
+      }
+      const shifts = beforeCrossDrag.map((b, i) => afterCrossDrag[i]?.x - b.x);
+      const movedRows = new Set(
+        beforeCrossDrag.filter((b, i) => shifts[i] > 20).map((b) => b.row),
+      );
+
+      record(
+        "跨軌選取一起搬：兩條軌都動了，而且位移量相同",
+        movedRows.size >= 2 &&
+          shifts.every((d) => Number.isFinite(d) && Math.abs(d - shifts[0]) <= 2),
+        `${movedRows.size} 條軌移動，位移 ${shifts.map(Math.round).join(" / ")} px`,
+      );
+      await shot(page, "cross-track-drag");
+    } else {
+      record(
+        "跨軌選取一起搬：兩條軌都動了，而且位移量相同",
+        false,
+        `框到的色塊只落在 ${rowsInSelection} 條軌上`,
+      );
+    }
+
+    // ② 垂直：把一個色塊拖到下一列
+    await page.mouse.click(rows[0].left + rows[0].width * 0.9, rows[0].top + 20);
+    await page.waitForTimeout(300);
+
+    const beforeVertical = await litByRow();
+    const onRow0 = beforeVertical.filter((b) => b.row === 0);
+    const countOn = (list, row) => list.filter((b) => b.row === row).length;
+
+    if (onRow0.length > 0 && rows.length >= 3) {
+      const victim = onRow0[0];
+      await page.mouse.click(victim.cx, victim.cy);
+      await page.waitForTimeout(250);
+      await page.keyboard.press("m");
+      await page.waitForTimeout(200);
+      await page.mouse.click(victim.cx, victim.cy);
+      await page.waitForTimeout(150);
+      // 往下拖到第三列（第二列上已經有東西，換到空的那條比較好判讀）
+      const dropY = rows[2].top + (rows[2].bottom - rows[2].top) / 2;
+      await page.mouse.move(victim.cx, dropY, { steps: 12 });
+      await page.waitForTimeout(200);
+      await page.mouse.click(victim.cx, dropY);
+      await page.waitForTimeout(600);
+
+      const afterVertical = await litByRow();
+      record(
+        "把色塊拖到別條軌上，它就換到那條軌了",
+        countOn(afterVertical, 2) === countOn(beforeVertical, 2) + 1 &&
+          countOn(afterVertical, 0) === onRow0.length - 1,
+        `第 1 軌 ${onRow0.length} → ${countOn(afterVertical, 0)}，` +
+          `第 3 軌 ${countOn(beforeVertical, 2)} → ${countOn(afterVertical, 2)}`,
+      );
+      await shot(page, "vertical-drag");
+    } else {
+      record(
+        "把色塊拖到別條軌上，它就換到那條軌了",
+        false,
+        `第 1 軌 ${onRow0.length} 個色塊 / ${rows.length} 條軌`,
+      );
+    }
   } else {
     record("框選一次選到跨軌的多個色塊", false, `只有 ${rows.length} 條軌`);
   }

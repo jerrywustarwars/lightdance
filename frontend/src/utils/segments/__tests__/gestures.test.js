@@ -10,6 +10,8 @@ import {
   moveSegment,
   moveSegments,
   movableRange,
+  movableRangeAcross,
+  moveAcross,
   resizeSegment,
   MIN_BLOCK_GAP_MS,
   MIN_SEGMENT_MS,
@@ -322,5 +324,82 @@ describe("moveSegment 的不變式", () => {
         }
       }
     }
+  });
+});
+
+describe("movableRangeAcross / moveAcross（跨軌一起搬）", () => {
+  const groupOf = (armorIndex, partIndex, segments, ids) => ({
+    armorIndex,
+    partIndex,
+    segments,
+    segmentIds: new Set(ids),
+  });
+
+  it("可動範圍是每一條各自範圍的交集", () => {
+    /*
+     * 第一條右邊很空，第二條右邊 3000 就有鄰居擋著。整批共用同一個位移量，
+     * 所以整批的上限由被擋住的那一條決定。
+     */
+    const groups = [
+      groupOf(0, 0, [{ id: "a", start: 1000, end: 2000 }], ["a"]),
+      groupOf(1, 0, [
+        { id: "b", start: 1000, end: 2000 },
+        { id: "wall", start: 3000, end: 4000 },
+      ], ["b"]),
+    ];
+
+    const range = movableRangeAcross(groups, { duration: 100000 });
+    // 第二條只能移到 3000-50（最小間距）為止 → +950
+    expect(range.max).toBe(950);
+    expect(range.min).toBe(-1000);
+  });
+
+  it("整批套用同一個位移量，相對位置不變", () => {
+    const groups = [
+      groupOf(0, 0, [{ id: "a", start: 1000, end: 2000 }], ["a"]),
+      groupOf(1, 0, [{ id: "b", start: 1500, end: 2500 }], ["b"]),
+    ];
+
+    const updates = moveAcross(groups, 500, { duration: 100000 });
+
+    expect(updates[0].segments[0].start).toBe(1500);
+    expect(updates[1].segments[0].start).toBe(2000);
+    // 搬完之後兩條的相對關係還是差 500
+    expect(
+      updates[1].segments[0].start - updates[0].segments[0].start,
+    ).toBe(500);
+  });
+
+  it("⚠️ 被擋住的那一條停下來時，其他條也一起停", () => {
+    /*
+     * 不要讓每一條各自再夾一次——那會讓限制最緊的那條停下而其他條繼續走，
+     * 樂句就散開了，而畫面上只是「怎麼有幾條沒跟上」。
+     */
+    const groups = [
+      groupOf(0, 0, [{ id: "a", start: 1000, end: 2000 }], ["a"]),
+      groupOf(1, 0, [
+        { id: "b", start: 1000, end: 2000 },
+        { id: "wall", start: 3000, end: 4000 },
+      ], ["b"]),
+    ];
+
+    const updates = moveAcross(groups, 5000, { duration: 100000 });
+
+    // 兩條都只走了 950（被第二條的鄰居夾住）
+    expect(updates[0].segments[0].start).toBe(1950);
+    expect(updates[1].segments.find((s) => s.id === "b").start).toBe(1950);
+  });
+
+  it("沒有實際位移時回傳空陣列（呼叫端才不會佔一格 undo）", () => {
+    const groups = [
+      groupOf(0, 0, [{ id: "a", start: 1000, end: 2000 }], ["a"]),
+    ];
+    expect(moveAcross(groups, 10, { duration: 100000 })).toEqual([]);
+  });
+
+  it("一條都沒選到東西時回傳 null / 空陣列", () => {
+    const groups = [groupOf(0, 0, [{ id: "a", start: 0, end: 1000 }], [])];
+    expect(movableRangeAcross(groups, {})).toBeNull();
+    expect(moveAcross(groups, 500, {})).toEqual([]);
   });
 });

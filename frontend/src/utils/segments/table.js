@@ -1,3 +1,5 @@
+import { clearRange } from "./core.js";
+
 /**
  * 整張光表層級的操作 —— **「一次編輯多條時間軸」的唯一定義處**。
  *
@@ -111,4 +113,119 @@ export function partsOfSelection(table, groups) {
       segments: table[group.armorIndex]?.[group.partIndex],
     }))
     .filter((group) => Array.isArray(group.segments));
+}
+
+
+/**
+ * 換軌拖曳時，時間上還能移多遠。
+ *
+ * ⚠️ **和同軌拖曳的規則不一樣，這是刻意的。** 同軌拖曳撞到鄰居就停
+ * （`movableRange`），因為那條軌上的其他色塊是使用者要保留的；換軌拖曳則是
+ * **覆蓋**——落點上原本有什麼就被裁掉，語意與貼上一致。所以這裡唯一的限制
+ * 是「不要跑出表演的時間範圍」。
+ *
+ * 兩種規則混在一起會很難解釋，但分開之後各自都只有一句話：
+ * 「同一條軌上不會互相擠掉」與「搬到別條軌就是蓋過去」。
+ */
+export function trackMoveRange(groups, { duration } = {}) {
+  let earliest = Infinity;
+  let latest = -Infinity;
+
+  for (const { segments, segmentIds } of groups) {
+    for (const segment of segments) {
+      if (!segmentIds.has(segment.id)) continue;
+      earliest = Math.min(earliest, segment.start);
+      latest = Math.max(latest, segment.end);
+    }
+  }
+
+  if (earliest === Infinity) return null;
+
+  const limit = Number.isFinite(duration) ? duration : Infinity;
+  return {
+    min: Math.min(0, -earliest),
+    max: Math.max(0, limit - latest),
+  };
+}
+
+/**
+ * 把幾條軌上被選到的段**搬**到別的軌（可同時平移時間）。
+ *
+ * 搬走而不是複製，所以：
+ *
+ * - 段的 `id` **保持原樣**。它已經不在來源那一條上了，不會撞名，而且選取
+ *   可以直接跟著走——換新 id 的話拖完之後選取就掉了
+ * - 落點上原本的內容被裁掉（`clearRange`），與貼上同一套碰撞規則
+ *
+ * ⚠️ **先全部移除、再全部插入。** 來源與目標會重疊（把兩條一起往下拖一格時，
+ * 第二條同時是第一條的目標與它自己的來源）。邊移邊插的話後處理的那一條會把
+ * 前一條剛搬進來的東西當成「落點上原本就有的」再裁一次。
+ *
+ * @param {Array} table 整張光表
+ * @param {Array<{armorIndex, partIndex, segmentIds, segments, to:{armorIndex, partIndex}}>} moves
+ * @param {object} options `deltaMs` 同時平移的時間（已夾好）
+ * @returns {{table: Array, selections: Array}} 沒有任何改變時 `table` 是原表
+ */
+export function moveSegmentsToTracks(table, moves, { deltaMs = 0 } = {}) {
+  if (!Array.isArray(table) || !moves?.length) {
+    return { table, selections: [] };
+  }
+
+  // 第一階段：把要搬走的段從來源移除
+  const removals = [];
+  const landings = [];
+
+  for (const { armorIndex, partIndex, segmentIds, segments, to } of moves) {
+    const moving = segments.filter((segment) => segmentIds.has(segment.id));
+    if (moving.length === 0) continue;
+
+    removals.push({
+      armorIndex,
+      partIndex,
+      segments: segments.filter((segment) => !segmentIds.has(segment.id)),
+    });
+
+    landings.push({
+      to,
+      segments: moving.map((segment) => ({
+        ...segment,
+        start: segment.start + deltaMs,
+        end: segment.end + deltaMs,
+      })),
+    });
+  }
+
+  if (landings.length === 0) return { table, selections: [] };
+
+  const stripped = updateParts(table, removals);
+
+  // 第二階段：插進目標軌，蓋掉衝突的部分
+  const inserts = [];
+  const selections = [];
+
+  for (const { to, segments } of landings) {
+    const existing = stripped[to.armorIndex]?.[to.partIndex];
+    if (!Array.isArray(existing)) continue; // 目標不存在（呼叫端應該先夾好）
+
+    const from = segments[0].start;
+    const until = segments[segments.length - 1].end;
+
+    inserts.push({
+      armorIndex: to.armorIndex,
+      partIndex: to.partIndex,
+      segments: [...clearRange(existing, from, until), ...segments].sort(
+        (a, b) => a.start - b.start,
+      ),
+    });
+
+    for (const segment of segments) {
+      selections.push({
+        armorIndex: to.armorIndex,
+        partIndex: to.partIndex,
+        segmentId: segment.id,
+      });
+    }
+  }
+
+  return { table: updateParts(stripped, inserts), selections };
 }

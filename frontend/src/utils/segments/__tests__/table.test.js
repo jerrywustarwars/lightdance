@@ -12,6 +12,8 @@ import {
   updateParts,
   mapSelectedParts,
   partsOfSelection,
+  trackMoveRange,
+  moveSegmentsToTracks,
 } from "../table.js";
 
 /** 3 位舞者 × 4 個部位，每格放一個可辨識的 segment */
@@ -159,5 +161,135 @@ describe("partsOfSelection", () => {
   it("指不到的部位直接略過（選取可能是 undo 之前的）", () => {
     const table = makeTable();
     expect(partsOfSelection(table, [group(9, 9, "x")])).toEqual([]);
+  });
+});
+
+describe("trackMoveRange", () => {
+  /*
+   * ⚠️ 換軌拖曳的規則和同軌**刻意不一樣**：同軌撞到鄰居就停，換軌是覆蓋，
+   * 所以唯一的限制是不要跑出表演的時間範圍。
+   */
+  const groups = [
+    {
+      segments: [
+        { id: "a", start: 1000, end: 2000 },
+        { id: "other", start: 5000, end: 6000 },
+      ],
+      segmentIds: new Set(["a"]),
+    },
+    {
+      segments: [{ id: "b", start: 3000, end: 4000 }],
+      segmentIds: new Set(["b"]),
+    },
+  ];
+
+  it("往左到最早那一段的起點，往右到最晚那一段的終點", () => {
+    expect(trackMoveRange(groups, { duration: 10000 })).toEqual({
+      min: -1000, // 最早的 a 從 1000 起
+      max: 6000, // 最晚的 b 到 4000，離 10000 還有 6000
+    });
+  });
+
+  it("不看未選取的鄰居——那正是換軌與同軌的差別", () => {
+    // 同一條軌上的 `other` 就在 5000，同軌拖曳會被它擋住；換軌不會
+    expect(trackMoveRange(groups, { duration: 10000 }).max).toBe(6000);
+  });
+
+  it("表演長度還沒載入時往右不設限，但不會流出 NaN", () => {
+    const range = trackMoveRange(groups, {});
+    expect(range.min).toBe(-1000);
+    expect(range.max).toBe(Infinity);
+  });
+
+  it("一段都沒選到時回傳 null", () => {
+    expect(
+      trackMoveRange([{ segments: [{ id: "a", start: 0, end: 1 }], segmentIds: new Set() }], {}),
+    ).toBeNull();
+  });
+});
+
+describe("moveSegmentsToTracks", () => {
+  const table = () => [
+    [
+      [{ id: "a", start: 1000, end: 2000 }],
+      [{ id: "b", start: 1000, end: 2000 }],
+      [],
+    ],
+  ];
+
+  const move = (from, to, ids, segments) => ({
+    armorIndex: 0,
+    partIndex: from,
+    segmentIds: new Set(ids),
+    segments,
+    to: { armorIndex: 0, partIndex: to },
+  });
+
+  it("搬過去之後來源就沒有了", () => {
+    const before = table();
+    const { table: after } = moveSegmentsToTracks(before, [
+      move(0, 2, ["a"], before[0][0]),
+    ]);
+
+    expect(after[0][0]).toEqual([]);
+    expect(after[0][2].map((s) => s.id)).toEqual(["a"]);
+  });
+
+  it("id 保持原樣：選取才跟得過去", () => {
+    const before = table();
+    const { table: after, selections } = moveSegmentsToTracks(before, [
+      move(0, 2, ["a"], before[0][0]),
+    ]);
+
+    expect(after[0][2][0].id).toBe("a");
+    expect(selections).toEqual([
+      { armorIndex: 0, partIndex: 2, segmentId: "a" },
+    ]);
+  });
+
+  it("落點上原本的內容被裁掉（和貼上同一套碰撞規則）", () => {
+    const before = [[[{ id: "a", start: 1000, end: 2000 }], [{ id: "old", start: 0, end: 10000 }]]];
+    const { table: after } = moveSegmentsToTracks(before, [
+      move(0, 1, ["a"], before[0][0]),
+    ]);
+
+    expect(after[0][1].map((s) => [s.start, s.end])).toEqual([
+      [0, 1000],
+      [1000, 2000],
+      [2000, 10000],
+    ]);
+  });
+
+  it("時間也可以同時平移", () => {
+    const before = table();
+    const { table: after } = moveSegmentsToTracks(
+      before,
+      [move(0, 2, ["a"], before[0][0])],
+      { deltaMs: 3000 },
+    );
+
+    expect(after[0][2].map((s) => [s.start, s.end])).toEqual([[4000, 5000]]);
+  });
+
+  it("⚠️ 來源與目標重疊時不會互相吃掉（先全部移除、再全部插入）", () => {
+    /*
+     * 兩條一起往下拖一格：第二條同時是第一條的目標與它自己的來源。
+     * 邊移邊插的話，後處理的那一條會把前一條剛搬進來的東西當成
+     * 「落點上原本就有的」再裁一次——而那看起來只是「怎麼少了一段」。
+     */
+    const before = table();
+    const { table: after } = moveSegmentsToTracks(before, [
+      move(0, 1, ["a"], before[0][0]),
+      move(1, 2, ["b"], before[0][1]),
+    ]);
+
+    expect(after[0][0]).toEqual([]);
+    expect(after[0][1].map((s) => s.id)).toEqual(["a"]);
+    expect(after[0][2].map((s) => s.id)).toEqual(["b"]);
+  });
+
+  it("沒有東西要搬時回傳原表", () => {
+    const before = table();
+    expect(moveSegmentsToTracks(before, []).table).toBe(before);
   });
 });

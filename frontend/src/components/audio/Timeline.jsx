@@ -7,16 +7,30 @@ import {
   updateMoveMode,
   updateCurrentTime,
 } from "../../redux/actions";
-import { useSegmentPartTimeline } from "../../hooks/useSegmentActionTable.js";
-import { buildTimelineBlocks } from "../../utils/segments/blocks.js";
 import {
-  movableRange,
-  moveSegments,
+  useSegmentPartTimeline,
+  useTableCommit,
+} from "../../hooks/useSegmentActionTable.js";
+import { buildTimelineBlocks } from "../../utils/segments/blocks.js";
+import { TICK_MS } from "../../constants/time.js";
+import {
+  movableRangeAcross,
+  moveAcross,
   resizeSegment,
   MIN_BLOCK_GAP_MS,
   MIN_SEGMENT_MS,
 } from "../../utils/segments/gestures.js";
-import { makeSelection, selectedIdsOnPart } from "../../utils/selection.js";
+import {
+  moveSegmentsToTracks,
+  partsOfSelection,
+  trackMoveRange,
+  updateParts,
+} from "../../utils/segments/table.js";
+import {
+  groupSelectionsByPart,
+  makeSelection,
+  selectedIdsOnPart,
+} from "../../utils/selection.js";
 import { sourceSelections } from "../../utils/segments/clipboard.js";
 
 // cloneDeep 已移除：tempActionTable cascade 已合併，drag 復原時再加回
@@ -34,8 +48,14 @@ const colorDistance = (color1, color2) => {
 };
 // Timeline 組件
 const Timeline = forwardRef(
-  ({ zoomValue, height, armorIndex, partIndex, isCopying }, timelineRef) => {
+  (
+    { zoomValue, height, armorIndex, partIndex, isCopying, tracks, rowIndex },
+    timelineRef,
+  ) => {
     const dispatch = useDispatch();
+    // 跨軌拖曳要動到別條軌，但 Timeline **不能訂閱整張表**（154 個實例會被
+    // 每一次編輯喚醒）。只在 mousedown / commit 的當下現讀現寫。
+    const { readTable, commitTable } = useTableCommit();
 
     // **狀態變數**
 
@@ -77,13 +97,24 @@ const Timeline = forwardRef(
     // Move Mode 相關 ref（零延遲拖曳，不觸發 React 重繪）
     const moveMode = useSelector((state) => state.profiles.moveMode);
     const moveDragStartRef = useRef(null);   // 拖曳起始 clientX
-    // 被拖曳的那一批 segmentId（不是索引——索引會位移）。多選時整批一起搬，
-    // 單選時就是一個。空陣列代表目前沒有在追蹤任何色塊。
-    const moveDraggedIdsRef = useRef([]);
     const moveDraggedDomsRef = useRef([]); // 對應的 DOM，預覽時一起 transform
     const minDragPxRef = useRef(0);          // 最小可拖曳像素（向左）
     const maxDragPxRef = useRef(0);          // 最大可拖曳像素（向右）
     const moveDragPixelsRef = useRef(0);     // 目前拖曳偏移像素
+
+    /*
+     * 跨軌拖曳用的 ref。
+     *
+     * `moveGroupsRef` 是「按下去的那一刻，選取涵蓋哪幾條軌、各自有哪些段」，
+     * 同時也是「現在有沒有在拖」的唯一答案（空陣列 = 沒有）。拖曳期間不重讀
+     * ——中途重讀的話，預覽用的邊界會跟放開時的落點對不上。
+     *
+     * `moveRowShiftRef` 是垂直方向已經跨了幾列（在**可見軌道清單**上算）。
+     * 0 代表還在原本那一列，走同軌的規則（撞到鄰居就停）；不是 0 就走換軌的
+     * 規則（覆蓋落點）。
+     */
+    const moveGroupsRef = useRef([]);
+    const moveRowShiftRef = useRef(0);
     const blockDomRefs = useRef({});         // index → DOM element
     // 用 ref 保持最新值供 useEffect 閉包使用
     const segmentsRef = useRef(segments);
@@ -107,6 +138,81 @@ const Timeline = forwardRef(
     const resizeBlockEndRef = useRef(0);       // 被 resize block 的結束時間（ms）
 
     /**
+     * 這一列的 DOM（拖曳時要量位置、也要找別列）。
+     *
+     * 每條軌的根節點都帶 `data-row-index`，所以「游標在第幾列」是**問畫面**
+     * 而不是自己累加列高——逐軌高度可以各自調整，重算一遍等於把版面邏輯
+     * 抄第二份。
+     */
+    const rowElementAt = (row) =>
+      document.querySelector(`.timeline[data-row-index="${row}"]`);
+
+    /**
+     * 游標停在哪一列，換算成相對於拖曳起點的列數差。
+     *
+     * 夾住範圍：選取裡最上面那一條不能被推到第 0 列以上、最下面那一條不能
+     * 掉出清單。整批共用同一個列數差，所以夾的是整批（和水平位移同一個原則
+     * ——搬完之後樂句在幾條軌上仍然對得齊）。
+     */
+    const rowShiftAt = (clientX, clientY) => {
+      if (!Array.isArray(tracks) || tracks.length === 0) return 0;
+
+      const under = document.elementFromPoint(clientX, clientY);
+      const row = under?.closest?.(".timeline[data-row-index]");
+      if (!row) return moveRowShiftRef.current; // 拖到清單外面就維持上一個落點
+
+      const target = Number(row.dataset.rowIndex);
+      if (!Number.isInteger(target)) return 0;
+
+      const rows = moveGroupsRef.current
+        .map((group) =>
+          tracks.findIndex(
+            (track) =>
+              track.armorIndex === group.armorIndex &&
+              track.partIndex === group.partIndex,
+          ),
+        )
+        .filter((index) => index >= 0);
+      if (rows.length === 0) return 0;
+
+      const wanted = target - rowIndex;
+      const lowest = Math.min(...rows);
+      const highest = Math.max(...rows);
+      return Math.max(-lowest, Math.min(tracks.length - 1 - highest, wanted));
+    };
+
+    /** 預覽要往下移幾個像素：量目標那一列與這一列的實際落差 */
+    const rowOffsetPx = (rowShift) => {
+      if (rowShift === 0) return 0;
+      const here = rowElementAt(rowIndex);
+      const there = rowElementAt(rowIndex + rowShift);
+      if (!here || !there) return 0;
+      return there.getBoundingClientRect().top - here.getBoundingClientRect().top;
+    };
+
+    /**
+     * 依「現在是不是換軌」重算水平的可拖曳像素範圍。
+     *
+     * 同一列：撞到鄰居就停（`movableRangeAcross`）。
+     * 換軌：落點是覆蓋，唯一的限制是不要跑出表演的時間範圍（`trackMoveRange`）。
+     */
+    const applyDragBounds = () => {
+      const rect = timelineRef?.current?.getBoundingClientRect();
+      const groups = moveGroupsRef.current;
+      if (!rect || !rect.width || groups.length === 0) return;
+
+      const range =
+        moveRowShiftRef.current === 0
+          ? movableRangeAcross(groups, { duration: durationRef.current })
+          : trackMoveRange(groups, { duration: durationRef.current });
+      if (!range) return;
+
+      const pixelsPerMs = rect.width / durationRef.current;
+      minDragPxRef.current = range.min * pixelsPerMs;
+      maxDragPxRef.current = range.max * pixelsPerMs;
+    };
+
+    /**
      * 把目前的拖曳距離換算成毫秒寫回，並清掉預覽用的 DOM 樣式。
      *
      * 兩個地方會結束一次拖曳——按 M 直接離開 move mode、或再點一下滑鼠提交——
@@ -116,20 +222,28 @@ const Timeline = forwardRef(
      * 只讀 ref，所以放進 ref 給 effect 用不會有 stale closure 的問題。
      */
     const commitMoveDrag = () => {
-      const ids = moveDraggedIdsRef.current;
+      const groups = moveGroupsRef.current;
       const dragPx = moveDragPixelsRef.current;
+      const rowShift = moveRowShiftRef.current;
 
-      if (ids.length > 0 && dragPx !== 0 && timelineRef?.current) {
+      if (groups.length > 0 && timelineRef?.current) {
         const rect = timelineRef.current.getBoundingClientRect();
         const pixelsPerMs = rect.width / durationRef.current;
-        // 邊界夾緊、網格對齊、與鄰居的最小間距全部在 moveSegments 裡，
-        // 那是純函式所以測得到（gestures.test.js）。這裡只負責把像素換算成
-        // 毫秒。沒有實際位移時它會回傳原陣列，commitSegments 就不會佔一格 undo。
-        commitSegments(
-          moveSegments(segmentsRef.current, ids, dragPx / pixelsPerMs, {
+        const deltaMs = dragPx / pixelsPerMs;
+
+        if (rowShift !== 0) {
+          commitTrackMove(groups, rowShift, deltaMs);
+        } else if (dragPx !== 0) {
+          /*
+           * 同一列：邊界夾緊、網格對齊、與鄰居的最小間距全部在 moveAcross 裡，
+           * 那是純函式所以測得到（gestures.test.js）。這裡只負責把像素換算成
+           * 毫秒。整批共用同一個位移量，所以七位舞者的樂句搬完仍然對得齊。
+           */
+          const updates = moveAcross(groups, deltaMs, {
             duration: durationRef.current,
-          }),
-        );
+          });
+          commitTable(updateParts(readTable(), updates));
+        }
       }
 
       moveDraggedDomsRef.current.forEach((dom) => {
@@ -137,12 +251,61 @@ const Timeline = forwardRef(
         dom.style.transform = "";
         dom.style.zIndex = "";
         dom.style.overflow = "";
+        dom.style.pointerEvents = "";
       });
 
       moveDragStartRef.current = null;
-      moveDraggedIdsRef.current = [];
       moveDraggedDomsRef.current = [];
       moveDragPixelsRef.current = 0;
+      moveGroupsRef.current = [];
+      moveRowShiftRef.current = 0;
+    };
+
+    /**
+     * 換軌：把選取的段搬到往下（或往上）數 `rowShift` 列的那幾條軌。
+     *
+     * ⚠️ **平移量是在「可見軌道清單」上算的，不是 `(舞者, 部位)` 座標。**
+     * 使用者是拖到眼睛看到的那一列上，而軌道清單是他自己排的——第 3 列的下面
+     * 是第 4 列，不必然是同一位舞者的下一個部位。
+     *
+     * （複製貼上剛好相反，用的是 `(舞者, 部位)` 的二維平移：剪貼簿會跨越工作集
+     * 的切換，而工作集隨時可以重排，用列號會貼到完全不同的部位。拖曳沒有這個
+     * 問題——它從按下到放開都在同一個畫面上。）
+     */
+    const commitTrackMove = (groups, rowShift, deltaMs) => {
+      if (!Array.isArray(tracks) || tracks.length === 0) return;
+
+      const rowOf = (group) =>
+        tracks.findIndex(
+          (track) =>
+            track.armorIndex === group.armorIndex &&
+            track.partIndex === group.partIndex,
+        );
+
+      const moves = [];
+      for (const group of groups) {
+        const row = rowOf(group);
+        const target = tracks[row + rowShift];
+        // 目標列不存在（拖出清單外）就整批放棄，不要只搬一部分——
+        // 搬一半會讓原本對齊的樂句散開，而使用者看不出是被夾住了
+        if (row < 0 || !target) return;
+        moves.push({ ...group, to: target });
+      }
+
+      const range = trackMoveRange(groups, { duration: durationRef.current });
+      if (!range) return;
+      const shifted = Math.max(
+        range.min,
+        Math.min(range.max, Math.round(deltaMs / TICK_MS) * TICK_MS),
+      );
+
+      const { table, selections } = moveSegmentsToTracks(readTable(), moves, {
+        deltaMs: shifted,
+      });
+
+      commitTable(table);
+      // 選取跟著搬過去的段走。id 沒變，只是換了軌
+      if (selections.length > 0) dispatch(updateMultiSelectedBlocks(selections));
     };
 
     const commitMoveDragRef = useRef(commitMoveDrag);
@@ -160,12 +323,31 @@ const Timeline = forwardRef(
       // 滑鼠移動時更新 block 的 DOM 位置（零延遲，不走 React）
       const handleGlobalMouseMove = (e) => {
         if (moveDragStartRef.current === null) return;
+
+        /*
+         * 垂直方向：游標現在停在哪一列？
+         *
+         * 用 `elementFromPoint` 問畫面而不是自己算列高——逐軌高度可以各自
+         * 調整（`utils/tracks.js`），累加算一遍等於把版面邏輯抄第二份，
+         * 而兩份遲早會不一致。被拖著的色塊在拖曳期間 `pointer-events: none`，
+         * 所以問到的是底下那一列而不是它自己。
+         */
+        const rowShift = rowShiftAt(e.clientX, e.clientY);
+        const changedRow = rowShift !== moveRowShiftRef.current;
+        moveRowShiftRef.current = rowShift;
+
+        // 換軌與不換軌的水平界線不一樣（換軌是覆蓋，只受表演長度限制），
+        // 所以跨列的那一瞬間要重算一次
+        if (changedRow) applyDragBounds();
+
         const rawDelta = e.clientX - moveDragStartRef.current;
         const clamped = Math.max(minDragPxRef.current, Math.min(maxDragPxRef.current, rawDelta));
         moveDragPixelsRef.current = clamped;
+
+        const dy = rowOffsetPx(rowShift);
         // 整批一起位移，使用者看得到樂句是整段在動
         moveDraggedDomsRef.current.forEach((dom) => {
-          if (dom) dom.style.transform = `translateX(${clamped}px)`;
+          if (dom) dom.style.transform = `translate(${clamped}px, ${dy}px)`;
         });
       };
 
@@ -305,7 +487,7 @@ const Timeline = forwardRef(
       // - 若已在追蹤中 或 點到空隙：不攔截 → 全域 mousedown 提交/退出
       // - 若尚未追蹤且點到色塊：stopPropagation 開始追蹤（本次點擊是「選取」，不是「提交」）
       if (moveMode) {
-        if (moveDraggedIdsRef.current.length > 0) return; // 已追蹤 → 讓全域 handler 提交
+        if (moveGroupsRef.current.length > 0) return; // 已追蹤 → 讓全域 handler 提交
         if (isGapBlock) return;                          // 空隙 → 讓全域 handler 退出
 
         // 本次點擊是「選取 block 開始追蹤」，攔截讓全域 handler 無法立刻觸發提交
@@ -319,51 +501,67 @@ const Timeline = forwardRef(
          * 點到已經在選取裡的色塊 → 整批一起搬（Shift 選了一段樂句就是要整段移）。
          * 點到選取外的色塊 → 這一下算重新選取，只搬它自己。
          */
-        const dragIds = selectedIds.has(selection.segmentId)
-          ? segments
-              .filter((segment) => selectedIds.has(segment.id))
-              .map((segment) => segment.id)
-          : [selection.segmentId];
+        const inSelection = selectedIds.has(selection.segmentId);
 
-        if (dragIds.length === 1) {
-          dispatch(updateMultiSelectedBlocks([selection]));
-        }
+        /*
+         * 點到已經在選取裡的色塊 → **整批**一起搬，包含別條軌上的那些
+         * （框選一次選到七位舞者的同一個樂句，拖任何一塊就是整組在動）。
+         * 點到選取外的色塊 → 這一下算重新選取，只搬它自己。
+         */
+        if (!inSelection) dispatch(updateMultiSelectedBlocks([selection]));
+
+        const table = readTable();
+        const groups = inSelection
+          ? partsOfSelection(table, groupSelectionsByPart(multiSelectedBlocks))
+          : [
+              {
+                armorIndex,
+                partIndex,
+                segmentIds: new Set([selection.segmentId]),
+                segments,
+              },
+            ];
+        // 只選了軌沒選色塊的那幾組拖不動，濾掉才不會讓 rowShift 被它們夾住
+        moveGroupsRef.current = groups.filter(
+          (group) => group.segmentIds.size > 0,
+        );
+        if (moveGroupsRef.current.length === 0) return;
 
         const rect = timelineRef.current?.getBoundingClientRect();
         if (!rect) return;
 
-        /*
-         * 拖曳範圍（像素）—— 只給拖曳過程的即時預覽用，放開時的最終位置由
-         * `moveSegments` 重算一次。**兩邊問的是同一個 `movableRange`**，
-         * 所以不會出現「拖到底了但放開後又跳一點」的錯位；先前這裡自己用
-         * 像素重算一遍邊界，那正是那類錯位的來源。
-         */
-        const range = movableRange(segments, dragIds, { duration });
-        if (!range) return;
-
-        const pixelsPerMs = rect.width / duration;
-        minDragPxRef.current = range.min * pixelsPerMs;
-        maxDragPxRef.current = range.max * pixelsPerMs;
-
         moveDragStartRef.current = e.clientX;
-        moveDraggedIdsRef.current = dragIds;
-        // 單選時直接用事件的 target（避開 blockDomRefs 的 null-cycle）；
-        // 多選時只能查 blockDomRefs，因為其他色塊的 DOM 不在這次事件上
-        moveDraggedDomsRef.current =
-          dragIds.length === 1
-            ? [e.currentTarget]
-            : dragIds
-                .map((id) =>
-                  timelineBlocks.findIndex((b) => b?.segmentId === id),
-                )
-                .map((blockIdx) => blockDomRefs.current[blockIdx])
-                .filter(Boolean);
+        moveRowShiftRef.current = 0;
         moveDragPixelsRef.current = 0;
+  
+        /*
+         * 拖曳範圍（像素）—— 只給拖曳過程的即時預覽用，放開時的最終位置會
+         * 重算一次。**兩邊問的是同一個函式**，所以不會出現「拖到底了但放開後
+         * 又跳一點」的錯位；先前這裡自己用像素重算一遍邊界，那正是那類錯位
+         * 的來源。
+         */
+        applyDragBounds();
 
-        // 拖曳時提高 z-index，確保移動中的 block 顯示在所有相鄰 block 上方
+        /*
+         * 要預覽的 DOM 可能在**別的 Timeline 元件**裡，那些節點不在這次事件上
+         * 也不在自己的 blockDomRefs 裡。色塊都帶了 `data-segment-id`，
+         * 所以直接跟畫面要——這比讓 154 個元件互相持有 ref 簡單得多。
+         */
+        const ids = moveGroupsRef.current.flatMap((group) => [
+          ...group.segmentIds,
+        ]);
+        moveDraggedDomsRef.current = ids
+          .map((id) =>
+            document.querySelector(`.timeline-block[data-segment-id="${id}"]`),
+          )
+          .filter(Boolean);
+
         moveDraggedDomsRef.current.forEach((dom) => {
+          // 拖曳時提高 z-index，確保移動中的 block 顯示在所有相鄰 block 上方
           dom.style.zIndex = "100";
           dom.style.overflow = "visible";
+          // 讓 elementFromPoint 問得到底下那一列，而不是被拖著的色塊自己
+          dom.style.pointerEvents = "none";
         });
         return;
       }
@@ -640,6 +838,14 @@ const Timeline = forwardRef(
       <div
         className="timeline"
         ref={timelineRef} // 設置 ref
+        /*
+         * 拖曳時要知道「游標停在哪一列」。用屬性讓 `elementFromPoint` 直接
+         * 問到答案，比讓 154 個元件互相持有 ref、或自己累加逐軌高度都可靠
+         * ——後者等於把版面邏輯抄第二份。
+         */
+        data-row-index={rowIndex}
+        data-armor-index={armorIndex}
+        data-part-index={partIndex}
         style={{
           // 高度改由使用者指定的像素決定（見 utils/tracks.js）——舊版是
           // `100 / 軌道數 %`，加一條軌道會讓其他每一條都變矮
@@ -797,6 +1003,9 @@ const Timeline = forwardRef(
               // 「這裡按下去是空白處」。同樣不要從樣式反推——空隙的背景是純黑，
               // 而純黑也是合法的燈色。
               data-gap={isGapBlock ? "true" : undefined}
+              // 跨軌拖曳時，別條軌上的色塊 DOM 不在事件上也不在自己的 ref 裡，
+              // 只能跟畫面要。順帶讓 e2e 不必再靠「第 N 個 block」定位
+              data-segment-id={block.segmentId || undefined}
               onMouseMove={moveMode ? undefined : handleBlockMouseMove}
               onMouseLeave={moveMode ? undefined : handleBlockMouseLeave}
               onMouseDown={(e) => handleMouseDown(e, index)}

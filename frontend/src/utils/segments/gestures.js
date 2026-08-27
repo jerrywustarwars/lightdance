@@ -156,6 +156,70 @@ export function moveSegments(
 }
 
 /**
+ * 好幾條軌一起平移時，整批共用的可動範圍。
+ *
+ * 每一條各自問一次 `movableRange`（那一條的限制只來自它自己的未選取鄰居），
+ * 再取**交集**。整批共用同一個位移量是「一起搬」的定義：搬完之後樂句在七位
+ * 舞者身上仍然對得齊，而那正是使用者框選跨軌的理由。
+ *
+ * ⚠️ 交集**永遠包含 0**（每一條各自的範圍就已經含 0），所以不會出現「動不了
+ * 卻回傳 null」而讓呼叫端誤判成沒有選取。真的被夾死時是 `{min:0, max:0}`。
+ *
+ * @param {Array<{segments:Array, segmentIds:Iterable<string>}>} groups
+ * @returns {{min:number, max:number}|null} 沒有任何一條選到東西時回傳 null
+ */
+export function movableRangeAcross(groups, options = {}) {
+  let min = -Infinity;
+  let max = Infinity;
+  let found = false;
+
+  for (const group of groups) {
+    const range = movableRange(group.segments, group.segmentIds, options);
+    if (!range) continue; // 這一條沒選到東西（例如只選了軌沒選色塊）
+    found = true;
+    min = Math.max(min, range.min);
+    max = Math.min(max, range.max);
+  }
+
+  return found ? { min, max } : null;
+}
+
+/**
+ * 好幾條軌一起平移，全部套用**同一個**位移量。
+ *
+ * 位移量先對齊網格、再夾進整批的交集，然後原樣套到每一條——**不要讓每一條
+ * 各自再夾一次**，那會讓限制最緊的那條停下來而其他條繼續走，樂句就散開了
+ * （而畫面上只是「怎麼有幾條沒跟上」）。
+ *
+ * @param {Array<{armorIndex, partIndex, segments, segmentIds}>} groups
+ * @param {number} deltaMs 位移量（可負）
+ * @returns {Array<{armorIndex, partIndex, segments}>}
+ *   可以直接餵給 `updateParts`。沒有實際位移時回傳空陣列
+ */
+export function moveAcross(groups, deltaMs, options = {}) {
+  const { tick = TICK_MS } = options;
+  const range = movableRangeAcross(groups, options);
+  if (!range) return [];
+
+  const delta = clamp(roundTo(deltaMs, tick), range.min, range.max);
+  if (delta === 0) return [];
+
+  return groups.map(({ armorIndex, partIndex, segments, segmentIds }) => {
+    const ids =
+      segmentIds instanceof Set ? segmentIds : new Set(segmentIds);
+    return {
+      armorIndex,
+      partIndex,
+      segments: segments.map((segment) =>
+        ids.has(segment.id)
+          ? { ...segment, start: segment.start + delta, end: segment.end + delta }
+          : segment,
+      ),
+    };
+  });
+}
+
+/**
  * 拖動單邊調整長度。
  *
  * @param {Array} segments 該部位的 segments
