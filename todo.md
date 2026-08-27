@@ -309,22 +309,34 @@ segment 壓平回 keyframe 之後**緊鄰的色塊之間沒有黑點**，這個�
       事件與像素換算在 `MarqueeSelect.jsx`。從空隙拉、Alt 從任何地方拉、
       Shift 加選。踩到兩個順序問題：拖曳後瀏覽器補的 `click` 會被判成「點在
       block 外面」而清空剛框好的選取；Shift 的加選基準必須在 mousedown 就存好
-- [ ] **速度軌與節拍吸附**（設計已定案，實作延後 —— 見下方）
+- [x] **節拍格線**（2026-08-15）：速度**掛在 clip 上**而不是掛在時間上
+      （`clip.bpm` / `beatAnchor` / `beatsPerBar`，運算在 `utils/audio/tempo.js`）。
+      使用者拍板同一音檔不變速，所以不需要速度區段。密度由「相鄰兩條至少
+      `MIN_GAP_PX`」推導，最細到四分之一拍，三連音略過
+- [ ] **節拍吸附**（A3b，格線先用一陣子再決定）
+- [ ] **敲拍取速度**（A3c）
 
-#### 速度軌（多音軌 BPM 不同的答案，2026-08-14 拍板、實作延後）
+#### 速度模型：為什麼最後是掛在 clip 上（2026-08-15 實作時修正）
 
-節拍格線屬於**專案**，不屬於音檔。專案維護一串速度區段
-`{start, bpm, beatsPerBar, anchor}`，音檔只是擺在時間軸上的素材。
+原本規劃的是「專案維護一串速度區段 `{start, bpm, beatsPerBar, anchor}`」，
+實作時換成**每個 clip 各自帶速度**。理由是歌單可以重排：
+
+⚠️ **`beatAnchor` 是相對於這個 clip 的，不是表演時間的絕對毫秒。** 用絕對時間
+的速度表時，使用者把第三首和第四首對調的那一瞬間，整片格線就對到別首歌去了
+——而畫面上不會有任何異常，波形照畫、格線照畫，只是每一條都錯了。
+真的遇到 medley 就把那個檔案切成兩個 clip。
+
+其餘設計原樣成立：
 
 - `anchor` 是第一拍落在哪一毫秒。**只有 BPM 定不出格線**，還需要相位——
   第二首歌的第一拍幾乎不會剛好落在 clip 的起點
-- 形狀就是 `Segment<{bpm}>`（已排序、不重疊、有 payload），
-  `findSegmentAt(tempoMap, ms)` 直接可用，`core.js` 一行都不必改
-- 空隙沿用前一段的速度，最後一段延伸到底
 - ⚠️ **50ms 網格才是真相**：韌體吃 `floor(ms/50)`，而 128 BPM 一拍是 468.75ms、
   八分之一拍 58.59ms，都不是 50 的倍數。吸附順序是「先吸到拍，再 `roundToTick`」，
-  最後那一步最多挪 25ms。節拍格線只能是輔助線
-- BPM 來源傾向**手動輸入 + 敲拍取平均**，不做自動偵測（歪掉時使用者不知道該信誰）
+  最後那一步最多挪 25ms。節拍格線只能是輔助線（所以格線本身刻意**不**對齊網格：
+  它畫的是音樂真正的位置，而使用者是照著線在對拍的）
+- ⚠️ 任何「每拍重複一次」的功能都必須**從 `beatLines` 逐點取位置**，不能拿一個
+  固定間隔一直加——加法會累積誤差，八小節之後偏掉半格以上
+- BPM 來源是**手動輸入 + 敲拍取平均**（後者尚未實作，見 A3c），不做自動偵測
 
 ### Phase 7 多軌音訊（遠期，只記介面決策，不 block 燈光重構）
 
@@ -369,7 +381,9 @@ CLAUDE.md 一直有記，但沒進過 todo，所以列在這裡免得又被忘�
 | ~~C1~~ | ~~密碼明文儲存~~ | ✅ bcrypt（cost 12），舊明文在**登入成功時就地換成雜湊**，不停機、不用遷移腳本 |
 | ~~C2~~ | ~~Token 機制不安全~~ | ✅ HS256 JWT（`sub` + `exp`）。實際情況比記錄的更糟：**權杖就是使用者名稱**，送 `Bearer <帳號名>` 就通過，密碼完全不需要 |
 | ~~C3a~~ | ~~音樂檔端點的路徑穿越~~ | ✅ `backend/paths.py`。**這一項比 todo 上寫的嚴重**：`get_music` 連登入都不用，實測 `/api/get_music/%2e%2e/secret.txt` 回 200 並吐出根目錄外的檔案內容 |
-| C3b | 其他端點的輸入驗證 | 上傳的 payload 內容、query 參數的範圍還沒驗 |
+| C3b | 其他端點的輸入驗證 | 上傳的 payload 內容、query 參數的範圍還沒驗。**唯一還沒動的一項** |
+| ~~C5~~ | ~~憑證寫在版控裡~~ | ✅ 2026-08-15。`.env.deployment` 移出版控（範本留 `.example`）、`mongo-init` 改讀環境變數且沒設就 throw、`run-deploy.sh` 找不到 env 檔改成**停下來**（舊版會用空憑證起 mongo、用臨時秘鑰起後端，而畫面上看起來部署成功）|
+| ~~C6~~ | ~~註冊是 fail-open~~ | ✅ 2026-08-21。邀請碼改必填，`REGISTER_CODE` 沒設 = **關閉註冊**（503）而不是開放。碼本身不進版控——public fork 寫進去就不再是一道門 |
 | ~~C4~~ | ~~CORS~~ | ✅ 收成 `CORS_ORIGINS` 環境變數，留空就用原本那份清單（不設也不會壞）|
 
 ⚠️ **部署時要設 `AUTH_SECRET`**（`.env` / docker-compose 已經接好，值留空）。
@@ -395,7 +409,7 @@ fixture 裡的使用者名稱預設匿名化，也是同一個理由。
 
 | # | 項目 | 備註 |
 |---|---|---|
-| D1 | `upload_full` 沒有 retention | 「保留 5 筆」的 delete 被註解掉了，整段是 no-op。資料會一直長 |
+| ~~D1~~ | ~~`upload_full` 沒有 retention~~ | 已修（2026-08-15）。`storage.prune_history` + `HISTORY_LIMIT`，**預設 0 = 什麼都不刪**——刪的是使用者存過的光表版本，備份每兩天才一次。舊版那段 delete 是註解掉的，但**查詢還留著**（每次上傳掃一次全部然後什麼也沒做） |
 | D2 | ~~`GET /api/raw/{u}/LATEST` 查錯 collection~~ | 已修（2026-08-12） |
 
 ### E. 使用者已拍板、之後不要再問的事
@@ -451,20 +465,42 @@ fixture 裡的使用者名稱預設匿名化，也是同一個理由。
 
 ---
 
-## ✅ 手動驗收 checklist（每個 Phase 的每個 PR 都跑）
+## ✅ 驗收 checklist
 
-- [ ] 點光衣放色 → 時間軸顯示色塊（Phase 5 起：預設 1 秒）
-- [ ] M 鍵 Move Mode 拖曳移動色塊；拖曳邊緣 resize
-- [ ] click 選色塊、shift+click 多選
-- [ ] Ctrl+C / Ctrl+V 區間複製貼上；Ctrl+Shift+V 固定時間貼上
-- [ ] Shift+C / Shift+V 整條複製貼上
-- [ ] L 鍵切漸變，預覽看到漸變
-- [ ] B 鍵頻閃（輸入 50ms 倍數週期）
-- [ ] P 鍵改色；1-6 最愛色；Shift+1-6 插入最愛色；Ctrl+數字 改亮度
-- [ ] Shift 工具三步驟平移
-- [ ] C 鍵 Cut / Del 刪除
-- [ ] W/S/A/D 跨軌跳格
-- [ ] Ctrl+Z / Ctrl+Y
-- [ ] 飾品（雨傘/武器）部位可編輯、isPartAllowed 閘門正常
-- [ ] Output 上傳成功；golden 測試全綠（Phase 2 起：結構化 diff 全綠）
-- [ ] 重新整理後 redux-persist 復原正常；本地備份可載入
+這份清單是 Phase 0 之前寫的，那時專案零測試所以每一項都得手動點。現在絕大多數
+已經有機器在守——下面標了 `e2e` 的由 `npm run e2e` 跑（真瀏覽器、`/api/**` 攔截
+成假資料，所以後端不用起），標了 `unit` 的由 `npm test` 跑（jsdom）。
+
+```bash
+cd frontend
+npm run dev            # 另一個終端機
+npm test               # 657 項
+npm run e2e            # 62 項
+npm run audit:layout   # 5 項版面
+npm run audit:bundle   # 初始 JS 大小預算
+cd ../backend && uv run pytest   # 87 項
+```
+
+**仍然只有人驗得到的**：拖曳的手感（幾何接線對不對）、播放時燈與音樂對不對得上、
+本地備份（IndexedDB）載回來的樣子。其餘見下表。
+
+
+| 項目 | 誰在守 |
+|---|---|
+| 點光衣放色 → 時間軸出現色塊（預設 1 秒） | e2e |
+| M 鍵 Move Mode 拖曳移動；拖曳邊緣 resize | e2e（幾何接線仍需人眼） |
+| click 選色塊、Shift+click 多選、框選跨軌 | e2e |
+| Ctrl+C / Ctrl+V 區間貼上；Ctrl+Shift+V 固定時間貼上 | unit |
+| Shift+C / Shift+V 整條複製貼上 | unit |
+| L 鍵切漸變 | unit |
+| B 鍵頻閃（50ms 倍數週期） | e2e |
+| P 鍵改色；1–6 最愛色；Shift+1–6 插入；Ctrl+數字 改亮度 | e2e（Ctrl+數字、最愛色）＋ unit（其餘）|
+| Shift 工具三步驟平移 | unit |
+| C 鍵 Cut / Del 刪除 | e2e |
+| W/S/A/D 跨軌跳格 | unit |
+| Ctrl+Z / Ctrl+Y | e2e |
+| 飾品部位可編輯、`isPartAllowed` 閘門正常 | e2e |
+| Output 上傳成功；結構化 diff 全綠 | e2e（觸發）＋ unit（golden 與 diff）|
+| 重新整理後 redux-persist 復原 | e2e |
+| **本地備份（IndexedDB）載得回來** | **只有人** |
+| **播放時燈與音樂對得上** | **只有人** |
