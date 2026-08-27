@@ -29,6 +29,8 @@ import {
   cloneColor,
   sameColor,
 } from "../../utils/segments/color.js";
+import { mapSelectedParts, updateParts } from "../../utils/segments/table.js";
+import { groupSelectionsByPart } from "../../utils/selection.js";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts.js";
 import { useDeselectOnOutsideClick } from "../../hooks/useDeselectOnOutsideClick.js";
 import { useAudioEngine } from "../../hooks/useAudioEngine.js";
@@ -53,7 +55,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   const dispatch = useDispatch();
   const currentTime = useSelector((state) => state.profiles.currentTime);
   const duration = useSelector((state) => state.profiles.duration); // 音樂總長度
-  const { segmentTable, commit, commitPart } = useSegmentActionTable();
+  const { segmentTable, commit } = useSegmentActionTable();
   // 目前這一組工作集的軌道。切換工作集時整份換掉，Timeline 跟著重建
   const showPart = useActiveTracks();
   const rowHeight = useSelector((state) => state.profiles.rowHeight);
@@ -122,52 +124,39 @@ function AudioPlayer({ setButtonState, timelineRef }) {
    * 使用者按 Ctrl+Z 要按很多次才回得去。
    */
   const applyColorToSelection = (color) => {
-    if (!color || multiSelectedBlocks.length === 0) return;
+    if (!color) return;
 
-    // 一次選取原則上不跨軌，但 API 沒有這個保證，所以照部位分組處理
-    const byPart = new Map();
-    for (const { armorIndex, partIndex, segmentId } of multiSelectedBlocks) {
-      const key = `${armorIndex}-${partIndex}`;
-      if (!byPart.has(key)) byPart.set(key, { armorIndex, partIndex, ids: new Set() });
-      byPart.get(key).ids.add(segmentId);
-    }
+    const nextTable = mapSelectedParts(
+      segmentTable,
+      groupSelectionsByPart(multiSelectedBlocks),
+      (segments, ids) => {
+        let changed = false;
 
-    let nextTable = segmentTable;
+        const next = segments.map((segment) => {
+          if (!ids.has(segment.id)) return segment;
 
-    for (const { armorIndex, partIndex, ids } of byPart.values()) {
-      const segments = nextTable?.[armorIndex]?.[partIndex];
-      if (!segments) continue;
+          const value = cloneColor(color);
+          const keepEnd = segment.linear === 1;
+          // 已經是這個顏色就原樣回傳。少了這道判斷，下面的 effect 會在自己
+          // 寫入之後再跑一次、再產生一份新陣列，然後無限迴圈。
+          if (
+            sameColor(segment.colorStart, value) &&
+            (keepEnd || sameColor(segment.colorEnd, value))
+          ) {
+            return segment;
+          }
 
-      let changed = false;
-      const nextSegments = segments.map((segment) => {
-        if (!ids.has(segment.id)) return segment;
+          changed = true;
+          return {
+            ...segment,
+            colorStart: value,
+            colorEnd: keepEnd ? segment.colorEnd : value,
+          };
+        });
 
-        const next = cloneColor(color);
-        const keepEnd = segment.linear === 1;
-        // 已經是這個顏色就原樣回傳。少了這道判斷，下面的 effect 會在自己
-        // 寫入之後再跑一次、再產生一份新陣列，然後無限迴圈。
-        if (
-          sameColor(segment.colorStart, next) &&
-          (keepEnd || sameColor(segment.colorEnd, next))
-        ) {
-          return segment;
-        }
-
-        changed = true;
-        return {
-          ...segment,
-          colorStart: next,
-          colorEnd: keepEnd ? segment.colorEnd : next,
-        };
-      });
-      if (!changed) continue;
-
-      nextTable = nextTable.map((armor, a) =>
-        a === armorIndex
-          ? armor.map((segs, p) => (p === partIndex ? nextSegments : segs))
-          : armor,
-      );
-    }
+        return changed ? next : segments;
+      },
+    );
 
     commit(nextTable); // 相同 reference 時 commit 自己會短路
   };
@@ -196,23 +185,31 @@ function AudioPlayer({ setButtonState, timelineRef }) {
    * segment 模型沒有哨兵也就沒有這個限制，時間 0 一樣放得下去。
    */
   const insertFavoriteColorArray = (color) => {
-    if (multiSelectedBlocks.length === 0) {
+    const groups = groupSelectionsByPart(multiSelectedBlocks);
+    if (groups.length === 0) {
       console.warn("No block selected.");
       return;
     }
-
-    const { armorIndex, partIndex } = multiSelectedBlocks[0];
 
     // 將時間 floor 到最近的一個 tick
     const nowTime = Math.floor(currentTime / TICK_MS) * TICK_MS;
     dispatch(updateCurrentTime(nowTime));
 
-    const segments = segmentTable?.[armorIndex]?.[partIndex] ?? [];
-    commitPart(
+    /*
+     * 選到幾條就放幾條。選取跨軌時「在播放頭上放一個色塊」的意思是
+     * 那幾條各放一個——七位舞者同時亮起來正是這個功能存在的理由，
+     * 一條一條放要按七次而且每次都得先點對軌道。
+     */
+    const updates = groups.map(({ armorIndex, partIndex }) => ({
       armorIndex,
       partIndex,
-      insertColorSegment(segments, { time: nowTime, color, duration }),
-    );
+      segments: insertColorSegment(
+        segmentTable?.[armorIndex]?.[partIndex] ?? [],
+        { time: nowTime, color, duration },
+      ),
+    }));
+
+    commit(updateParts(segmentTable, updates));
   };
 
   /** 播放 / 暫停。真正的動作由下面那個 effect 做（見它的說明） */

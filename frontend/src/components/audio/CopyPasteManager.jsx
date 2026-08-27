@@ -5,23 +5,45 @@ import {
   updateClipboard,
   updateMultiSelectedBlocks,
 } from "../../redux/actions.js";
-import { roundToTick, clearRange, createId } from "../../utils/segments/core.js";
-import { makeSelection, resolveSelections } from "../../utils/selection.js";
+import {
+  groupSelectionsByPart,
+  makeSelection,
+  findSegmentById,
+} from "../../utils/selection.js";
+import {
+  partsOfSelection,
+  updateParts,
+} from "../../utils/segments/table.js";
+import {
+  hasContent,
+  packClipboard,
+  planOverwrite,
+  planPaste,
+} from "../../utils/segments/clipboard.js";
 import { useSegmentActionTable } from "../../hooks/useSegmentActionTable.js";
 
 /**
- * 複製貼上：兩種粒度、兩種貼上對齊方式。
+ * 複製貼上：兩種粒度、兩種貼上對齊方式，**全部跨軌**。
  *
  * | 操作 | 快捷鍵 | 行為 |
  * |---|---|---|
- * | 複製區間 | Ctrl+C | 把選取的色塊範圍存進剪貼簿，並進入「複製模式」 |
- * | 貼到選取處 | Ctrl+V | 以選取色塊的起點為基準對齊貼上 |
- * | 原時間貼上 | Ctrl+Shift+V | 保持原本的時間位置貼上（貼到另一個部位用） |
- * | 複製整個部位 | Shift+C | 整條 timeline 存進剪貼簿 |
- * | 覆蓋整個部位 | Shift+V | 整條 timeline 覆蓋過去 |
+ * | 複製區間 | Ctrl+C | 把選取的色塊（可跨軌）存進剪貼簿，並進入「複製模式」 |
+ * | 貼到選取處 | Ctrl+V | 以目標色塊的起點與部位為基準貼上 |
+ * | 原時間貼上 | Ctrl+Shift+V | 保持原本的時間，只換軌道 |
+ * | 複製整條 | Shift+C | 選到的每一條 timeline 整條存進剪貼簿 |
+ * | 覆蓋整條 | Shift+V | 整條 timeline 覆蓋過去 |
  *
  * `isCopying`（複製模式）是純 UI 狀態——Timeline 靠它顯示來源標記、
  * 頂端顯示提示橫幅——所以留在元件裡用 hook 傳遞，不進 Redux。
+ *
+ * ## 為什麼會是跨軌的
+ *
+ * 框選一次就能選到七位舞者身上的同一個樂句，但舊的剪貼簿只認得一條時間軸：
+ * `copyRange` 拿 `multiSelectedBlocks[0]` 的部位，其餘的**默默丟掉**。
+ * 於是「把整組的副歌複製到後面」這件事只能一位舞者做一次、做七遍。
+ *
+ * 剪貼簿現在存的是一個矩形（區間 × 幾條軌），落點由
+ * `utils/segments/clipboard.js` 算——那裡也是「軌道怎麼平移」的唯一定義處。
  *
  * ## Phase 5e：改成 segment 原生
  *
@@ -34,13 +56,9 @@ import { useSegmentActionTable } from "../../hooks/useSegmentActionTable.js";
  * 「把要貼的區間清空，再把平移過的段放進去」。`clearRange` 連被切成兩半的
  * 情況都處理好了。
  */
-
-/** 剪貼簿內容的格式標記。舊格式（keyframe 陣列）一律視為空。 */
-const CLIPBOARD_KIND = "segments";
-
 export function useCopyPaste() {
   const dispatch = useDispatch();
-  const { segmentTable, commitPart } = useSegmentActionTable();
+  const { segmentTable, commit } = useSegmentActionTable();
   const clipboard = useSelector((state) => state.profiles.clipboard);
   const multiSelectedBlocks = useSelector(
     (state) => state.profiles.multiSelectedBlocks,
@@ -49,157 +67,126 @@ export function useCopyPaste() {
   // 複製模式：Timeline 靠它顯示來源標記，純 UI 狀態不進 Redux
   const [isCopying, setIsCopying] = useState(false);
 
-  /** 選取所在的部位與它的 segments */
-  const activePart = multiSelectedBlocks[0] ?? null;
-  const activeSegments = activePart
-    ? (segmentTable?.[activePart.armorIndex]?.[activePart.partIndex] ?? [])
-    : [];
+  /** 選取涵蓋的每一條時間軸，附上內容 */
+  const groups = partsOfSelection(
+    segmentTable,
+    groupSelectionsByPart(multiSelectedBlocks),
+  );
 
-  /** 剪貼簿裡有沒有這個版本認得的資料 */
-  const hasClipboard =
-    clipboard?.kind === CLIPBOARD_KIND && clipboard.segments?.length > 0;
+  /** 錨點：使用者最先點到的那一條。貼上的軌道平移量以它為基準 */
+  const anchor = multiSelectedBlocks[0] ?? null;
 
-  /** Ctrl+C：複製選取的區間 */
+  /**
+   * 貼上的落點。`Ctrl+V` 要對齊「目標色塊的起點」，所以要先找到那一段；
+   * 目標軌上還沒選到色塊時退化成保持原本的時間（只換軌道）。
+   */
+  const targetFor = (alignToSelection) => {
+    if (!anchor) return null;
+
+    const timeOffset = (() => {
+      if (!alignToSelection) return 0;
+      const segments = segmentTable?.[anchor.armorIndex]?.[anchor.partIndex];
+      const target = findSegmentById(segments, anchor.segmentId);
+      return target ? target.start - clipboard.startTime : 0;
+    })();
+
+    return {
+      armorIndex: anchor.armorIndex,
+      partIndex: anchor.partIndex,
+      timeOffset,
+    };
+  };
+
+  /** 把落點寫回光表，並把選取移到貼進去的那些段 */
+  const applyPlans = (plans) => {
+    if (plans.length === 0) {
+      console.warn("貼上的位置落在光表範圍外，沒有東西被貼上。");
+      return;
+    }
+
+    commit(updateParts(segmentTable, plans));
+    setIsCopying(false);
+
+    // 貼完就選取貼進去的內容，接著可以直接繼續編輯（例如整組改色）
+    dispatch(
+      updateMultiSelectedBlocks(
+        plans.flatMap(({ armorIndex, partIndex, pasted }) =>
+          pasted.map((segment) =>
+            makeSelection({ armorIndex, partIndex, segment }),
+          ),
+        ),
+      ),
+    );
+  };
+
+  /** Ctrl+C：複製選取的區間（可跨軌） */
   const copyRange = () => {
-    const selected = resolveSelections(multiSelectedBlocks, activeSegments);
-    if (selected.length === 0) {
+    const packed = anchor && packClipboard(groups, anchor);
+    if (!packed) {
       console.warn("請先選取色塊再進行複製。");
       return;
     }
 
-    const segments = selected.map((entry) => entry.segment);
-    const startTime = segments[0].start;
-    const endTime = segments[segments.length - 1].end;
-
-    dispatch(
-      updateClipboard({
-        kind: CLIPBOARD_KIND,
-        segments: segments.map((segment) => ({ ...segment })),
-        startTime,
-        endTime,
-        sourceArmorIndex: activePart.armorIndex,
-        sourcePartIndex: activePart.partIndex,
-        // Timeline 靠這個畫「來源」標記
-        sourceBlocks: multiSelectedBlocks,
-        timestamp: Date.now(),
-      }),
-    );
-
-    setIsCopying(true); // 進入模式，讓 Timeline 顯示標記
+    dispatch(updateClipboard(packed));
+    setIsCopying(true); // 進入模式，讓 Timeline 顯示來源標記
   };
 
-  /**
-   * 把剪貼簿內容平移 `offset` 後貼進目標部位，覆蓋衝突區間。
-   *
-   * 每一段都會重新產生 id：貼上的是**副本**，跟來源是不同的色塊。沿用舊 id
-   * 會讓選取、undo diff 指到兩個地方。
-   */
-  const executePaste = (targetArmor, targetPart, offset) => {
-    const moved = clipboard.segments.map((segment) => ({
-      ...segment,
-      id: createId(),
-      start: roundToTick(segment.start + offset),
-      end: roundToTick(segment.end + offset),
-    }));
-
-    const newStart = moved[0].start;
-    const newEnd = moved[moved.length - 1].end;
-
-    const target = segmentTable?.[targetArmor]?.[targetPart] ?? [];
-    const next = [...clearRange(target, newStart, newEnd), ...moved].sort(
-      (a, b) => a.start - b.start,
-    );
-
-    commitPart(targetArmor, targetPart, next);
-    setIsCopying(false);
-
-    // 貼上之後選取貼進去的第一段，接著可以直接繼續編輯
-    dispatch(
-      updateMultiSelectedBlocks([
-        makeSelection({
-          armorIndex: targetArmor,
-          partIndex: targetPart,
-          segment: moved[0],
-        }),
-      ]),
-    );
-  };
-
-  /** Ctrl+V：以選取色塊的起點為基準對齊貼上 */
+  /** Ctrl+V：以目標色塊的起點與部位為基準貼上 */
   const pasteAlignedToTarget = () => {
-    if (!hasClipboard) return;
-    const selected = resolveSelections(multiSelectedBlocks, activeSegments);
-    if (selected.length === 0) return;
-
-    const targetStart = selected[0].segment.start;
-    executePaste(
-      activePart.armorIndex,
-      activePart.partIndex,
-      targetStart - clipboard.startTime,
-    );
+    if (!hasContent(clipboard)) return;
+    const target = targetFor(true);
+    if (!target) return;
+    applyPlans(planPaste(segmentTable, clipboard, target));
   };
 
-  /** Ctrl+Shift+V：保持原本的時間位置貼上 */
+  /** Ctrl+Shift+V：保持原本的時間位置，只換軌道 */
   const pasteAtFixedTime = () => {
-    if (!hasClipboard || !activePart) return;
-    executePaste(activePart.armorIndex, activePart.partIndex, 0);
+    if (!hasContent(clipboard)) return;
+    const target = targetFor(false);
+    if (!target) return;
+    applyPlans(planPaste(segmentTable, clipboard, target));
   };
 
-  /** Shift+C：複製整個部位的 timeline */
+  /** Shift+C：把選到的每一條 timeline 整條複製 */
   const copyWholePart = () => {
-    if (!activePart) {
+    if (!anchor) {
       console.warn("請先選取色塊，才知道要複製哪個部位。");
       return;
     }
-    if (activeSegments.length === 0) {
+
+    // 整條複製：不看選了哪幾段，那一條上的全部都算
+    const whole = groups.map(({ armorIndex, partIndex, segments }) => ({
+      armorIndex,
+      partIndex,
+      segments,
+      segmentIds: new Set(segments.map((segment) => segment.id)),
+    }));
+
+    const packed = packClipboard(whole, anchor);
+    if (!packed) {
       console.warn("這個部位沒有任何色塊。");
       return;
     }
 
-    dispatch(
-      updateClipboard({
-        kind: CLIPBOARD_KIND,
-        segments: activeSegments.map((segment) => ({ ...segment })),
-        startTime: activeSegments[0].start,
-        endTime: activeSegments[activeSegments.length - 1].end,
-        sourceArmorIndex: activePart.armorIndex,
-        sourcePartIndex: activePart.partIndex,
-        sourceBlocks: [],
-        timestamp: Date.now(),
-      }),
-    );
+    dispatch(updateClipboard(packed));
   };
 
   /** Shift+V：整條 timeline 覆蓋到目標部位 */
   const pasteWholePart = () => {
-    if (!hasClipboard) {
+    if (!hasContent(clipboard)) {
       console.warn("剪貼簿是空的。");
       return;
     }
-    if (!activePart) {
+    if (!anchor) {
       console.warn("請先選取色塊，才知道要貼到哪個部位。");
       return;
     }
 
-    // 整個部位覆蓋掉，一樣要換新 id（貼上的是副本）
-    const pasted = clipboard.segments.map((segment) => ({
-      ...segment,
-      id: createId(),
-    }));
-
-    commitPart(activePart.armorIndex, activePart.partIndex, pasted);
-    dispatch(
-      updateMultiSelectedBlocks(
-        pasted.length
-          ? [
-              makeSelection({
-                armorIndex: activePart.armorIndex,
-                partIndex: activePart.partIndex,
-                segment: pasted[0],
-              }),
-            ]
-          : [],
-      ),
+    applyPlans(
+      planOverwrite(segmentTable, clipboard, {
+        armorIndex: anchor.armorIndex,
+        partIndex: anchor.partIndex,
+      }),
     );
   };
 
@@ -226,14 +213,16 @@ export function CopyModeBanner({ isCopying }) {
 
   if (!isCopying) return null;
 
+  const trackCount = clipboard?.parts?.length ?? 0;
+
   return (
     <div className="copy-mode-banner">
       <span>
-        📋 Copy Mode Active (Interval: {clipboard?.startTime}ms ~{" "}
-        {clipboard?.endTime}ms)
+        📋 已複製 {clipboard?.startTime}ms ~ {clipboard?.endTime}ms
+        {trackCount > 1 ? `（${trackCount} 條軌道）` : ""}
       </span>
       <span className="hint-text">
-        Press [ESC] to Cancel or click Target then [Ctrl+V]
+        點目標軌上的色塊後按 [Ctrl+V] 貼上，[Esc] 取消
       </span>
     </div>
   );

@@ -17,6 +17,7 @@ import {
   MIN_SEGMENT_MS,
 } from "../../utils/segments/gestures.js";
 import { makeSelection, selectedIdsOnPart } from "../../utils/selection.js";
+import { sourceSelections } from "../../utils/segments/clipboard.js";
 
 // cloneDeep 已移除：tempActionTable cascade 已合併，drag 復原時再加回
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -273,6 +274,19 @@ const Timeline = forwardRef(
     /** 目前這條時間軸上被選中的 segmentId（渲染時逐 block 判斷用） */
     const selectedIds = selectedIdsOnPart(
       multiSelectedBlocks,
+      armorIndex,
+      partIndex,
+    );
+
+    /**
+     * 這條時間軸上「當初被 Ctrl+C 複製走」的 segmentId。
+     *
+     * 剪貼簿是跨軌的（一次可以複製七位舞者的同一個樂句），所以來源標記也會
+     * 同時出現在好幾條軌上——把它攤平成同一份選取格式再逐條過濾，
+     * 和 `selectedIds` 走同一條路。
+     */
+    const copiedIds = selectedIdsOnPart(
+      sourceSelections(clipboard),
       armorIndex,
       partIndex,
     );
@@ -651,12 +665,10 @@ const Timeline = forwardRef(
         // A. 判斷是否為「貼上目標」(綠色)：在複製模式下且被點擊選中
         const isPasteTarget = isCopying && isCurrentlyInMultiSelect;
 
-        // B. 判斷是否為「複製來源」（白色虛線 ring）：從剪貼簿讀取當初 Ctrl+C 的位置
-        const isCopySource = isCopying && !!block.segmentId && clipboard?.sourceBlocks?.some(b =>
-          b.armorIndex === armorIndex &&
-          b.partIndex === partIndex &&
-          b.segmentId === block.segmentId
-        );
+        // B. 判斷是否為「複製來源」（白色虛線 ring）：從剪貼簿讀取當初 Ctrl+C 的位置。
+        //    剪貼簿是跨軌的，但這裡只問「這一條上有哪些」，所以先收成 Set
+        const isCopySource =
+          isCopying && !!block.segmentId && copiedIds.has(block.segmentId);
 
         // C. 判斷是否為「普通選取」（白色實線 ring）：非複製模式下的正常選取
         const isNormalSelected = !isCopying && isCurrentlyInMultiSelect;

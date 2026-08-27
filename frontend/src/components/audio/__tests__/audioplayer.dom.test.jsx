@@ -11,9 +11,11 @@ import {
 import {
   renderWithStore,
   createTestStore,
+  createCrossTrackStore,
   timelineOf,
   segmentsOf,
   selectSegment,
+  selectAcross,
 } from "../../../test/renderEditor.jsx";
 
 /**
@@ -107,9 +109,16 @@ describe("快捷鍵", () => {
 
 describe("複製貼上", () => {
   /*
-   * Phase 5e：剪貼簿存的是 segments（`clipboard.segments`），不再是壓平的
-   * keyframe 陣列。選取一律用 selectSegment 從 store 反查 id。
+   * Phase 5e：剪貼簿存的是 segments，不再是壓平的 keyframe 陣列。
+   * 選取一律用 selectSegment 從 store 反查 id。
+   *
+   * 跨軌之後剪貼簿存的是**一個矩形**（區間 × 幾條軌），所以形狀是
+   * `clipboard.parts = [{armorIndex, partIndex, segments}]`。
    */
+
+  /** 剪貼簿裡所有軌道的段攤平成一串（大部分斷言只在乎內容） */
+  const copiedSegments = (store) =>
+    (store.getState().profiles.clipboard.parts ?? []).flatMap((p) => p.segments);
 
   it("Ctrl+C 存入剪貼簿並進入複製模式", () => {
     const store = createTestStore();
@@ -120,8 +129,9 @@ describe("複製貼上", () => {
     pressKey("c", { ctrlKey: true });
 
     const clipboard = store.getState().profiles.clipboard;
-    expect(clipboard.kind).toBe("segments");
-    expect(clipboard.segments.length).toBeGreaterThan(0);
+    expect(clipboard.kind).toBe("segments-2d");
+    expect(clipboard.parts.length).toBe(1);
+    expect(clipboard.parts[0].segments.length).toBeGreaterThan(0);
     expect(document.querySelector(".copy-mode-banner")).toBeTruthy();
   });
 
@@ -150,7 +160,7 @@ describe("複製貼上", () => {
     mount(store);
 
     pressKey("C", { shiftKey: true });
-    const copied = store.getState().profiles.clipboard.segments;
+    const copied = copiedSegments(store);
     expect(copied.length).toBe(segmentsOf(store, 0, 0).length);
 
     // 換選到另一個部位再貼上（防彈跳需等 100ms 以上，這裡直接改 store）
@@ -186,6 +196,147 @@ describe("複製貼上", () => {
     // 原本佔著 2000~10000 的綠色被裁掉前段，從 3000 開始
     const green = segments.find((s) => s.colorStart.G === 255);
     expect(green.start).toBe(3000);
+  });
+});
+
+describe("跨軌操作", () => {
+  /*
+   * 框選一次就能選到好幾位舞者身上的同一個樂句，但在這一組測試出現之前，
+   * 幾乎每個操作都在 `multiSelectedBlocks[0]` 那一條就收斂了——選了三條
+   * 只有一條會動，**而且不會報錯也沒有任何提示**，畫面上只是「怎麼其他兩條
+   * 沒變」。這些測試逐項守住「選了幾條就動幾條」。
+   *
+   * 素材是三位舞者的部位 0 各有一個 1000~2000 的紅色色塊。
+   */
+
+  /** 三條軌的第一個色塊全選起來 */
+  const selectAllThree = (store) =>
+    selectAcross(store, [
+      [0, 0, 0],
+      [1, 0, 0],
+      [2, 0, 0],
+    ]);
+
+  const redOf = (store, armor) =>
+    segmentsOf(store, armor, 0).find((s) => s.colorStart.R === 255);
+
+  it("刪除：三條一起刪", () => {
+    const store = createCrossTrackStore();
+    selectAllThree(store);
+    mount(store);
+
+    pressKey("Delete");
+
+    for (const armor of [0, 1, 2]) {
+      expect(segmentsOf(store, armor, 0)).toEqual([]);
+    }
+  });
+
+  it("亮度：三條一起改", () => {
+    const store = createCrossTrackStore();
+    selectAllThree(store);
+    mount(store);
+
+    pressKey("3", { ctrlKey: true }); // 30%
+
+    for (const armor of [0, 1, 2]) {
+      expect(redOf(store, armor).colorStart.A).toBeCloseTo(0.3);
+    }
+  });
+
+  it("漸變：三條一起切，而且終點色各算各的", () => {
+    const store = createCrossTrackStore();
+    selectAllThree(store);
+    mount(store);
+
+    pressKey("l");
+
+    for (const armor of [0, 1, 2]) {
+      expect(redOf(store, armor).linear).toBe(1);
+    }
+  });
+
+  it("改色：三條一起改", () => {
+    const store = createCrossTrackStore();
+    // 顏色會被換掉，所以先記下 id——不能再用顏色反查
+    const selected = selectAllThree(store);
+    mount(store);
+
+    act(() => {
+      store.dispatch(updateChosenColor({ R: 10, G: 20, B: 30, A: 1 }));
+      store.dispatch(updateIsColorChangeActive(true));
+    });
+
+    for (const { armorIndex, segmentId } of selected) {
+      const segment = segmentsOf(store, armorIndex, 0).find(
+        (s) => s.id === segmentId,
+      );
+      expect(segment.colorStart).toMatchObject({ R: 10, G: 20, B: 30 });
+    }
+  });
+
+  it("剪下：三條一起在播放頭上剪開", () => {
+    const store = createCrossTrackStore();
+    selectAllThree(store);
+    mount(store);
+
+    act(() => {
+      store.dispatch(updateCurrentTime(1500));
+    });
+    pressKey("c");
+
+    for (const armor of [0, 1, 2]) {
+      const reds = segmentsOf(store, armor, 0).filter(
+        (s) => s.colorStart.R === 255,
+      );
+      expect(reds.map((s) => [s.start, s.end])).toEqual([
+        [1000, 1500],
+        [1500, 2000],
+      ]);
+    }
+  });
+
+  it("複製貼上：三條一起複製，貼到另一位舞者時整組跟著平移", () => {
+    const store = createCrossTrackStore();
+    // 錨點是舞者 0，所以貼到舞者 1 = 整組往下平移一位（1、2、3）
+    selectAllThree(store);
+    mount(store);
+    pressKey("c", { ctrlKey: true });
+
+    const clipboard = store.getState().profiles.clipboard;
+    expect(clipboard.parts).toHaveLength(3);
+
+    // 舞者 1 的部位 0 沒有選到色塊時，Ctrl+V 退化成保持原本的時間
+    act(() => {
+      store.dispatch({
+        type: "UPDATE_MULTI_SELECTED_BLOCKS",
+        payload: [{ armorIndex: 1, partIndex: 0, segmentId: null }],
+      });
+    });
+    mount(store);
+    pressKey("v", { ctrlKey: true });
+
+    // 來源 0/1/2 → 落在 1/2/3，第四位舞者身上多出一段紅色
+    expect(redOf(store, 3)).toBeTruthy();
+    expect(redOf(store, 3).start).toBe(1000);
+  });
+
+  it("放最愛色：選到幾條就放幾條", () => {
+    const store = createCrossTrackStore({
+      currentTime: 5000,
+      favoriteColor: [[{ R: 1, G: 2, B: 3, A: 1 }]],
+    });
+    selectAllThree(store);
+    mount(store);
+
+    pressKey("!", { shiftKey: true, code: "Digit1" });
+
+    for (const armor of [0, 1, 2]) {
+      const inserted = segmentsOf(store, armor, 0).find(
+        (s) => s.colorStart.R === 1 && s.colorStart.G === 2,
+      );
+      expect(inserted).toBeTruthy();
+    }
   });
 });
 

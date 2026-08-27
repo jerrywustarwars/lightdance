@@ -71,7 +71,53 @@ export const selectedIdsOnPart = (selections, armorIndex, partIndex) => {
 };
 
 /**
+ * 把選取依部位分組 —— **跨軌操作的入口**。
+ *
+ * 框選做出來之後，`multiSelectedBlocks` 裡的項目可以來自不同的時間軸
+ * （一次選到七位舞者身上的同一個樂句）。但光表是 `table[armor][part]`，
+ * 每一條要各自算、各自寫回，所以每個跨軌的操作第一件事都是分組。
+ *
+ * 先前這段迴圈在 `deleteSelected` 與 `applyColorToSelection` 裡各手寫了一遍，
+ * 而其他八個操作根本沒寫——它們只看 `multiSelectedBlocks[0]`，選了七條只有
+ * 一條會動，**而且不會報錯**。
+ *
+ * 順序**跟著選取的順序**（不排序）：第一組就是使用者最先點到的那一條，
+ * 貼上與拖曳都拿它當錨點。
+ *
+ * ⚠️ **`segmentId` 是 `null` 的選取要保留成一個空集合的組。** 這份清單同時
+ * 表達兩件事：「選了哪些色塊」與「目前在編哪一條軌」——點了軌道但還沒點到
+ * 任何色塊時，`makeSelection` 產生的就是 `segmentId: null`。把它濾掉的話
+ * 「在播放頭放一個最愛色」與「跳到下一個時間點」會變成什麼都不做，
+ * 因為它們要的是**部位**而不是色塊。
+ *
+ * @returns {Array<{armorIndex, partIndex, segmentIds: Set<string>}>}
+ */
+export const groupSelectionsByPart = (selections) => {
+  if (!Array.isArray(selections)) return [];
+
+  const byPart = new Map();
+  for (const selection of selections) {
+    if (!selection) continue;
+    const { armorIndex, partIndex } = selection;
+    const key = `${armorIndex}-${partIndex}`;
+
+    if (!byPart.has(key)) {
+      byPart.set(key, { armorIndex, partIndex, segmentIds: new Set() });
+    }
+    if (selection.segmentId) {
+      byPart.get(key).segmentIds.add(selection.segmentId);
+    }
+  }
+
+  return [...byPart.values()];
+};
+
+/**
  * 把選取解析成真正的 segment 物件，順便濾掉已經不存在的（例如被 undo 掉）。
+ *
+ * ⚠️ **`segments` 是單一部位的**，所以這個函式只認得落在那個部位上的選取。
+ * 跨軌的操作請走 `groupSelectionsByPart` + `utils/segments/table.js`，
+ * 不要拿第一筆選取的部位當「大家的部位」——那正是跨軌操作原本壞掉的方式。
  *
  * @returns {Array} `[{selection, segment}]`，依 segment 起始時間排序
  */

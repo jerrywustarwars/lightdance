@@ -5,7 +5,11 @@ import { faWandMagicSparkles } from "@fortawesome/free-solid-svg-icons";
 
 import { useSegmentActionTable } from "../../hooks/useSegmentActionTable.js";
 import { TICK_MS } from "../../constants/time.js";
-import { resolveSelections } from "../../utils/selection.js";
+import {
+  resolveSelections,
+  groupSelectionsByPart,
+} from "../../utils/selection.js";
+import { mapSelectedParts } from "../../utils/segments/table.js";
 import { cloneColor, BLACK } from "../../utils/segments/color.js";
 import {
   MIN_BLINK_PERIOD_MS,
@@ -41,23 +45,29 @@ import {
  */
 
 export function useLightEffects() {
-  const { segmentTable, commitPart } = useSegmentActionTable();
+  const { segmentTable, commit, commitPart } = useSegmentActionTable();
   const multiSelectedBlocks = useSelector(
     (state) => state.profiles.multiSelectedBlocks,
   );
 
-  /** 選取所在的部位（所有效果都以第一筆選取為準） */
+  /**
+   * 選取涵蓋的每一條時間軸。漸變與頻閃都是**逐段**的效果，所以選到幾條就
+   * 套幾條——先前它們只看 `multiSelectedBlocks[0]` 所在的那一條，框選了
+   * 七位舞者之後按 L 只有第一位會變，而且沒有任何提示。
+   */
+  const groups = groupSelectionsByPart(multiSelectedBlocks);
+
+  /** 錨點那一條：亮度階梯要「從這一段往後數」，只有單選時才成立 */
   const activePart = multiSelectedBlocks[0] ?? null;
 
-  /** 該部位的 segments */
   const activeSegments = activePart
     ? (segmentTable?.[activePart.armorIndex]?.[activePart.partIndex] ?? [])
     : [];
 
-  /** 把選取解析成真正的 segment，濾掉已經不存在的（例如剛被 undo 掉） */
+  /** 錨點那一條上被選中的 segment（濾掉已經不存在的，例如剛被 undo 掉） */
   const selected = resolveSelections(multiSelectedBlocks, activeSegments);
 
-  /** 寫回目前這個部位 */
+  /** 寫回錨點那一條（只有亮度階梯用得到） */
   const commitActive = (nextSegments) =>
     commitPart(activePart.armorIndex, activePart.partIndex, nextSegments);
 
@@ -74,29 +84,43 @@ export function useLightEffects() {
    * 關掉漸變則把 `colorEnd` 收回成 `colorStart`，變回單純的固定色。
    */
   const toggleLinear = () => {
-    if (selected.length === 0) return;
+    if (groups.length === 0) return;
 
-    const selectedIds = new Set(selected.map((entry) => entry.segment.id));
+    /*
+     * 「漸變到什麼顏色」是**逐條各自算的**：同一個樂句在七位舞者身上，
+     * 後面接的下一段顏色可能各不相同。所以這段邏輯留在 fn 裡跑七次，
+     * 而不是拿第一條算出來的終點色套到所有人身上。
+     */
+    const nextTable = mapSelectedParts(segmentTable, groups, (segments, ids) => {
+      let changed = false;
 
-    const next = activeSegments.map((segment, index) => {
-      if (!selectedIds.has(segment.id)) return segment;
+      const next = segments.map((segment, index) => {
+        if (!ids.has(segment.id)) return segment;
+        changed = true;
 
-      const turningOn = segment.linear !== 1;
-      if (!turningOn) {
-        return { ...segment, linear: 0, colorEnd: cloneColor(segment.colorStart) };
-      }
+        const turningOn = segment.linear !== 1;
+        if (!turningOn) {
+          return {
+            ...segment,
+            linear: 0,
+            colorEnd: cloneColor(segment.colorStart),
+          };
+        }
 
-      const following = activeSegments[index + 1];
-      // 只有「首尾相接」才算接得上；中間有空隙的話中途本來就會熄滅
-      const touching = following && following.start === segment.end;
-      return {
-        ...segment,
-        linear: 1,
-        colorEnd: cloneColor(touching ? following.colorStart : BLACK),
-      };
+        const following = segments[index + 1];
+        // 只有「首尾相接」才算接得上；中間有空隙的話中途本來就會熄滅
+        const touching = following && following.start === segment.end;
+        return {
+          ...segment,
+          linear: 1,
+          colorEnd: cloneColor(touching ? following.colorStart : BLACK),
+        };
+      });
+
+      return changed ? next : segments;
     });
 
-    commitActive(next);
+    commit(nextTable);
   };
 
   /**
@@ -111,7 +135,7 @@ export function useLightEffects() {
    * `period` 傳 0 就是取消頻閃。
    */
   const applyBlink = (periodInput) => {
-    if (selected.length === 0) {
+    if (groups.length === 0) {
       alert("請先選取色塊，再套用頻閃。");
       return;
     }
@@ -133,27 +157,34 @@ export function useLightEffects() {
      * 所以框選一整段之後可以整批套。裝不下一個完整週期的色塊會被跳過而不是
      * 讓整個操作失敗，否則框選裡混到一個短色塊就什麼都做不了。
      */
-    const targets = new Set(selected.map((entry) => entry.segment.id));
     let changed = 0;
     let skipped = 0;
 
-    const next = activeSegments.map((segment) => {
-      if (!targets.has(segment.id)) return segment;
+    const nextTable = mapSelectedParts(segmentTable, groups, (segments, ids) => {
+      let partChanged = false;
 
-      if (wantsClear) {
-        if (!segment.effect) return segment;
+      const next = segments.map((segment) => {
+        if (!ids.has(segment.id)) return segment;
+
+        if (wantsClear) {
+          if (!segment.effect) return segment;
+          changed++;
+          partChanged = true;
+          return withoutEffect(segment);
+        }
+
+        if (segment.end - segment.start < effect.period) {
+          skipped++;
+          return segment;
+        }
+        if (blinkPeriodOf(segment) === effect.period) return segment;
+
         changed++;
-        return withoutEffect(segment);
-      }
+        partChanged = true;
+        return { ...segment, effect };
+      });
 
-      if (segment.end - segment.start < effect.period) {
-        skipped++;
-        return segment;
-      }
-      if (blinkPeriodOf(segment) === effect.period) return segment;
-
-      changed++;
-      return { ...segment, effect };
+      return partChanged ? next : segments;
     });
 
     if (!changed) {
@@ -164,7 +195,7 @@ export function useLightEffects() {
       );
       return;
     }
-    commitActive(next);
+    commit(nextTable);
   };
 
   /**
@@ -173,7 +204,9 @@ export function useLightEffects() {
    * @returns {boolean} 是否真的套用了（沒有恰好選一個色塊時回傳 false，讓面板留著）
    */
   const applyBrightnessLadder = (startPercent, stepPercent, endPercent) => {
-    if (selected.length !== 1) {
+    // 刻意維持「恰好一個」：階梯是「從這一段開始往後逐段遞增」，
+    // 起點必須是唯一的，否則「往後」從哪裡算起沒有定義
+    if (selected.length !== 1 || multiSelectedBlocks.length !== 1) {
       // 原本只 console.warn，使用者按下 Apply 會完全沒有反應——改成看得見的提示
       alert("請先選取「一個」色塊，再套用亮度階梯。");
       return false;

@@ -18,11 +18,13 @@ import {
 } from "../../redux/actions.js";
 import { TICK_MS } from "../../constants/time.js";
 import { useSegmentActionTable } from "../../hooks/useSegmentActionTable.js";
+import { mapSelectedParts } from "../../utils/segments/table.js";
 import { splitSegmentAt } from "../../utils/segments/color.js";
 import {
   findSegmentById,
   makeSelection,
   resolveSelections,
+  groupSelectionsByPart,
 } from "../../utils/selection.js";
 
 /**
@@ -57,22 +59,27 @@ export function useTrackActions() {
   // 從 Provider 拿 store，不要 import 模組層的 singleton——singleton 在測試裡
   // 會是另一個 store instance，讀到的 state 跟畫面上的無關。
   const store = useStore();
-  const { segmentTable, duration, commit, commitPart } =
-    useSegmentActionTable();
+  const { segmentTable, duration, commit } = useSegmentActionTable();
   const currentTime = useSelector((state) => state.profiles.currentTime);
   const multiSelectedBlocks = useSelector(
     (state) => state.profiles.multiSelectedBlocks,
   );
 
-  /** 選取所在的部位（所有動作都以第一筆選取為準） */
+  /**
+   * 選取涵蓋的每一條時間軸。**不要只看第一筆**——框選是跨軌的，
+   * 拿第一筆的部位當「大家的部位」就是選了七條只有一條會動。
+   */
+  const groups = groupSelectionsByPart(multiSelectedBlocks);
+
+  /** 錨點：使用者最先點到的那一條，工具列的顏色與亮度以它為準 */
   const activePart = multiSelectedBlocks[0] ?? null;
 
-  /** 該部位的 segments */
+  /** 錨點那一條的 segments（導航、剪下與顏色取樣用） */
   const activeSegments = activePart
     ? (segmentTable?.[activePart.armorIndex]?.[activePart.partIndex] ?? [])
     : [];
 
-  /** 選取解析成真正的 segment，並濾掉已經不存在的（例如剛被 undo 掉） */
+  /** 錨點那一條上被選中的 segment，依時間排序 */
   const selectedSegments = resolveSelections(
     multiSelectedBlocks,
     activeSegments,
@@ -99,30 +106,11 @@ export function useTrackActions() {
   const deleteSelected = () => {
     if (multiSelectedBlocks.length === 0) return;
 
-    // 依部位分組：一次選取可能跨好幾條時間軸
-    const byPart = new Map();
-    for (const selection of multiSelectedBlocks) {
-      const key = `${selection.armorIndex}-${selection.partIndex}`;
-      if (!byPart.has(key)) byPart.set(key, []);
-      byPart.get(key).push(selection);
-    }
-
-    let nextTable = segmentTable;
-
-    for (const selections of byPart.values()) {
-      const { armorIndex, partIndex } = selections[0];
-      const segments = nextTable?.[armorIndex]?.[partIndex] ?? [];
-      const doomed = new Set(selections.map((s) => s.segmentId));
-
-      const remaining = segments.filter((segment) => !doomed.has(segment.id));
-      if (remaining.length === segments.length) continue; // 這條沒東西被刪到
-
-      nextTable = nextTable.map((armor, a) =>
-        a === armorIndex
-          ? armor.map((segs, p) => (p === partIndex ? remaining : segs))
-          : armor,
-      );
-    }
+    const nextTable = mapSelectedParts(segmentTable, groups, (segments, ids) => {
+      const remaining = segments.filter((segment) => !ids.has(segment.id));
+      // 沒東西被刪到就回傳原陣列，那一條的 reference 不變
+      return remaining.length === segments.length ? segments : remaining;
+    });
 
     commit(nextTable);
     dispatch(updateMultiSelectedBlocks([]));
@@ -135,38 +123,50 @@ export function useTrackActions() {
    * 切開前後逐格顏色一致）。這裡只負責讀播放位置、寫回、把選取移到後半段。
    */
   const cutSelected = () => {
-    if (multiSelectedBlocks.length !== 1) {
-      console.warn(
-        "Cut operation is only valid when exactly one block is selected.",
-      );
-      return;
-    }
+    if (multiSelectedBlocks.length === 0) return;
 
     // 直接從 Redux store 讀取最新 currentTime，繞過 closure stale 問題
     const curTime = store.getState().profiles.currentTime;
-    const { armorIndex, partIndex, segmentId } = multiSelectedBlocks[0];
-    const segments = segmentTable?.[armorIndex]?.[partIndex] ?? [];
 
-    const target = findSegmentById(segments, segmentId);
-    if (!target || curTime <= target.start || curTime >= target.end) {
+    /*
+     * 跨軌一起剪：選了七位舞者的同一個樂句，在播放頭上剪一刀應該七條都斷。
+     * 舊版限制「恰好選一個」，於是框選之後按 C 只有 console.warn。
+     *
+     * 播放頭沒有落在某一條的選取色塊裡面（例如那條的色塊比較短）就跳過它，
+     * 不要讓整個操作失敗——那和頻閃跳過太短的色塊是同一個判斷。
+     */
+    const back = [];
+
+    const nextTable = mapSelectedParts(
+      segmentTable,
+      groups,
+      (segments, ids, where) => {
+        const target = [...ids]
+          .map((id) => findSegmentById(segments, id))
+          .find(
+            (segment) =>
+              segment && curTime > segment.start && curTime < segment.end,
+          );
+        if (!target) return segments;
+
+        const nextSegments = splitSegmentAt(segments, curTime);
+        if (nextSegments === segments) return segments;
+
+        // 選取移到切出來的後半段（它拿到新的 id）
+        const half = nextSegments.find((segment) => segment.start === curTime);
+        if (half) back.push(makeSelection({ ...where, segment: half }));
+
+        return nextSegments;
+      },
+    );
+
+    if (nextTable === segmentTable) {
       console.warn("Cut operation is not valid at the current time.");
       return;
     }
 
-    const nextSegments = splitSegmentAt(segments, curTime);
-    if (nextSegments === segments) return;
-
-    commitPart(armorIndex, partIndex, nextSegments);
-
-    // 選取移到切出來的後半段（它拿到新的 id）
-    const back = nextSegments.find((segment) => segment.start === curTime);
-    if (back) {
-      dispatch(
-        updateMultiSelectedBlocks([
-          makeSelection({ armorIndex, partIndex, segment: back }),
-        ]),
-      );
-    }
+    commit(nextTable);
+    dispatch(updateMultiSelectedBlocks(back));
   };
 
   /**
@@ -177,11 +177,14 @@ export function useTrackActions() {
    * 哨兵間距就再跳一格」。segment 世界沒有哨兵，邊界就是邊界。
    */
   const boundaryTimes = () => {
-    if (!activePart) return [];
+    // 選取跨軌時取**聯集**：使用者看到的是七條疊在一起的樂句，
+    // 「下一個時間點」應該是那整組的下一個邊界，不是碰巧第一條的
     const times = new Set();
-    for (const segment of activeSegments) {
-      times.add(segment.start);
-      times.add(segment.end);
+    for (const { armorIndex, partIndex } of groups) {
+      for (const segment of segmentTable?.[armorIndex]?.[partIndex] ?? []) {
+        times.add(segment.start);
+        times.add(segment.end);
+      }
     }
     return [...times].sort((a, b) => a - b);
   };
@@ -229,20 +232,25 @@ export function useTrackActions() {
     }
 
     const alphaValue = clampAlpha(newBrightness);
-    const doomed = new Set(multiSelectedBlocks.map((s) => s.segmentId));
 
-    // 選取一定落在同一個部位上（Timeline 的多選不跨軌），所以只改那一條
-    const nextSegments = activeSegments.map((segment) =>
-      doomed.has(segment.id)
-        ? {
-            ...segment,
-            colorStart: { ...segment.colorStart, A: alphaValue },
-            colorEnd: { ...segment.colorEnd, A: alphaValue },
-          }
-        : segment,
-    );
+    const nextTable = mapSelectedParts(segmentTable, groups, (segments, ids) => {
+      let changed = false;
+      const next = segments.map((segment) => {
+        if (!ids.has(segment.id)) return segment;
+        if (segment.colorStart.A === alphaValue && segment.colorEnd.A === alphaValue) {
+          return segment;
+        }
+        changed = true;
+        return {
+          ...segment,
+          colorStart: { ...segment.colorStart, A: alphaValue },
+          colorEnd: { ...segment.colorEnd, A: alphaValue },
+        };
+      });
+      return changed ? next : segments;
+    });
 
-    commitPart(activePart.armorIndex, activePart.partIndex, nextSegments);
+    commit(nextTable);
 
     if (firstSegment) {
       dispatch(

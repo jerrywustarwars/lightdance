@@ -42,6 +42,36 @@ export function makeTestActionTable() {
   return table;
 }
 
+/**
+ * 三位舞者的同一個部位各有一個 1~2 秒的紅色色塊 —— **跨軌操作的測試素材**。
+ *
+ * 「同一個樂句在好幾位舞者身上各有一段」正是框選與跨軌編輯存在的理由，
+ * 而預設的 `makeTestActionTable()` 只有 (0,0) 有東西，跨軌的行為在它上面
+ * 全部退化成單軌，測了等於沒測。
+ */
+export function makeCrossTrackTable() {
+  const table = normalizeActionTable([], DURATION);
+  for (const armor of [0, 1, 2]) {
+    table[armor][0] = [
+      { time: 0, color: { R: 0, G: 0, B: 0, A: 1 }, linear: 0 },
+      { time: 1000, color: { R: 255, G: 0, B: 0, A: 1 }, linear: 0 },
+      { time: 2000, color: { R: 0, G: 0, B: 0, A: 1 }, linear: 0 },
+      { time: DURATION, color: { R: 0, G: 0, B: 0, A: 1 }, linear: 0 },
+    ];
+  }
+  return table;
+}
+
+/** 用 `makeCrossTrackTable` 當內容的 store */
+export const createCrossTrackStore = (overrides = {}) =>
+  createTestStore({
+    data: {
+      music_filename: "2026_show.mp3",
+      actionTable: toSegmentTable(makeCrossTrackTable(), { duration: DURATION }),
+    },
+    ...overrides,
+  });
+
 /** 同一張光表的 segment 形式（store 實際存的東西） */
 export function makeTestSegmentTable() {
   return toSegmentTable(makeTestActionTable(), { duration: DURATION });
@@ -116,6 +146,27 @@ export const selectSegment = (store, armor = 0, part = 0, segmentIndex = 0) => {
 /** 同時選取多個 segment（Shift 多選的結果） */
 export const selectSegments = (store, armor, part, segmentIndexes) => {
   const selections = segmentIndexes.map((index) =>
+    makeSelection({
+      armorIndex: armor,
+      partIndex: part,
+      segment: segmentsOf(store, armor, part)[index],
+    }),
+  );
+
+  store.dispatch({
+    type: "UPDATE_MULTI_SELECTED_BLOCKS",
+    payload: selections,
+  });
+  return selections;
+};
+
+/**
+ * 跨軌選取：`coords` 是一串 `[armorIndex, partIndex, segmentIndex]`。
+ *
+ * 第一筆是**錨點**（貼上的軌道平移量、工具列的顏色都以它為準），所以順序有意義。
+ */
+export const selectAcross = (store, coords) => {
+  const selections = coords.map(([armor, part, index]) =>
     makeSelection({
       armorIndex: armor,
       partIndex: part,
