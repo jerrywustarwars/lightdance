@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { FaEyeDropper } from "react-icons/fa6";
 import { useDispatch, useSelector } from "react-redux";
 
@@ -95,10 +95,47 @@ function Palette({ rgba, setRgba }) {
     if (rgb) chooseColor(rgb);
   };
 
-  const handlePickerChange = (event) => {
-    const rgb = hexToRgb(event.target.value);
-    if (rgb) chooseColor(rgb);
-  };
+  /*
+   * 調色器**只在使用者確定之後才取色**。
+   *
+   * `<input type="color">` 有兩個事件：拖過色域的每一格都會發 `input`，
+   * 使用者確定（關掉原生對話框）才發 `change`。React 的 `onChange` 綁的是
+   * 前者——所以舊版是「滑鼠在色盤上滑過哪裡，選取的色塊就跟著變成哪個顏色」。
+   *
+   * 那不只是閃：`chosenColor` 一變就會觸發 `applyColorToSelection`，於是滑過
+   * 去的**每一個中間色都寫進光表、各佔一格 undo**，選完一個顏色之後要按幾十次
+   * Ctrl+Z 才回得去。「最近使用」也會被沿途經過的色相塞滿（它只比色相）。
+   *
+   * 所以這裡不綁 React 的 onChange，改成 uncontrolled + 監聽原生的 `change`：
+   * 拖曳期間完全不進 React，放開才提交一次。
+   */
+  const pickerRef = useRef(null);
+  const chooseColorRef = useRef(chooseColor);
+  chooseColorRef.current = chooseColor;
+
+  useEffect(() => {
+    const picker = pickerRef.current;
+    if (!picker) return;
+
+    const commit = () => {
+      const rgb = hexToRgb(picker.value);
+      if (rgb) chooseColorRef.current(rgb);
+    };
+
+    picker.addEventListener("change", commit);
+    return () => picker.removeEventListener("change", commit);
+  }, []);
+
+  /*
+   * 顏色從別的地方改變時（HEX 欄位、最愛色、工具列的「改色」）把調色器同步過去。
+   * 它是 uncontrolled 的，所以要自己寫回 DOM——沒寫的話下次打開色盤時顯示的
+   * 還是上一個顏色。
+   */
+  useEffect(() => {
+    if (pickerRef.current && HEX_PATTERN.test(paletteColor)) {
+      pickerRef.current.value = paletteColor;
+    }
+  }, [paletteColor]);
 
   /** 亮度 = LED 的 alpha。只改 A，色相不動 */
   const setAlpha = (alpha) => {
@@ -149,10 +186,12 @@ function Palette({ rgba, setRgba }) {
         <input
           className="palette-color-picker"
           type="color"
-          value={HEX_PATTERN.test(paletteColor) ? paletteColor : "#000000"}
+          // uncontrolled：拖過色域的 `input` 事件不進 React，只有原生的
+          // `change`（使用者確定）才提交。見上面 `pickerRef` 那段的說明
+          ref={pickerRef}
+          defaultValue={HEX_PATTERN.test(paletteColor) ? paletteColor : "#000000"}
           id="colorWell"
           aria-label="選擇顏色"
-          onChange={handlePickerChange}
         />
         <div className="palette-row__fields">
           {/*

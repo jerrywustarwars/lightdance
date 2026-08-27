@@ -275,12 +275,16 @@ export function useTrackActions() {
     dispatch(updateChosenColor(blockColor));
     dispatch(updateIsColorChangeActive(true));
 
-    const palette = document.querySelector("#colorWell");
-    if (palette) {
-      palette.value = rgbaToHex(blockColor);
-      palette.dispatchEvent(new Event("input"));
-      palette.click();
-    }
+    /*
+     * 直接打開原生的色盤。值由上面的 `updatePaletteColor` 經由 Palette 的
+     * effect 寫進去（那個 input 是 uncontrolled 的）。
+     *
+     * 舊版這裡還補了一個 `dispatchEvent(new Event("input"))`——那在 React 的
+     * 受控輸入上本來就不會生效（直接指派 `.value` 會同步 React 的 value
+     * tracker，於是 onChange 被判定成「沒有變化」而不觸發），而現在調色器已經
+     * 刻意不聽 `input` 了（滑過色域不該一路改色，見 Palette.jsx）。
+     */
+    document.querySelector("#colorWell")?.click();
   };
 
   /** 統一調整「全場所有和選取色塊同色」的色塊透明度 */

@@ -8,10 +8,13 @@ import { describe, it, expect } from "vitest";
 
 import {
   CLIPBOARD_KIND,
+  clipboardSpanMs,
   hasContent,
+  landingSpans,
   packClipboard,
   planOverwrite,
   planPaste,
+  segmentCount,
   sourceSelections,
 } from "../clipboard.js";
 
@@ -237,5 +240,97 @@ describe("sourceSelections", () => {
 
   it("空剪貼簿回傳空陣列", () => {
     expect(sourceSelections(null)).toEqual([]);
+  });
+});
+
+describe("landingSpans（滑鼠預覽的落點）", () => {
+  const clipboard = packClipboard(
+    [
+      groupOf(0, 0, [seg("a", 1000, 2000), seg("b", 3000, 3500)]),
+      groupOf(1, 0, [seg("c", 1000, 2000)]),
+    ],
+    { armorIndex: 0, partIndex: 0 },
+  );
+
+  it("和 planPaste 算出同一個落點", () => {
+    /*
+     * ⚠️ 這一則是這組的重點：預覽畫在 A 而貼下去在 B 是最糟的一種錯——
+     * 使用者按下去之前明明看到框在那裡。兩者必須永遠一致。
+     */
+    // 錨點 (0,0) → (1,0)，所以兩條分別落在 (1,0) 與 (2,0)，都在表內
+    const target = { armorIndex: 1, partIndex: 0, timeOffset: 5000 };
+    const spans = landingSpans(clipboard, target);
+    const planned = planPaste(emptyTable(), clipboard, target).flatMap((p) =>
+      p.pasted.map((s) => ({
+        armorIndex: p.armorIndex,
+        partIndex: p.partIndex,
+        start: s.start,
+        end: s.end,
+      })),
+    );
+
+    expect(spans).toEqual(planned);
+  });
+
+  it("不需要光表也算得出來（每一幀都會呼叫，不能碰資料）", () => {
+    const spans = landingSpans(clipboard, {
+      armorIndex: 0,
+      partIndex: 0,
+      timeOffset: 0,
+    });
+
+    expect(spans).toHaveLength(3);
+    expect(spans[0]).toEqual({
+      armorIndex: 0,
+      partIndex: 0,
+      start: 1000,
+      end: 2000,
+    });
+  });
+
+  it("不過濾「這個部位存不存在」——那是呼叫端的事", () => {
+    /*
+     * `landingSpans` 刻意不收光表（每一幀都要算）。所以平移出範圍的落點它照樣
+     * 回報，由畫預覽的人決定畫不畫（`PastePreview` 找不到對應的可見軌道就
+     * 收起那個框）。這個分工要寫清楚，否則會有人以為兩邊永遠等長。
+     */
+    const spans = landingSpans(clipboard, {
+      armorIndex: 2, // 錨點 +2 → 第二條落在 (3,0)，3 位舞者的表裡沒有
+      partIndex: 0,
+      timeOffset: 0,
+    });
+
+    expect(spans.map((s) => s.armorIndex)).toEqual([2, 2, 3]);
+    expect(
+      planPaste(emptyTable(), clipboard, {
+        armorIndex: 2,
+        partIndex: 0,
+        timeOffset: 0,
+      }).map((p) => p.armorIndex),
+    ).toEqual([2]); // planPaste 有表，所以它知道 (3,0) 不存在
+  });
+
+  it("空剪貼簿回傳空陣列", () => {
+    expect(landingSpans(null, { armorIndex: 0, partIndex: 0 })).toEqual([]);
+  });
+});
+
+describe("segmentCount / clipboardSpanMs", () => {
+  const clipboard = packClipboard(
+    [
+      groupOf(0, 0, [seg("a", 1000, 2000), seg("b", 3000, 3500)]),
+      groupOf(1, 0, [seg("c", 1000, 2000)]),
+    ],
+    { armorIndex: 0, partIndex: 0 },
+  );
+
+  it("數得出總共幾段（預覽要準備幾個 DOM 節點）", () => {
+    expect(segmentCount(clipboard)).toBe(3);
+    expect(segmentCount(null)).toBe(0);
+  });
+
+  it("整份內容的時間長度（預覽用它把落點夾在表演範圍內）", () => {
+    expect(clipboardSpanMs(clipboard)).toBe(2500);
+    expect(clipboardSpanMs(null)).toBe(0);
   });
 });

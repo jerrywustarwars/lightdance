@@ -361,6 +361,7 @@ segment 壓平回 keyframe 之後**緊鄰的色塊之間沒有黑點**，這個�
 | A3a | ~~節拍格線~~ | M | **2026-08-15 完成**。速度掛在 clip 上（`clip.bpm` / `beatAnchor` / `beatsPerBar`），運算在 `utils/audio/tempo.js`，`BeatGrid` 畫在軌道底下。使用者拍板：同音檔不變速、最細 1/4 拍、三連音略過 |
 | A3b | **節拍吸附** | M | 格線先用一陣子再決定。要做的話必須是 `gestures.js` 的一個參數（先吸到拍再 `roundToTick`），不能是另一條路徑；套用範圍：拖曳 / resize / 放色預設長度 / 貼上 / 區間平移，並用全域開關控制 |
 | ~~A4~~ | ~~跨軌的複製貼上與拖曳~~ | M | **2026-08-27 完成**。框選早就跨軌，但幾乎每個操作都在 `multiSelectedBlocks[0]` 那一條收斂。收成 `groupSelectionsByPart` + `utils/segments/table.js` + `utils/segments/clipboard.js`，拖曳同時支援水平（整批共用位移量）與垂直（拖到別條軌，落點覆蓋） |
+| A5 | **亮度滑桿拖曳中不 dispatch** | S | 每一格像素寫一次 redux，在改色模式下等於每格佔一格 undo。做法和逐軌行高把手、接縫滑桿一樣（拖曳中只改預覽、放開才寫），但那三個地方「拖曳中要看到什麼」各不相同，所以不是照抄 |
 | A3c | **敲拍取速度（tap tempo）** | S | 目前 BPM 只能手動輸入。敲拍時記 `engine.positionMs()`，丟掉第一個間隔取平均，**第一次敲擊的位置就是 anchor**（相位與速度一次拿到） |
 
 ### B. 尚未拆件 / 技術債
@@ -475,8 +476,8 @@ fixture 裡的使用者名稱預設匿名化，也是同一個理由。
 ```bash
 cd frontend
 npm run dev            # 另一個終端機
-npm test               # 704 項
-npm run e2e            # 64 項
+npm test               # 717 項
+npm run e2e            # 66 項
 npm run audit:layout   # 5 項版面
 npm run audit:bundle   # 初始 JS 大小預算
 cd ../backend && uv run pytest   # 87 項
@@ -492,6 +493,7 @@ cd ../backend && uv run pytest   # 87 項
 | M 鍵 Move Mode 拖曳移動；拖曳邊緣 resize | e2e（幾何接線仍需人眼） |
 | click 選色塊、Shift+click 多選、框選跨軌 | e2e |
 | 跨軌選取一起搬、把色塊拖到別條軌 | e2e |
+| 複製模式的滑鼠預覽與按左鍵貼上 | e2e |
 | Ctrl+C / Ctrl+V 區間貼上；Ctrl+Shift+V 固定時間貼上 | unit |
 | Shift+C / Shift+V 整條複製貼上 | unit |
 | L 鍵切漸變 | unit |

@@ -22,6 +22,7 @@ import {
 import Timeline from "./Timeline.jsx";
 import TimeRuler from "./TimeRuler.jsx";
 import { MarqueeBox, useMarqueeSelect } from "./MarqueeSelect.jsx";
+import { PasteGhosts, usePastePreview } from "./PastePreview.jsx";
 import { updateChosenColor, updateCurrentTime } from "../../redux/actions.js";
 import { TICK_MS } from "../../constants/time.js";
 import {
@@ -76,6 +77,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
   const progressFlagRef = useRef(null); // P0: 進度條 DOM ref，60fps 直接操作
   const elRefs = useRef([]);
   const marqueeBoxRef = useRef(null); // 框選的矩形，手勢期間直接改它的 style
+  const pasteGhostsRef = useRef([]);  // 貼上落點的預覽框，同樣直接改 style
 
   const playbackRate = useSelector((state) => state.profiles.playbackRate);
 
@@ -376,6 +378,20 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     tracks: showPart,
   });
 
+  /*
+   * 複製模式的滑鼠預覽：游標指到哪就把落點畫在哪，按下去就貼。
+   *
+   * 舊流程是「先點一個目標色塊選起來，再按 Ctrl+V」——想貼到空白處沒有東西
+   * 可以點，而且按下去之前完全看不到會貼到哪（剪貼簿跨軌之後更明顯）。
+   */
+  usePastePreview({
+    containerRef: timelineRef,
+    ghostsRef: pasteGhostsRef,
+    tracks: showPart,
+    isCopying: copyPaste.isCopying,
+    onPasteAt: copyPaste.pasteAtTarget,
+  });
+
   const listitem = showPart.map((setting, index) => (
     <Timeline
       key={setting.id}
@@ -465,6 +481,12 @@ function AudioPlayer({ setButtonState, timelineRef }) {
             {/* 框選的矩形。常駐但預設隱藏，手勢期間只改它的 style —— 這個容器是
                 154 條 Timeline 的祖先，每格像素都 setState 會讓它們全部重算 */}
             <MarqueeBox boxRef={marqueeBoxRef} />
+            {/* 貼上的落點預覽。只有複製模式才 render——常駐的話 154 條
+                Timeline 上面會多蓋一層什麼都不做的節點 */}
+            <PasteGhosts
+              ghostsRef={pasteGhostsRef}
+              isCopying={copyPaste.isCopying}
+            />
           </div>
           <div className="waveform-container" ref={containerRef}>
             {/* 波形顯示區域 */}

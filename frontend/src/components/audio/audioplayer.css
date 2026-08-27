@@ -607,21 +607,35 @@
   transition: border 0.2s ease;
 }
 
+/*
+ * 複製模式的提示。
+ *
+ * ⚠️ **它蓋在畫面最上層，所以兩件事都要做到：不吃滑鼠事件、不擋著控制項。**
+ *
+ * 舊版是 `top: 20px` 的置中膠囊，正好蓋住 header 的 Load / Edit / Logout
+ * ——和先前「尚未儲存」橫幅蓋掉 Edit/Logout 是同一個病因（版面稽核抓不到，
+ * 因為它只在複製模式下才出現）。改到畫面底部之後只會疊到波形，而波形是
+ * 顯示用的；再加上 `pointer-events: none`，連波形上的 seek 都不會被它擋掉。
+ *
+ * 真正的落點回饋現在是時間軸上那個跟著游標的虛線框（見 `PastePreview.jsx`），
+ * 這條橫幅只補一句「按左鍵貼上、Esc 取消」，所以它不需要顯眼的位置。
+ */
 .copy-mode-banner {
   position: fixed;
-  top: 20px;
+  bottom: 16px;
   left: 50%;
   transform: translateX(-50%);
+  pointer-events: none;
   background: var(--bg-control-active);
   color: var(--text-primary);
-  padding: 10px 20px;
+  padding: 8px 18px;
   border-radius: 30px;
   box-shadow: 0 4px 15px var(--overlay-soft);
   z-index: 2000;
   display: flex;
   flex-direction: column;
   align-items: center;
-  animation: slide-down 0.3s ease-out;
+  animation: slide-up 0.3s ease-out;
 }
 
 .hint-text {
@@ -630,9 +644,9 @@
   margin-top: 4px;
 }
 
-@keyframes slide-down {
-  from { top: -50px; opacity: 0; }
-  to { top: 20px; opacity: 1; }
+@keyframes slide-up {
+  from { bottom: -50px; opacity: 0; }
+  to { bottom: 16px; opacity: 1; }
 }
 
 /* 修改或新增以下樣式 */

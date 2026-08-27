@@ -182,5 +182,55 @@ export function planOverwrite(table, clipboard, target) {
   return plans;
 }
 
+/**
+ * 貼上之後每一段會落在哪一條軌、哪一段時間 —— **給滑鼠預覽用**。
+ *
+ * 和 `planPaste` 算的是同一個落點，但**不碰光表**：預覽在滑鼠移動時每一幀都要
+ * 算一次，而 `planPaste` 會對每一條目標軌跑一次 `clearRange` 並產生新陣列。
+ * 預覽只需要知道「框要畫在哪」，不需要知道合併之後長什麼樣。
+ *
+ * 順序與 `planPaste` 的 `pasted` 攤平之後一致（同樣逐 part、逐 segment），
+ * 所以呼叫端可以用固定數量的 DOM 節點對應。
+ *
+ * @returns {Array<{armorIndex, partIndex, start, end}>}
+ */
+export function landingSpans(clipboard, target) {
+  if (!hasContent(clipboard)) return [];
+
+  const armorShift = target.armorIndex - clipboard.anchorArmorIndex;
+  const partShift = target.partIndex - clipboard.anchorPartIndex;
+  const offset = roundToTick(target.timeOffset ?? 0);
+
+  const spans = [];
+  for (const part of clipboard.parts) {
+    for (const segment of part.segments) {
+      const start = roundToTick(segment.start + offset);
+      const end = roundToTick(segment.end + offset);
+      if (end <= start || start < 0) continue;
+      spans.push({
+        armorIndex: part.armorIndex + armorShift,
+        partIndex: part.partIndex + partShift,
+        start,
+        end,
+      });
+    }
+  }
+  return spans;
+}
+
+/** 剪貼簿裡總共有幾段（預覽要準備幾個 DOM 節點） */
+export const segmentCount = (clipboard) =>
+  hasContent(clipboard)
+    ? clipboard.parts.reduce((sum, part) => sum + part.segments.length, 0)
+    : 0;
+
+/**
+ * 剪貼簿內容的時間長度。滑鼠預覽用它把落點夾在表演範圍內
+ * ——貼到一半跑出時間軸外面的話，那幾段會被 `planPaste` 丟掉，
+ * 而畫面上只看得到「怎麼少貼了幾塊」。
+ */
+export const clipboardSpanMs = (clipboard) =>
+  hasContent(clipboard) ? clipboard.endTime - clipboard.startTime : 0;
+
 /** 時間軸最小刻度，供呼叫端對齊用（避免各自 import 兩個常數） */
 export { TICK_MS };

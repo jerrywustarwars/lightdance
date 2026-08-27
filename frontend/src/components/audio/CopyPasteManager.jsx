@@ -131,6 +131,18 @@ export function useCopyPaste() {
     setIsCopying(true); // 進入模式，讓 Timeline 顯示來源標記
   };
 
+  /**
+   * 貼到指定的落點 —— **滑鼠預覽按下去時走這條**。
+   *
+   * 和 Ctrl+V 是同一個 `planPaste`，差別只在「目標從哪裡來」：鍵盤那條路
+   * 是目前選取的色塊，滑鼠這條路是游標下面那一列與那個時間。兩條路各算一遍
+   * 落點的話遲早會不一致，而不一致的症狀是「預覽畫在 A、貼下去在 B」。
+   */
+  const pasteAtTarget = (target) => {
+    if (!hasContent(clipboard) || !target) return;
+    applyPlans(planPaste(segmentTable, clipboard, target));
+  };
+
   /** Ctrl+V：以目標色塊的起點與部位為基準貼上 */
   const pasteAlignedToTarget = () => {
     if (!hasContent(clipboard)) return;
@@ -199,6 +211,7 @@ export function useCopyPaste() {
   return {
     isCopying,
     copyRange,
+    pasteAtTarget,
     pasteAlignedToTarget,
     pasteAtFixedTime,
     copyWholePart,
@@ -222,7 +235,7 @@ export function CopyModeBanner({ isCopying }) {
         {trackCount > 1 ? `（${trackCount} 條軌道）` : ""}
       </span>
       <span className="hint-text">
-        點目標軌上的色塊後按 [Ctrl+V] 貼上，[Esc] 取消
+        移動滑鼠看落點，按左鍵貼上（或選好目標按 [Ctrl+V]），[Esc] 取消
       </span>
     </div>
   );

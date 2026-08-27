@@ -924,6 +924,82 @@ const run = async () => {
         `第 1 軌 ${onRow0.length} 個色塊 / ${rows.length} 條軌`,
       );
     }
+    /*
+     * ── 貼上的滑鼠預覽 ──────────────────────────────────
+     *
+     * 舊流程是「先點一個目標色塊選起來，再按 Ctrl+V」——想貼到空白處沒有東西
+     * 可以點，而且按下去之前完全看不到會貼到哪。現在游標移到哪，落點的框就
+     * 跟到哪，按左鍵就貼在框的位置。
+     *
+     * jsdom 驗不到這一段：框的位置是量出來的（列的實際上下緣 × 時間換算成的
+     * 像素），而「游標停在哪一列」靠的是 `elementFromPoint`。
+     */
+    await page.mouse.click(rows[0].left + rows[0].width * 0.9, rows[0].top + 20);
+    await page.waitForTimeout(300);
+
+    const litOnRow = async (row) =>
+      (await litByRow()).filter((b) => b.row === row).length;
+
+    const sourceBlock = (await litByRow()).find((b) => b.row === 0);
+    if (sourceBlock) {
+      await page.mouse.click(sourceBlock.cx, sourceBlock.cy);
+      await page.waitForTimeout(250);
+      await page.keyboard.press("Control+c");
+      await page.waitForTimeout(300);
+
+      // 移到第三軌的空白處，落點的框應該出現在那裡
+      const dropX = rows[2].left + rows[2].width * 0.7;
+      const dropY = rows[2].top + (rows[2].bottom - rows[2].top) / 2;
+      await page.mouse.move(dropX, dropY, { steps: 6 });
+      await page.waitForTimeout(200);
+
+      const ghost = await page.evaluate(() => {
+        const el = document.querySelector("[data-testid='paste-ghost']");
+        if (!el || getComputedStyle(el).display === "none") return null;
+        const r = el.getBoundingClientRect();
+        return {
+          x: Math.round(r.x),
+          y: Math.round(r.y),
+          w: Math.round(r.width),
+          h: Math.round(r.height),
+        };
+      });
+
+      const onTargetRow =
+        ghost &&
+        ghost.y >= rows[2].top - 2 &&
+        ghost.y + ghost.h <= rows[2].bottom + 2;
+
+      record(
+        "複製模式下滑鼠移到哪，落點的框就畫在哪",
+        !!ghost && ghost.w > 5 && onTargetRow,
+        ghost
+          ? `框在 (${ghost.x}, ${ghost.y}) ${ghost.w}×${ghost.h}，` +
+            `第 3 軌是 ${rows[2].top}~${rows[2].bottom}`
+          : "沒有框",
+      );
+      await shot(page, "paste-preview");
+
+      // 按下去就貼在框的位置
+      const beforePaste = await litOnRow(2);
+      await page.mouse.click(dropX, dropY);
+      await page.waitForTimeout(600);
+      const afterPaste = await litOnRow(2);
+
+      const pastedNearGhost = ghost
+        ? (await litByRow()).some(
+            (b) => b.row === 2 && Math.abs(b.x - ghost.x) <= 4,
+          )
+        : false;
+
+      record(
+        "按左鍵就貼在框的位置（不必先選目標再按 Ctrl+V）",
+        afterPaste === beforePaste + 1 && pastedNearGhost,
+        `第 3 軌 ${beforePaste} → ${afterPaste} 個色塊，落點對得上框：${pastedNearGhost}`,
+      );
+    } else {
+      record("複製模式下滑鼠移到哪，落點的框就畫在哪", false, "第 1 軌沒有色塊");
+    }
   } else {
     record("框選一次選到跨軌的多個色塊", false, `只有 ${rows.length} 條軌`);
   }
