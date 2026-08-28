@@ -203,6 +203,18 @@
   align-items: center;
   gap: 10px;
 }
+
+/*
+ * 縮放讀數。定寬且靠右——數字換位數時（9.9× → 10×）不要把 +/- 推來推去。
+ */
+.zoom-value {
+  width: 40px;
+  /* 靠右：數字換位數時（9.9× → 10×）不要把後面的 - 推來推去 */
+  text-align: right;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
 .volume-control {
   display: flex;
   align-items: center;

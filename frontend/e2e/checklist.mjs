@@ -1004,6 +1004,122 @@ const run = async () => {
     record("框選一次選到跨軌的多個色塊", false, `只有 ${rows.length} 條軌`);
   }
 
+  /*
+   * ── 縮放的手感 ──────────────────────────────────────
+   *
+   * 兩個症狀同一個根因：控制項是線性的，而縮放是幾何的。
+   *
+   * 舊版 `+` 每次加 0.05，從 1 倍走到 100 倍要按 1980 次；滑桿是線性
+   * 1..100 再套一個 `Math.floor`，低倍率那一端一個像素就從 1 倍跳到 2 倍。
+   * 換算本身有單元測試（`utils/__tests__/zoom.test.js`），這裡驗的是
+   * 「接上去的按鈕與滑桿真的走那套換算」。
+   */
+  const zoomText = () =>
+    page.locator(".zoom-value").innerText().then((t) => t.trim());
+
+  const zoomSlider = page.locator(".zoom-slider");
+  const plus = page.locator(".zoom-controls button", { hasText: "+" });
+
+  const zoomStart = await zoomText();
+  await plus.click();
+  await page.waitForTimeout(150);
+  const zoomAfterOne = await zoomText();
+
+  record(
+    "按一次放大就看得出變化（不是 +0.05）",
+    zoomStart === "1.0×" && zoomAfterOne === "1.3×",
+    `${zoomStart} → ${zoomAfterOne}`,
+  );
+
+  // 連按到底要幾次——舊版是 1980 次
+  let clicks = 1;
+  while (clicks < 40 && (await zoomText()) !== "100×") {
+    await plus.click();
+    clicks++;
+  }
+  record(
+    "連按 + 在 25 次以內到達上限",
+    (await zoomText()) === "100×" && clicks <= 25,
+    `${clicks} 次到 ${await zoomText()}`,
+  );
+
+  // 滑桿：拖到中間應該是幾何中點（10 倍），不是算術中點（50 倍）
+  await zoomSlider.fill("0.5");
+  await page.waitForTimeout(150);
+  record(
+    "滑桿拖到一半是 10 倍（幾何中點），不是 50 倍",
+    (await zoomText()) === "10×",
+    await zoomText(),
+  );
+
+  // 低倍率那一端拖得動：舊版在這裡是 1 倍直接跳 2 倍
+  await zoomSlider.fill("0.02");
+  await page.waitForTimeout(150);
+  const lowEnd = await zoomText();
+  record(
+    "低倍率那一端拖得到中間值（不是 1 倍直接跳 2 倍）",
+    lowEnd !== "1.0×" && lowEnd !== "2.0×",
+    lowEnd,
+  );
+
+  await zoomSlider.fill("0");
+  await page.waitForTimeout(200);
+
+  /*
+   * ── 舞者的隱藏與恢復 ────────────────────────────────
+   *
+   * 舊版是光衣下面另一整列 50px 的開關，佔掉約 66px 而且平常不會用到。
+   * 現在「隱藏」在卡片自己的標題列上，「叫回來」只在真的有人被隱藏時才出現。
+   *
+   * ⚠️ 恢復的入口一定要在卡片外面——放在卡片上的話，卡片一隱藏那個按鈕就
+   * 跟著消失，使用者再也叫不回來（軌道的眼睛按鈕當初就是這樣被移除的）。
+   */
+  const armorCount = () =>
+    page.locator(".armor-container").count();
+
+  const beforeHide = await armorCount();
+  record(
+    "全部顯示時不佔任何空間（沒有那條提示列）",
+    (await page.locator("[data-testid='hidden-dancers']").count()) === 0,
+    `${beforeHide} 位舞者`,
+  );
+
+  /*
+   * 不加 `force`：這裡要驗的正是「它真的點得到」。
+   *
+   * 父層 `.dancer-label` 是 `pointer-events: none`（讓點擊穿過去選這位舞者），
+   * 那會一併關掉裡面所有東西的命中判定——按鈕畫得出來、hover 也看得到，
+   * 就是點不到。第一版就是這樣紅的，`elementFromPoint` 在按鈕正中央回傳的是
+   * `.armor-container`。
+   */
+  await page.locator(".armor-container").first().hover(); // × 平常是透明的
+  await page.waitForTimeout(200);
+  await page.locator("[data-testid='dancer-hide-0']").click();
+  await page.waitForTimeout(400);
+
+  record(
+    "點卡片上的 × 就收起那位舞者",
+    (await armorCount()) === beforeHide - 1,
+    `${beforeHide} → ${await armorCount()}`,
+  );
+
+  const restore = page.locator("[data-testid='hidden-dancers'] .hidden-dancers__chip");
+  record(
+    "有人被隱藏時才出現恢復的入口，而且在卡片外面",
+    (await restore.count()) === 1,
+    `${await restore.count()} 個恢復按鈕`,
+  );
+
+  await restore.first().click();
+  await page.waitForTimeout(400);
+  record(
+    "按編號就把那位叫回來",
+    (await armorCount()) === beforeHide &&
+      (await page.locator("[data-testid='hidden-dancers']").count()) === 0,
+    `${await armorCount()} 位舞者`,
+  );
+  await shot(page, "dancer-hide");
+
   // ── 道具就掛在人旁邊 ──────────────────────────────────
   //
   // 飾品燈原本在右側一個獨立側欄裡，離所屬的舞者好幾百像素遠——播放時看不出

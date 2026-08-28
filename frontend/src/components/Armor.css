@@ -210,6 +210,13 @@
  * 原因之一。改成佔一行之後圖形拿回全部的空間，標籤也不會壓在帽子上。
  */
 .dancer-label {
+  /*
+   * 標題列現在同時放名字與「隱藏」鈕。名字置中、× 靠右——用 grid 的三欄
+   * （空白 / 名字 / 按鈕）而不是 space-between，否則名字會被按鈕推得偏左。
+   */
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
   text-align: center;
   padding: 3px 8px;
   border-radius: var(--radius-sm);
@@ -222,6 +229,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   transition: background 0.2s ease, color 0.2s ease;
+  /*
+   * 標題列本身讓點擊穿過去（點卡片的任何地方都是「選這位舞者」），
+   * 但裡面的按鈕要自己把事件收回來——見 `.dancer-hide`。
+   */
   pointer-events: none;
 }
 
@@ -233,5 +244,53 @@
  */
 .armor-container:hover .dancer-label {
   background: var(--bg-control-hover);
+  color: var(--text-primary);
+}
+
+/* 名字在中間那一欄，左右兩欄等寬，所以它是真的置中 */
+.dancer-label__name {
+  grid-column: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/*
+ * 隱藏這位舞者。
+ *
+ * 平常淡到幾乎看不見，hover 卡片時才浮出來——它是不常用的操作，不該和
+ * 舞者名稱搶注意力。但**一直佔著位子**（不是 display: none 再冒出來），
+ * 否則 hover 時整列會跳一下。
+ */
+.dancer-hide {
+  grid-column: 3;
+  justify-self: end;
+  /*
+   * ⚠️ 一定要寫。父層 `.dancer-label` 是 `pointer-events: none`（讓點擊
+   * 穿過去選這位舞者），而那會一併關掉裡面所有東西的命中判定——按鈕畫得出來、
+   * hover 也看得到，就是點不到。實測 `elementFromPoint` 在按鈕正中央回傳的是
+   * `.armor-container`，e2e 就是這樣紅的。
+   */
+  pointer-events: auto;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.armor-container:hover .dancer-hide,
+.dancer-hide:focus-visible {
+  opacity: 1;
+}
+
+.dancer-hide:hover {
+  background: var(--bg-control-active);
   color: var(--text-primary);
 }

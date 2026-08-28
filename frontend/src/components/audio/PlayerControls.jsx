@@ -7,12 +7,17 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 
 import { updatePlaybackRate } from "../../redux/actions.js";
+import {
+  MAX_ZOOM,
+  formatZoom,
+  sliderToZoom,
+  zoomIn,
+  zoomOut,
+  zoomToSlider,
+} from "../../utils/zoom.js";
 
-/** 縮放上限（拖曳/波形寬度都以此為界） */
-export const MAX_ZOOM = 100;
-
-/** 縮放的一格：按 +/- 時對齊到 0.05 的倍數 */
-const ZOOM_STEP = 0.05;
+// 縮放的形狀與換算全部在 utils/zoom.js。這裡只接事件
+export { MAX_ZOOM };
 
 const formatTime = (timeInMilliseconds) => {
   const minutes = Math.floor(timeInMilliseconds / 60000);
@@ -47,27 +52,19 @@ function PlayerControls({
     dispatch(updatePlaybackRate(parseFloat(speed)));
   };
 
+  /*
+   * 滑桿走的是**位置**（0..1）而不是倍率，位置與 log(倍率) 成正比。
+   *
+   * 舊版是線性的 1..100 再加一個 `Math.floor`：一個像素約等於一倍，而低倍率
+   * 那一端只走得到 1、2、3——「1 倍變 2 倍」是整整放大一倍，拖曳時停不到
+   * 想要的地方。換算在 `utils/zoom.js`。
+   */
   const handleZoom = (event) => {
-    setZoomLevel(Math.floor(event.target.value));
+    setZoomLevel(sliderToZoom(Number(event.target.value)));
   };
 
-  const handleMinusZoom = () => {
-    setZoomLevel((prevZoom) =>
-      Math.max(
-        (Math.round((prevZoom - ZOOM_STEP) / ZOOM_STEP) * ZOOM_STEP).toFixed(2),
-        1,
-      ),
-    );
-  };
-
-  const handlePlusZoom = () => {
-    setZoomLevel((prevZoom) =>
-      Math.min(
-        (Math.round((prevZoom + ZOOM_STEP) / ZOOM_STEP) * ZOOM_STEP).toFixed(2),
-        MAX_ZOOM,
-      ),
-    );
-  };
+  const handleMinusZoom = () => setZoomLevel(zoomOut);
+  const handlePlusZoom = () => setZoomLevel(zoomIn);
 
   const handleVolumeChange = (event) => {
     // 調音量會重建 audio graph，所以先停止播放
@@ -119,19 +116,35 @@ function PlayerControls({
       </div>
 
       <div className="zoom-controls">
-        <button onClick={handleMinusZoom} disabled={zoomLevel < 1}>
+        {/*
+          讀數放在這一組的**最前面**。放在 `+` 後面的話它會緊貼著音量圖示，
+          讀起來像是音量的數值——兩組之間只隔一個 gap，而組內也是一個 gap。
+        */}
+        <span className="zoom-value">{formatZoom(zoomLevel)}</span>
+        <button
+          onClick={handleMinusZoom}
+          disabled={zoomLevel <= 1}
+          title="縮小時間軸"
+        >
           -
         </button>
         <input
           type="range"
-          min="1"
-          max={MAX_ZOOM}
-          step="0.01"
-          value={zoomLevel}
+          // 0..1 是**滑桿的位置**，不是倍率。位置與 log(倍率) 成正比，
+          // 所以拖曳時「每移動一段距離就放大同樣的比例」在整個範圍都成立
+          min="0"
+          max="1"
+          step="0.001"
+          value={zoomToSlider(zoomLevel)}
           onChange={handleZoom}
           className="zoom-slider"
+          aria-label="時間軸縮放"
         />
-        <button onClick={handlePlusZoom} disabled={zoomLevel > MAX_ZOOM}>
+        <button
+          onClick={handlePlusZoom}
+          disabled={zoomLevel >= MAX_ZOOM}
+          title="放大時間軸"
+        >
           +
         </button>
       </div>

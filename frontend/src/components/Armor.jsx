@@ -4,7 +4,11 @@ import "./Armor.css";
 import { PART_KEYS } from "../constants/parts.js";
 import { TICK_MS } from "../constants/time.js";
 import { getColorAt, insertColorSegment } from "../utils/segments/color.js";
-import { updateCurrentTime, updateSelectedDancer } from "../redux/actions";
+import {
+  updateCurrentTime,
+  updateDancerVisibility,
+  updateSelectedDancer,
+} from "../redux/actions";
 import { useSegmentArmorTimelines } from "../hooks/useSegmentActionTable.js";
 import {
   ARMOR_FLOOR,
@@ -28,6 +32,16 @@ const Armor = (props) => {
   const selectedDancerId = useSelector(
     (state) => state.profiles.selectedDancerId,
   );
+  const dancerVisibility = useSelector(
+    (state) => state.profiles.dancerVisibility,
+  );
+
+  /** 把這位舞者收起來。叫回來的入口在卡片外面（見 DancerToggle.jsx） */
+  const hideDancer = () => {
+    const next = [...dancerVisibility];
+    next[props.index] = false;
+    dispatch(updateDancerVisibility(next));
+  };
   const myId = props.index;
 
   // 新的部位名稱（對應 Home.jsx 的輸出映射）
@@ -130,7 +144,28 @@ const Armor = (props) => {
       className={`armor-container${isCurrentDancer ? " is-current" : ""}`}
       onClick={() => dispatch(updateSelectedDancer(myId))}
     >
-      <div className="dancer-label">舞者 {myId + 1}</div>
+      <div className="dancer-label">
+        <span className="dancer-label__name">舞者 {myId + 1}</span>
+        {/*
+          隱藏這位舞者。放在卡片自己的標題列上，「關掉這位」的按鈕就在這位身上
+          ——舊版是光衣下面另一整列 50px 的開關，佔掉約 66px 而且平常不會用到。
+          叫回來的入口在卡片外面（`DancerToggle.jsx`），因為卡片一隱藏，
+          長在它上面的按鈕就跟著消失了。
+        */}
+        <button
+          type="button"
+          className="dancer-hide"
+          data-testid={`dancer-hide-${myId}`}
+          title={`隱藏舞者 ${myId + 1}`}
+          aria-label={`隱藏舞者 ${myId + 1}`}
+          onClick={(e) => {
+            e.stopPropagation(); // 不要順便把整張卡片當成「選這位舞者」
+            hideDancer();
+          }}
+        >
+          ×
+        </button>
+      </div>
       <div className="armor-body">
       <svg className="armor-figure" viewBox={ARMOR_VIEWBOX}>
         {/* 舞台地板：讓光衣看起來是站著的，而不是浮在卡片中間 */}

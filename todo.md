@@ -476,8 +476,8 @@ fixture 裡的使用者名稱預設匿名化，也是同一個理由。
 ```bash
 cd frontend
 npm run dev            # 另一個終端機
-npm test               # 717 項
-npm run e2e            # 66 項
+npm test               # 729 項
+npm run e2e            # 74 項
 npm run audit:layout   # 5 項版面
 npm run audit:bundle   # 初始 JS 大小預算
 cd ../backend && uv run pytest   # 87 項

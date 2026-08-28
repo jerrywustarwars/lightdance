@@ -270,35 +270,37 @@ const collectProblems = () => {
 
   // ── 4. 該對齊卻沒對齊的成對元素 ────────────────────
   //
-  // 舞者開關與光衣是一一對應的：第 i 個開關控制第 i 位舞者。它們的**中心**
-  // 必須對齊，否則使用者要關掉某位舞者時得先數格子。
+  // 「隱藏這位舞者」的按鈕必須**長在那位舞者的卡片裡**。
   //
-  // 實測抓到過七個開關全擠在左側 40..462、光衣攤在 28..1222——舞者 7 的開關
-  // 在 x=400 而光衣在 x=1080。畫面上兩排東西都畫得好好的，只是對不起來。
-  //
-  // 兩排都用 `justify-content: space-around` 且同寬同數量時，中心會自動對齊，
-  // 所以這條檢查等於是在守「有人把其中一排改成 flex-start / 改了寬度」。
+  // 舊版是光衣下面另一整列的方形開關，靠位置對應「第 i 個開關 = 第 i 位舞者」
+  // ——那條對應很脆弱，實測抓到過七個開關全擠在左側 40..462 而光衣攤在
+  // 28..1222，舞者 7 的開關在 x=400、光衣在 x=1080，畫面上兩排都畫得好好的，
+  // 只是對不起來。收進卡片之後對應是結構上保證的，這裡改成守「它真的在裡面」
+  // ——有人把它改成 `position: absolute` 加寫死座標時就會被抓到（這個專案
+  // 已經因為那個寫法修過好幾次版面）。
   const misaligned = [];
   const armorBoxes = [...document.querySelectorAll(".armor-container")];
-  const toggleBoxes = [...document.querySelectorAll(".dancer-toggle-item")];
 
-  if (armorBoxes.length && armorBoxes.length === toggleBoxes.length) {
-    const centerX = (el) => {
-      const r = el.getBoundingClientRect();
-      return r.left + r.width / 2;
-    };
-    armorBoxes.forEach((armor, i) => {
-      const delta = Math.round(centerX(toggleBoxes[i]) - centerX(armor));
-      if (Math.abs(delta) > 2) {
-        misaligned.push({ pair: `舞者 ${i + 1} 的開關與光衣`, delta });
-      }
-    });
-  } else if (armorBoxes.length !== toggleBoxes.length) {
-    misaligned.push({
-      pair: "開關數量與光衣數量",
-      delta: `${toggleBoxes.length} vs ${armorBoxes.length}`,
-    });
-  }
+  armorBoxes.forEach((armor, i) => {
+    const hide = armor.querySelector(".dancer-hide");
+    if (!hide) {
+      misaligned.push({ pair: `舞者 ${i + 1} 的隱藏鈕`, delta: "找不到" });
+      return;
+    }
+    const a = armor.getBoundingClientRect();
+    const h = hide.getBoundingClientRect();
+    if (
+      h.left < a.left - 1 ||
+      h.right > a.right + 1 ||
+      h.top < a.top - 1 ||
+      h.bottom > a.bottom + 1
+    ) {
+      misaligned.push({
+        pair: `舞者 ${i + 1} 的隱藏鈕跑出卡片`,
+        delta: `鈕 ${Math.round(h.left)}..${Math.round(h.right)} vs 卡片 ${Math.round(a.left)}..${Math.round(a.right)}`,
+      });
+    }
+  });
 
   /*
    * 左側軌名列 ↔ 右側時間軸：**每一列都要落在同一條水平線上**。
