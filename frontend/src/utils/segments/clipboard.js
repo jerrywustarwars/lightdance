@@ -32,6 +32,17 @@
  *
  * 平移之後落在光表範圍外的那幾條**整條丟掉**，不夾回邊界：夾回去會讓兩條
  * 疊在同一個部位上，後貼的默默蓋掉先貼的。丟掉至少是「這條沒貼到」，看得出來。
+ *
+ * ## 相位偏移（跑馬燈）
+ *
+ * `target.phaseMs` 不是 0 的時候，落點會再多一項「**第幾條**乘上 phaseMs」。
+ * 一個色塊貼到七位舞者身上、每位往後推 100ms，就是一道光波沿著隊形跑過去
+ * ——那是燈光台（grandMA / Chamsys）最常用的效果，而在這之前要做只能複製七次
+ * 再一條一條往後推，推完想改間隔就得全部重來。
+ *
+ * 「第幾條」是把剪貼簿的內容依 `(舞者, 部位)` 排序之後的名次，**不是**選取的
+ * 順序：使用者框選的順序取決於他從哪個角落開始拉，而波要沿著隊形跑。
+ * phaseMs 為負就是反方向。
  */
 import { TICK_MS } from "../../constants/time.js";
 import { clearRange, createId, roundToTick } from "./core.js";
@@ -78,6 +89,47 @@ export function packClipboard(groups, anchor) {
   };
 }
 
+/**
+ * 每一條在相位順序裡排第幾 —— **依 `(舞者, 部位)` 排序，不是選取順序**。
+ *
+ * 框選的順序取決於使用者從哪個角落開始拉（由下往上拉就整個反過來），而波要
+ * 沿著隊形跑。用座標排序才是穩定的，而且和貼上的二維平移用同一組座標。
+ *
+ * @returns {Map<string, number>} `"armor-part"` → 名次（0 起算）
+ */
+export function phaseRanks(clipboard) {
+  const ranks = new Map();
+  if (!hasContent(clipboard)) return ranks;
+
+  [...clipboard.parts]
+    .sort(
+      (a, b) =>
+        a.armorIndex - b.armorIndex || a.partIndex - b.partIndex,
+    )
+    .forEach((part, index) => {
+      ranks.set(`${part.armorIndex}-${part.partIndex}`, index);
+    });
+
+  return ranks;
+}
+
+/**
+ * 這一條的相位偏移（毫秒），已對齊網格。
+ *
+ * ⚠️ **相位一律往後推，`phaseMs` 的正負只決定波往哪個方向跑。**
+ *
+ * 直覺寫法是 `名次 × phaseMs`，但那樣負相位會把後面幾條推到**游標之前**、
+ * 甚至推到負時間去被丟掉，而滑鼠預覽的夾緊只顧得到一邊。改成負相位時以
+ * **最後一名**當基準（`(名次 − (n−1)) × phaseMs`），整組就永遠落在游標之後，
+ * 「游標指到哪，最早的那一條就落在哪」對兩個方向都成立。
+ */
+const phaseOf = (ranks, part, phaseMs, count) => {
+  if (!phaseMs) return 0;
+  const rank = ranks.get(`${part.armorIndex}-${part.partIndex}`) ?? 0;
+  const base = phaseMs < 0 ? count - 1 : 0;
+  return roundToTick((rank - base) * phaseMs);
+};
+
 /** 這份剪貼簿是不是這個版本認得的、而且有東西 */
 export const hasContent = (clipboard) =>
   clipboard?.kind === CLIPBOARD_KIND && clipboard.parts?.length > 0;
@@ -114,6 +166,7 @@ export function planPaste(table, clipboard, target) {
   const armorShift = target.armorIndex - clipboard.anchorArmorIndex;
   const partShift = target.partIndex - clipboard.anchorPartIndex;
   const offset = roundToTick(target.timeOffset ?? 0);
+  const ranks = phaseRanks(clipboard);
 
   const plans = [];
 
@@ -125,13 +178,17 @@ export function planPaste(table, clipboard, target) {
     const existing = table[armorIndex]?.[partIndex];
     if (!Array.isArray(existing)) continue;
 
+    // 跑馬燈：這一條再往後推「名次 × phaseMs」
+    const shift =
+      offset + phaseOf(ranks, part, target.phaseMs, clipboard.parts.length);
+
     const pasted = part.segments
       .map((segment) => ({
         ...segment,
         // 貼上的是**副本**：沿用舊 id 會讓選取與 undo diff 同時指到兩個地方
         id: createId(),
-        start: roundToTick(segment.start + offset),
-        end: roundToTick(segment.end + offset),
+        start: roundToTick(segment.start + shift),
+        end: roundToTick(segment.end + shift),
       }))
       .filter((segment) => segment.end > segment.start && segment.start >= 0);
 
@@ -200,12 +257,15 @@ export function landingSpans(clipboard, target) {
   const armorShift = target.armorIndex - clipboard.anchorArmorIndex;
   const partShift = target.partIndex - clipboard.anchorPartIndex;
   const offset = roundToTick(target.timeOffset ?? 0);
+  const ranks = phaseRanks(clipboard);
 
   const spans = [];
   for (const part of clipboard.parts) {
+    const shift =
+      offset + phaseOf(ranks, part, target.phaseMs, clipboard.parts.length);
     for (const segment of part.segments) {
-      const start = roundToTick(segment.start + offset);
-      const end = roundToTick(segment.end + offset);
+      const start = roundToTick(segment.start + shift);
+      const end = roundToTick(segment.end + shift);
       if (end <= start || start < 0) continue;
       spans.push({
         armorIndex: part.armorIndex + armorShift,
@@ -229,8 +289,13 @@ export const segmentCount = (clipboard) =>
  * ——貼到一半跑出時間軸外面的話，那幾段會被 `planPaste` 丟掉，
  * 而畫面上只看得到「怎麼少貼了幾塊」。
  */
-export const clipboardSpanMs = (clipboard) =>
-  hasContent(clipboard) ? clipboard.endTime - clipboard.startTime : 0;
+export const clipboardSpanMs = (clipboard, phaseMs = 0) => {
+  if (!hasContent(clipboard)) return 0;
+  // 相位會把最後一條往後推，整份內容因此變長。不算進去的話滑鼠可以把落點推到
+  // 時間軸外面，那幾條會被 planPaste 丟掉——而畫面上只看得到「怎麼少貼了幾塊」
+  const spread = Math.abs(phaseMs) * Math.max(0, clipboard.parts.length - 1);
+  return clipboard.endTime - clipboard.startTime + spread;
+};
 
 /** 時間軸最小刻度，供呼叫端對齊用（避免各自 import 兩個常數） */
 export { TICK_MS };

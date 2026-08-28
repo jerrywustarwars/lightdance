@@ -12,6 +12,7 @@ import {
   hasContent,
   landingSpans,
   packClipboard,
+  phaseRanks,
   planOverwrite,
   planPaste,
   segmentCount,
@@ -332,5 +333,118 @@ describe("segmentCount / clipboardSpanMs", () => {
   it("整份內容的時間長度（預覽用它把落點夾在表演範圍內）", () => {
     expect(clipboardSpanMs(clipboard)).toBe(2500);
     expect(clipboardSpanMs(null)).toBe(0);
+  });
+});
+
+describe("相位偏移（跑馬燈）", () => {
+  /** 三位舞者的同一個部位，各有一個 1000~2000 的色塊 */
+  const clipboard = packClipboard(
+    [
+      groupOf(0, 0, [seg("a", 1000, 2000)]),
+      groupOf(1, 0, [seg("b", 1000, 2000)]),
+      groupOf(2, 0, [seg("c", 1000, 2000)]),
+    ],
+    { armorIndex: 0, partIndex: 0 },
+  );
+
+  const table = () =>
+    Array.from({ length: 4 }, () => Array.from({ length: 2 }, () => []));
+
+  const startsByArmor = (plans) =>
+    plans
+      .slice()
+      .sort((x, y) => x.armorIndex - y.armorIndex)
+      .map((p) => p.pasted[0].start);
+
+  it("每往下一條就再往後推一個 phaseMs", () => {
+    const plans = planPaste(table(), clipboard, {
+      armorIndex: 0,
+      partIndex: 0,
+      timeOffset: 0,
+      phaseMs: 100,
+    });
+
+    expect(startsByArmor(plans)).toEqual([1000, 1100, 1200]);
+  });
+
+  it("phaseMs 為 0 時和原本完全一樣", () => {
+    const withZero = planPaste(table(), clipboard, {
+      armorIndex: 0,
+      partIndex: 0,
+      timeOffset: 0,
+      phaseMs: 0,
+    });
+    const without = planPaste(table(), clipboard, {
+      armorIndex: 0,
+      partIndex: 0,
+      timeOffset: 0,
+    });
+
+    expect(startsByArmor(withZero)).toEqual(startsByArmor(without));
+  });
+
+  it("⚠️ 負相位是把波倒過來跑，整組仍然落在游標之後", () => {
+    /*
+     * 直覺寫法 `名次 × phaseMs` 會讓後面幾條跑到游標**之前**，甚至推到負時間
+     * 被丟掉——而滑鼠預覽的夾緊只顧得到一邊，畫面上只看得到「怎麼少貼了幾塊」。
+     */
+    const plans = planPaste(table(), clipboard, {
+      armorIndex: 0,
+      partIndex: 0,
+      timeOffset: 0,
+      phaseMs: -100,
+    });
+
+    // 波從最後一位開始：第 3 位最早，第 1 位最晚，但都不早於原本的 1000
+    expect(startsByArmor(plans)).toEqual([1200, 1100, 1000]);
+    expect(Math.min(...startsByArmor(plans))).toBeGreaterThanOrEqual(1000);
+  });
+
+  it("名次依 (舞者, 部位) 排序，不是選取順序", () => {
+    /*
+     * 框選的順序取決於使用者從哪個角落開始拉（由下往上拉就整個反過來），
+     * 而波要沿著隊形跑。
+     */
+    const reversed = packClipboard(
+      [
+        groupOf(2, 0, [seg("c", 1000, 2000)]),
+        groupOf(0, 0, [seg("a", 1000, 2000)]),
+        groupOf(1, 0, [seg("b", 1000, 2000)]),
+      ],
+      { armorIndex: 2, partIndex: 0 },
+    );
+
+    expect([...phaseRanks(reversed).entries()].sort()).toEqual([
+      ["0-0", 0],
+      ["1-0", 1],
+      ["2-0", 2],
+    ]);
+  });
+
+  it("預覽與實際落點在有相位時仍然一致", () => {
+    const target = {
+      armorIndex: 0,
+      partIndex: 0,
+      timeOffset: 2000,
+      phaseMs: 150,
+    };
+    const spans = landingSpans(clipboard, target);
+    const planned = planPaste(table(), clipboard, target).flatMap((p) =>
+      p.pasted.map((seg) => ({
+        armorIndex: p.armorIndex,
+        partIndex: p.partIndex,
+        start: seg.start,
+        end: seg.end,
+      })),
+    );
+
+    expect(spans).toEqual(planned);
+  });
+
+  it("整份內容的長度要把相位攤開的部分算進去", () => {
+    // 三條、每條差 100ms → 比原本多 200ms
+    expect(clipboardSpanMs(clipboard)).toBe(1000);
+    expect(clipboardSpanMs(clipboard, 100)).toBe(1200);
+    expect(clipboardSpanMs(clipboard, -100)).toBe(1200);
   });
 });

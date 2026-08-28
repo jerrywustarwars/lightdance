@@ -62,6 +62,7 @@ export function usePastePreview({
   ghostsRef,
   tracks,
   isCopying,
+  phaseMs = 0,
   onPasteAt,
 }) {
   const clipboard = useSelector((state) => state.profiles.clipboard);
@@ -72,7 +73,12 @@ export function usePastePreview({
   const targetRef = useRef(null);
 
   const stateRef = useRef({});
-  stateRef.current = { clipboard, duration, tracks, onPasteAt };
+  stateRef.current = { clipboard, duration, tracks, phaseMs, onPasteAt };
+
+  // 最後一次的游標位置。改跑馬燈間隔時要在**原地**重畫成階梯狀，
+  // 而那時沒有 mousemove 事件可以用
+  const lastPointRef = useRef(null);
+  const redrawRef = useRef(() => {});
 
   useEffect(() => {
     const container = containerRef?.current;
@@ -85,12 +91,17 @@ export function usePastePreview({
       targetRef.current = null;
     };
 
-    /** 游標位置 → 落點（哪一條軌、時間平移多少） */
-    const targetAt = (event) => {
-      const { clipboard: clip, duration: total, tracks: rows } = stateRef.current;
+    /** 游標位置 → 落點（哪一條軌、時間平移多少）。收的是點不是事件 */
+    const targetAt = (point) => {
+      const {
+        clipboard: clip,
+        duration: total,
+        tracks: rows,
+        phaseMs: phase,
+      } = stateRef.current;
       if (!hasContent(clip) || !Array.isArray(rows) || !(total > 0)) return null;
 
-      const row = rowUnder(event.clientX, event.clientY);
+      const row = rowUnder(point.clientX, point.clientY);
       const rowIndex = Number(row?.dataset.rowIndex);
       const track = Number.isInteger(rowIndex) ? rows[rowIndex] : null;
       if (!track) return null;
@@ -104,8 +115,9 @@ export function usePastePreview({
        * 再夾一次尾端：整份內容要塞得進表演長度裡，否則超出去的那幾段會被
        * `planPaste` 丟掉，而畫面上只看得到「怎麼少貼了幾塊」。
        */
-      const cursorMs = ((event.clientX - rect.left) / rect.width) * total;
-      const span = clipboardSpanMs(clip);
+      const cursorMs = ((point.clientX - rect.left) / rect.width) * total;
+      // 相位會把最後一條往後推，整份內容因此變長——夾緊要算進去
+      const span = clipboardSpanMs(clip, phase);
       const startMs = Math.max(0, Math.min(total - span, cursorMs));
 
       return {
@@ -113,12 +125,14 @@ export function usePastePreview({
         partIndex: track.partIndex,
         timeOffset:
           Math.round((startMs - clip.startTime) / TICK_MS) * TICK_MS,
+        phaseMs: phase,
       };
     };
 
-    const handleMove = (event) => {
+    const redraw = (point) => {
+      if (!point) return;
       const { clipboard: clip, duration: total, tracks: rows } = stateRef.current;
-      const target = targetAt(event);
+      const target = targetAt(point);
       targetRef.current = target;
 
       if (!target) return hideAll();
@@ -160,6 +174,13 @@ export function usePastePreview({
       }
     };
 
+    redrawRef.current = redraw;
+
+    const handleMove = (event) => {
+      lastPointRef.current = { clientX: event.clientX, clientY: event.clientY };
+      redraw(lastPointRef.current);
+    };
+
     /*
      * 用 capture 階段：Timeline 的 block mousedown 會 `stopPropagation`
      * （它要決定是不是進入選取／拖曳），冒泡階段收不到落在色塊上的那些點擊
@@ -180,9 +201,21 @@ export function usePastePreview({
     return () => {
       container.removeEventListener("mousemove", handleMove);
       container.removeEventListener("mousedown", handleDown, true);
+      lastPointRef.current = null;
       hideAll();
     };
   }, [containerRef, ghostsRef, isCopying]);
+
+  /*
+   * 改跑馬燈間隔時在**原地**重畫。
+   *
+   * ⚠️ 不要把 `phaseMs` 放進上面那個 effect 的 deps：那會讓 listener 重掛，
+   * 而 cleanup 的 `hideAll()` 會把框全部收起來——改完間隔之後畫面上什麼都沒有，
+   * 要再動一次滑鼠才回來，看起來像壞掉。
+   */
+  useEffect(() => {
+    if (isCopying) redrawRef.current(lastPointRef.current);
+  }, [isCopying, phaseMs]);
 }
 
 /**

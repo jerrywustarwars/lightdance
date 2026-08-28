@@ -389,6 +389,7 @@ function AudioPlayer({ setButtonState, timelineRef }) {
     ghostsRef: pasteGhostsRef,
     tracks: showPart,
     isCopying: copyPaste.isCopying,
+    phaseMs: copyPaste.phaseMs,
     onPasteAt: copyPaste.pasteAtTarget,
   });
 
@@ -410,7 +411,11 @@ function AudioPlayer({ setButtonState, timelineRef }) {
 
   return (
     <div className="audio-player-container">
-      <CopyModeBanner isCopying={copyPaste.isCopying} />
+      <CopyModeBanner
+        isCopying={copyPaste.isCopying}
+        phaseMs={copyPaste.phaseMs}
+        setPhaseMs={copyPaste.setPhaseMs}
+      />
       {/*
         工具列分成五組，中間用分隔線隔開：音樂 / 導航 / 編輯 / 效果 / 播放。
 

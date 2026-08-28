@@ -997,6 +997,113 @@ const run = async () => {
         afterPaste === beforePaste + 1 && pastedNearGhost,
         `第 3 軌 ${beforePaste} → ${afterPaste} 個色塊，落點對得上框：${pastedNearGhost}`,
       );
+
+      /*
+       * ── 相位偏移（跑馬燈）────────────────────────────
+       *
+       * 一個色塊貼到好幾條軌上、每一條往後推一個固定間隔，就是一道光波沿著
+       * 隊形跑過去。在這之前要做只能複製 N 次再一條一條推。
+       *
+       * 這裡驗的是「預覽真的變成階梯」——落點運算有單元測試，但「改了欄位
+       * 之後畫面上跟著變」只有真瀏覽器看得到（而且第一版是 phaseMs 進了
+       * listener effect 的 deps，改完間隔框會整組消失）。
+       */
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(300);
+
+      /*
+       * 素材要自己擺：前面那些色塊落在不同時間，而這一項要驗的是「本來對齊的
+       * 東西被錯開」——來源如果一開始就沒對齊，就分不出錯開是相位造成的還是
+       * 本來就這樣。所以在同一個播放位置上，於第 1、2 軌各放一個色塊。
+       */
+      await clickRulerAt(0.62);
+      await page.waitForTimeout(200);
+      await clickArmorPart(page, 0, 0);
+      await page.waitForTimeout(300);
+      await clickArmorPart(page, 1, 0);
+      await page.waitForTimeout(500);
+
+      // 只框那個時間附近的兩塊，不要把別的時間的東西也框進來
+      await page.mouse.move(rows[0].left + rows[0].width * 0.58, rows[0].top + 8);
+      await page.mouse.down();
+      await page.mouse.move(
+        rows[0].left + rows[0].width * 0.78,
+        rows[1].bottom - 8,
+        { steps: 10 },
+      );
+      await page.mouse.up();
+      await page.waitForTimeout(400);
+      await page.keyboard.press("Control+c");
+      await page.waitForTimeout(300);
+
+      const phaseField = page.locator("[data-testid='paste-phase']");
+      const hasPhaseField = (await phaseField.count()) === 1;
+
+      const ghostBoxes = async () =>
+        page.evaluate(() =>
+          [...document.querySelectorAll("[data-testid='paste-ghost']")]
+            .filter((el) => getComputedStyle(el).display !== "none")
+            .map((el) => {
+              const r = el.getBoundingClientRect();
+              return { x: Math.round(r.x), y: Math.round(r.y) };
+            })
+            .sort((a, b) => a.y - b.y),
+        );
+
+      if (hasPhaseField) {
+        const mid = [
+          rows[0].left + rows[0].width * 0.25,
+          rows[0].top + (rows[0].bottom - rows[0].top) / 2,
+        ];
+        await page.mouse.move(...mid, { steps: 4 });
+        await page.waitForTimeout(200);
+        const flat = await ghostBoxes();
+
+        await phaseField.fill("500");
+        await page.waitForTimeout(300);
+        const staggered = await ghostBoxes();
+
+        // 來源是對齊的，所以間隔 0 時兩個框的左緣一樣；設了間隔之後第二條往右
+        const flatSame =
+          flat.length === 2 && Math.abs(flat[1].x - flat[0].x) <= 2;
+        const firstStays =
+          staggered.length === 2 && Math.abs(staggered[0].x - flat[0].x) <= 2;
+        const secondMoves =
+          staggered.length === 2 && staggered[1].x > staggered[0].x + 5;
+
+        record(
+          "設了跑馬燈間隔之後，預覽的框逐條錯開",
+          flatSame && firstStays && secondMoves,
+          `間隔 0：${flat.map((g) => g.x).join("/")} → ` +
+            `間隔 500：${staggered.map((g) => g.x).join("/")}`,
+        );
+        await shot(page, "paste-chase");
+
+        /*
+         * 貼下去的位置要和框一致。
+         *
+         * 這一則**只**驗一致性（兩邊走同一份 `planPaste`），不驗「錯開得對不對」
+         * ——相位算錯的話兩邊會一起錯，這則照樣會過。絕對值由上面那則與
+         * `clipboard.test.js` 守著。名字要講清楚它驗的是什麼，否則之後有人
+         * 會以為相位有兩層保護。
+         */
+        await page.mouse.click(...mid);
+        await page.waitForTimeout(600);
+        const landed = await litByRow();
+        const near = (row, x) =>
+          landed.some((b) => b.row === row && Math.abs(b.x - x) <= 4);
+
+        record(
+          "貼下去的位置和預覽的框一致（含相位）",
+          staggered.length === 2 &&
+            near(0, staggered[0].x) &&
+            near(1, staggered[1].x),
+          `預覽 ${staggered.map((g) => g.x).join("/")}，` +
+            `實際 ${landed.filter((b) => b.row <= 1).map((b) => `${b.row}:${b.x}`).join(" ")}`,
+        );
+      } else {
+        record("設了跑馬燈間隔之後，預覽的框逐條錯開", false, "找不到間隔欄位");
+      }
     } else {
       record("複製模式下滑鼠移到哪，落點的框就畫在哪", false, "第 1 軌沒有色塊");
     }

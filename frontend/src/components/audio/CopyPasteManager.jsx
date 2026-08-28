@@ -21,6 +21,7 @@ import {
   planPaste,
 } from "../../utils/segments/clipboard.js";
 import { useSegmentActionTable } from "../../hooks/useSegmentActionTable.js";
+import { TICK_MS } from "../../constants/time.js";
 
 /**
  * 複製貼上：兩種粒度、兩種貼上對齊方式，**全部跨軌**。
@@ -67,6 +68,15 @@ export function useCopyPaste() {
   // 複製模式：Timeline 靠它顯示來源標記，純 UI 狀態不進 Redux
   const [isCopying, setIsCopying] = useState(false);
 
+  /*
+   * 相位偏移（跑馬燈）：每往下一條軌就再往後推這麼多毫秒。
+   *
+   * 它是**貼上的參數**而不是剪貼簿的內容，所以不進 clipboard——同一份剪貼簿
+   * 可以先貼一次整齊的、再貼一次跑馬燈的。留在這裡是為了跨多次貼上還記得，
+   * 但不必進 Redux（沒有別人要讀）。
+   */
+  const [phaseMs, setPhaseMs] = useState(0);
+
   /** 選取涵蓋的每一條時間軸，附上內容 */
   const groups = partsOfSelection(
     segmentTable,
@@ -94,6 +104,7 @@ export function useCopyPaste() {
       armorIndex: anchor.armorIndex,
       partIndex: anchor.partIndex,
       timeOffset,
+      phaseMs,
     };
   };
 
@@ -140,7 +151,7 @@ export function useCopyPaste() {
    */
   const pasteAtTarget = (target) => {
     if (!hasContent(clipboard) || !target) return;
-    applyPlans(planPaste(segmentTable, clipboard, target));
+    applyPlans(planPaste(segmentTable, clipboard, { ...target, phaseMs }));
   };
 
   /** Ctrl+V：以目標色塊的起點與部位為基準貼上 */
@@ -210,6 +221,8 @@ export function useCopyPaste() {
 
   return {
     isCopying,
+    phaseMs,
+    setPhaseMs,
     copyRange,
     pasteAtTarget,
     pasteAlignedToTarget,
@@ -220,8 +233,13 @@ export function useCopyPaste() {
   };
 }
 
-/** 複製模式時顯示在最上方的提示橫幅 */
-export function CopyModeBanner({ isCopying }) {
+/**
+ * 複製模式的提示橫幅，順便放跑馬燈的間隔。
+ *
+ * ⚠️ 橫幅本身是 `pointer-events: none`（它蓋在畫面上，不該吃任何滑鼠事件），
+ * 所以裡面的輸入欄要自己把事件收回來——和光衣卡片的隱藏鈕同一個坑。
+ */
+export function CopyModeBanner({ isCopying, phaseMs = 0, setPhaseMs }) {
   const clipboard = useSelector((state) => state.profiles.clipboard);
 
   if (!isCopying) return null;
@@ -234,6 +252,25 @@ export function CopyModeBanner({ isCopying }) {
         📋 已複製 {clipboard?.startTime}ms ~ {clipboard?.endTime}ms
         {trackCount > 1 ? `（${trackCount} 條軌道）` : ""}
       </span>
+
+      {/*
+        跑馬燈：每往下一條軌再往後推這麼多毫秒。只有跨軌的剪貼簿才有意義
+        ——一條軌沒有「下一條」，欄位擺著只會讓人以為它壞了。
+      */}
+      {trackCount > 1 && (
+        <label className="copy-mode-banner__phase">
+          <span>跑馬燈間隔</span>
+          <input
+            type="number"
+            step={TICK_MS}
+            value={phaseMs}
+            data-testid="paste-phase"
+            onChange={(e) => setPhaseMs?.(Number(e.target.value) || 0)}
+          />
+          <span>ms{phaseMs ? `（${phaseMs > 0 ? "順" : "逆"}向）` : ""}</span>
+        </label>
+      )}
+
       <span className="hint-text">
         移動滑鼠看落點，按左鍵貼上（或選好目標按 [Ctrl+V]），[Esc] 取消
       </span>
