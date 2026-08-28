@@ -1112,6 +1112,100 @@ const run = async () => {
   }
 
   /*
+   * ── 對齊與分佈 ──────────────────────────────────────
+   *
+   * 用拖曳做得到但**做不準**：拖曳吃 50ms 網格，肉眼對齊三條軌的起點要一條
+   * 一條放大再微調。這裡驗的是「選單接上去了、而且真的把起點對齊」。
+   *
+   * 幾何運算有單元測試（`utils/segments/__tests__/arrange.test.js`），
+   * 所以這裡只要一條端到端的路徑。
+   */
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+
+  /*
+   * 前面的項目已經在時間軸上留了一堆色塊，所以先把要用的那段清空——不然
+   * 「框到三塊」這個前提根本不成立（實測框到 7 塊）。
+   */
+  const clearFrom = rows[0].left + rows[0].width * 0.72;
+  const clearTo = rows[0].left + rows[0].width * 0.98;
+  await page.mouse.move(clearFrom, rows[0].top + 8);
+  await page.mouse.down();
+  await page.mouse.move(clearTo, rows[2].bottom - 8, { steps: 10 });
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  await page.keyboard.press("Delete");
+  await page.waitForTimeout(400);
+
+  // 三條軌上各放一個色塊，刻意放在**不同**的時間
+  for (const [dancer, at] of [
+    [0, 0.78],
+    [1, 0.82],
+    [2, 0.86],
+  ]) {
+    await clickRulerAt(at);
+    await page.waitForTimeout(150);
+    await clickArmorPart(page, dancer, 0);
+    await page.waitForTimeout(350);
+  }
+
+  // 框住那三塊
+  await page.mouse.move(clearFrom + 4, rows[0].top + 8);
+  await page.mouse.down();
+  await page.mouse.move(clearTo - 4, rows[2].bottom - 8, { steps: 10 });
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+
+  // `litByRow` 住在框選那一段的 if 區塊裡，這裡自己量一份（同一個查法）
+  const litIn = async (from, to) =>
+    (
+      await page.evaluate(() =>
+        [...document.querySelectorAll(".timeline-block[data-segment-id]")]
+          .filter((el) =>
+            /rgba?\((?!\s*0,\s*0,\s*0)/.test(el.style.background || ""),
+          )
+          .map((el) => {
+            const r = el.getBoundingClientRect();
+            const row = el.closest(".timeline[data-row-index]");
+            return {
+              row: Number(row?.dataset.rowIndex ?? -1),
+              x: Math.round(r.x),
+            };
+          }),
+      )
+    )
+      .filter((b) => b.x >= from && b.x <= to)
+      .sort((a, b) => a.row - b.row);
+
+  const window0 = clearFrom;
+  const window1 = clearTo;
+  const beforeAlign = await litIn(window0, window1);
+  const spread = (list) =>
+    list.length ? Math.max(...list.map((b) => b.x)) - Math.min(...list.map((b) => b.x)) : -1;
+
+  if (beforeAlign.length === 3 && spread(beforeAlign) > 5) {
+    await page.locator(".effect-button").click();
+    await page.waitForTimeout(200);
+    await page.locator("[data-testid='arrange-align']").click();
+    await page.waitForTimeout(500);
+
+    const after = await litIn(window0, window1);
+    record(
+      "起點對齊：三條軌上參差的色塊被拉到同一個起點",
+      after.length === 3 && spread(after) <= 2,
+      `對齊前 x = ${beforeAlign.map((b) => b.x).join("/")}（差 ${spread(beforeAlign)}px）→ ` +
+        `對齊後 ${after.map((b) => b.x).join("/")}（差 ${spread(after)}px）`,
+    );
+    await shot(page, "arrange-align");
+  } else {
+    record(
+      "起點對齊：三條軌上參差的色塊被拉到同一個起點",
+      false,
+      `框到 ${beforeAlign.length} 塊、原本相差 ${spread(beforeAlign)}px`,
+    );
+  }
+
+  /*
    * ── 縮放的手感 ──────────────────────────────────────
    *
    * 兩個症狀同一個根因：控制項是線性的，而縮放是幾何的。

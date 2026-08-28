@@ -407,6 +407,16 @@
   color: var(--text-primary) !important;
 }
 
+/*
+ * 選單裡的分隔線：上面三項是「套一個效果上去」，下面三項是「把已經有的東西
+ * 排整齊」。兩組的心智模型不同，中間需要一條線才讀得出是兩組。
+ */
+.effect-menu-sep {
+  height: 1px;
+  margin: var(--space-1) 0;
+  background: var(--border-subtle);
+}
+
 /* 子選單容器：向右平移 */
 .effect-submenu {
   position: absolute;

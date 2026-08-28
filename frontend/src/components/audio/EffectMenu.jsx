@@ -9,7 +9,17 @@ import {
   resolveSelections,
   groupSelectionsByPart,
 } from "../../utils/selection.js";
-import { mapSelectedParts } from "../../utils/segments/table.js";
+import {
+  mapSelectedParts,
+  partsOfSelection,
+  updateParts,
+} from "../../utils/segments/table.js";
+import {
+  alignStarts,
+  distributeEvenly,
+  earliestStart,
+  matchLengths,
+} from "../../utils/segments/arrange.js";
 import { cloneColor, BLACK } from "../../utils/segments/color.js";
 import {
   MIN_BLINK_PERIOD_MS,
@@ -264,14 +274,75 @@ export function useLightEffects() {
     if (userInput !== null) applyBlink(userInput);
   };
 
-  return { toggleLinear, applyBlink, applyBrightnessLadder, promptBlink };
+  /**
+   * 對齊與分佈 —— 幾何運算在 `utils/segments/arrange.js`，這裡只負責
+   * 「基準值從哪來」與「哪幾條沒做要講出來」。
+   *
+   * 基準一律取**選取範圍裡最早的那一段**：對齊到最早的起點、長度取它的長度。
+   * 用「第一筆選取」當基準的話，同一批選取會因為使用者從哪個角落開始框而得到
+   * 不同結果——而畫面上看不出基準換了。
+   */
+  const arrangeSelection = (kind) => {
+    // `groups` 是上面就算好的那一份，不要再分一次組
+    const withSegments = partsOfSelection(segmentTable, groups).filter(
+      (group) => group.segmentIds.size > 0,
+    );
+    if (withSegments.length === 0) {
+      alert("請先選取色塊。");
+      return;
+    }
+
+    const result = (() => {
+      if (kind === "align") {
+        const time = earliestStart(withSegments);
+        return time === null ? null : alignStarts(withSegments, time);
+      }
+      if (kind === "length") {
+        // 最早那一段的長度當基準（和對齊用同一個「最早」，一致好解釋）
+        const earliest = withSegments
+          .flatMap(({ segments, segmentIds }) =>
+            segments.filter((segment) => segmentIds.has(segment.id)),
+          )
+          .sort((a, b) => a.start - b.start)[0];
+        return earliest
+          ? matchLengths(withSegments, earliest.end - earliest.start)
+          : null;
+      }
+      return distributeEvenly(withSegments);
+    })();
+
+    if (!result) return;
+
+    commit(updateParts(segmentTable, result.updates));
+
+    /*
+     * 沒做到的那幾條要講出來。靜靜跳過的話使用者只會看到「怎麼有幾條沒對齊」，
+     * 而原因（同一條軌上選了兩段、或分佈時不足三段）從畫面上看不出來。
+     */
+    if (result.skipped.length > 0) {
+      const why =
+        kind === "distribute"
+          ? "那幾條軌上選到的色塊少於三個，沒有中間可以攤"
+          : "那幾條軌上有兩個以上的選取會疊在一起";
+      alert(`有 ${result.skipped.length} 條軌沒有處理：${why}。`);
+    }
+  };
+
+  return {
+    toggleLinear,
+    applyBlink,
+    applyBrightnessLadder,
+    promptBlink,
+    arrangeSelection,
+  };
 }
 
 /** 百分比選項：10%、20%、…、100% */
 const PERCENT_OPTIONS = [...Array(10)].map((_, i) => (i + 1) * 10);
 
 function EffectMenu({ effects }) {
-  const { toggleLinear, applyBrightnessLadder, promptBlink } = effects;
+  const { toggleLinear, applyBrightnessLadder, promptBlink, arrangeSelection } =
+    effects;
 
   const [menuVisible, setMenuVisible] = useState(false);
   const [ladderVisible, setLadderVisible] = useState(false);
@@ -327,6 +398,45 @@ function EffectMenu({ effects }) {
             onClick={() => setLadderVisible(true)}
           >
             亮度階梯
+          </div>
+
+          {/*
+            排列：純幾何的整理，用拖曳做得到但做不準——拖曳吃 50ms 網格，
+            肉眼對齊七條軌的起點要一條一條放大再微調。
+          */}
+          <div className="effect-menu-sep" />
+
+          <div
+            className="effect-menu-item"
+            data-testid="arrange-align"
+            onClick={() => {
+              arrangeSelection("align");
+              setMenuVisible(false);
+            }}
+          >
+            起點對齊
+          </div>
+
+          <div
+            className="effect-menu-item"
+            data-testid="arrange-length"
+            onClick={() => {
+              arrangeSelection("length");
+              setMenuVisible(false);
+            }}
+          >
+            長度統一
+          </div>
+
+          <div
+            className="effect-menu-item"
+            data-testid="arrange-distribute"
+            onClick={() => {
+              arrangeSelection("distribute");
+              setMenuVisible(false);
+            }}
+          >
+            平均分佈
           </div>
         </div>
       )}
