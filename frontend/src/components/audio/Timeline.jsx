@@ -1,7 +1,6 @@
-import React, { useRef, useState, useEffect, forwardRef, memo } from "react";
+import React, { useRef, useState, useEffect, useMemo, forwardRef, memo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
-  updateTimelineBlocks,
   updateIsColorChangeActive,
   updateMultiSelectedBlocks,
   updateMoveMode,
@@ -71,15 +70,7 @@ const Timeline = forwardRef(
     // const [draggedBlockIndex, setDraggedBlockIndex] = useState(null); // 被拖動的方塊索引
     // const [dragStartpoint, setDragStartpoint] = useState(null);       // 拖動的起始點
 
-    // 畫布相關狀態
-    const canvasRef = useRef(null); // timeline 的畫布引用
-    const [canvasWidth, setCanvasWidth] = useState(1600); // 預設畫布寬度
-    const [canvasHeight, setCanvasHeight] = useState(100); // 固定畫布高度
 
-    // Redux 狀態
-    const timelineBlocks = useSelector(
-      (state) => state.profiles.timelineBlocks?.[armorIndex]?.[partIndex] || [] // 當前時間軸的方塊數據
-    );
     // 只訂閱**自己這一個部位**。訂閱整張表的話，任何地方的編輯都會換掉
     // reference，154 條 Timeline 全部重算 blocks 並各自 dispatch 一次——
     // 現在只有真的被改到的那條會動。
@@ -88,6 +79,23 @@ const Timeline = forwardRef(
       partIndex,
     );
     const duration = useSelector((state) => state.profiles.duration); // 總時長
+
+    /*
+     * 這個部位畫面上的色塊 —— **就地算，不繞 Redux**。
+     *
+     * 舊版是 `buildTimelineBlocks` 算完 dispatch 進 store，再 `useSelector`
+     * 讀回來：寫的人和讀的人是同一個元件，中間沒有第三者。那趟往返的代價是
+     * 每次編輯多一個 dispatch，而**一次 dispatch 會通知整個 store 的訂閱者**
+     * ——154 條 Timeline 每條約六個 selector，等於每編輯一格就重跑約九百次
+     * selector；載入一份光表更是連續 154 次。reducer 那邊還要逐次展開兩層物件。
+     *
+     * 排版規則（首尾相接、涵蓋 [0, duration)、空隙也是 block）都在
+     * `buildTimelineBlocks` 裡，那是純函式所以測得到。
+     */
+    const timelineBlocks = useMemo(
+      () => buildTimelineBlocks(segments, duration),
+      [segments, duration],
+    );
     const multiSelectedBlocks = useSelector((state) => state.profiles.multiSelectedBlocks); // 全局多選中方塊
     const clipboard = useSelector((state) => state.profiles.clipboard);
     // 兩個手勢常數的唯一定義在 utils/segments/gestures.js——那裡的純函式與
@@ -398,41 +406,16 @@ const Timeline = forwardRef(
      * 現在由 `hooks/useDeselectOnOutsideClick.js` 在 audioplayer 掛一次。
      */
 
-    // 當 zoomValue 或 timelineRef 改變時更新畫布尺寸
-    useEffect(() => {
-      if (timelineRef?.current) {
-        const timelineWidth = timelineRef.current.clientWidth;
-        const timelineHeight = timelineRef.current.clientHeight || 200; // 預設高度 200
-        setCanvasWidth(timelineWidth * zoomValue); // 設定畫布寬度
-        setCanvasHeight(timelineHeight); // 設定畫布高度
-      } else {
-        setCanvasWidth(1600);
-        setCanvasHeight(100);
-      }
-    }, [timelineRef, zoomValue]);
+    /*
+     * 這裡原本有兩個 effect 在維護 `canvasRef` / `canvasWidth` / `canvasHeight`，
+     * 但**這個元件的 JSX 裡從來沒有 `<canvas>`** ——ref 永遠是 null，
+     * `canvasHeight` 從頭到尾沒有人讀。時間軸的色塊是 `<div>` 畫的。
+     *
+     * 死掉還在花錢：那個 effect 掛在 `[timelineRef, zoomValue]` 上，所以
+     * **每動一次縮放，154 條 Timeline 各多一次 setState 造成的重繪**。
+     * 拖縮放滑桿會連續產生很多次縮放變更，每一次都白繪 154 個元件。
+     */
 
-    // 當畫布寬度改變時更新 canvas 的寬度
-    useEffect(() => {
-      const canvas = canvasRef.current;
-      if (canvas) {
-        canvas.width = canvasWidth; // 設定 canvas 寬度
-      }
-    }, [canvasWidth]);
-
-    // 由這個部位的 segments 算出畫面上的色塊。
-    // 依賴只有 segments —— 別的部位被編輯時這裡完全不會重跑。
-    //
-    // 排版規則（首尾相接、涵蓋 [0, duration)、空隙也是 block）都在
-    // `buildTimelineBlocks` 裡，那是純函式所以測得到；這裡只負責寫進 store。
-    useEffect(() => {
-      dispatch(
-        updateTimelineBlocks({
-          armorIndex,
-          partIndex,
-          value: buildTimelineBlocks(segments, duration),
-        })
-      );
-    }, [segments, duration, armorIndex, partIndex, dispatch]);
 
     /**
      * 由視覺 block 取得對應的 segment。空隙（`segmentId === null`）回傳 null。

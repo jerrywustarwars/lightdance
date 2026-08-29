@@ -30,7 +30,6 @@ const initialState = {
     // 接縫重疊多久。0 = 硬切
     audioOverlapMs: DEFAULT_OVERLAP_MS,
   },
-  timelineBlocks: {},
   multiSelectedBlocks: [],
   chosenColor: { R: 5, G: 5, B: 5, A: 1 },
   currentTime: 0,
@@ -202,17 +201,6 @@ export const profiles = (state = initialState, action) => {
         },
       };
     }
-    case "UPDATETIMELINEBLOCKS":
-      return {
-        ...state,
-        timelineBlocks: {
-          ...state.timelineBlocks,
-          [action.payload.armorIndex]: {
-            ...(state.timelineBlocks[action.payload.armorIndex] || {}), // 确保嵌套对象存在
-            [action.payload.partIndex]: action.payload.value,
-          },
-        },
-      };
     /*
      * 選色的同時記進「最近使用」。
      *

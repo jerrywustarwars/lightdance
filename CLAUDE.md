@@ -387,6 +387,23 @@ React**——這樣才能拿假的 AudioContext 在 jsdom 裡驗排程，而「�
 
 **行為改變**：播放中 seek 現在會**繼續播**（引擎重排），不再變成暫停。
 
+### 衍生資料不要繞 Redux
+
+**時間軸的色塊（`timelineBlocks`）是元件自己 `useMemo` 算的。**
+
+舊版是 `buildTimelineBlocks` 算完 dispatch 進 store，再 `useSelector` 讀回來
+——寫的人和讀的人是**同一個元件**，中間沒有第三者。那趟往返在記憶體上只有
+0.2MB（實測真實光表），但每次編輯多一個 dispatch，而**一次 dispatch 會通知
+整個 store 的訂閱者**：154 條 Timeline 每條約六個 selector，等於每編輯一格
+就重跑約九百次 selector；載入一份光表更是連續 154 次，reducer 那邊還要逐次
+展開兩層物件。
+
+⚠️ **Timeline 裡不要再出現 `<canvas>` 相關的 state。** 曾經有
+`canvasRef` / `canvasWidth` / `canvasHeight` 三個 state 加兩個 effect，
+而這個元件的 JSX 裡**從來沒有 `<canvas>`**（色塊是 `<div>` 畫的），ref 永遠
+是 null。死掉還在花錢：那個 effect 掛在 `zoomValue` 上，所以每動一次縮放，
+154 條 Timeline 各多一次無謂的重繪——而拖縮放滑桿會連續產生很多次變更。
+
 ### 記憶體：解碼後的音訊才是大頭
 
 ⚠️ **解碼後的音訊是這個編輯器最大的記憶體項目，比光表大兩個數量級。**
@@ -1027,6 +1044,22 @@ public fork——那個檔案永遠不得 import 進 fixture、不得 commit。*
 - 確保安全性問題沒有被引入
 
 ## 更新記錄
+
+- **2026-08-29**：**低配機器的卡頓：回收音訊、砍掉繞道與死碼**。量下來最大的
+  記憶體項目是**解碼後的音訊**——立體聲 44.1kHz 每分鐘約 17MB，`musicsrc/`
+  那十一首全部試聽過就是 800MB，而 `cache.buffers` 舊版只有離開編輯器才清。
+  新增 `engine.keepOnly(files)` 依播放清單淘汰（峰值本來就這樣做了，只是沒
+  通知引擎）。⚠️ 淘汰要在 early return 之前，否則「清空播放清單」反而什麼都
+  沒放掉；⚠️ 解碼到一半被淘汰的不要塞回快取，否則它自己長回來。
+  峰值順手改 `Float32Array`（一首省 0.8MB），persist 也不再轉回一般陣列。
+  另外兩項是 CPU 而不是記憶體：`timelineBlocks` 從「dispatch 進 store 再讀
+  回來」改成就地 `useMemo`（一次編輯少掉一輪全 store 通知），以及刪掉
+  Timeline 裡三個維護一個**不存在的 `<canvas>`** 的 state（每次縮放白繪
+  154 個元件）。
+  ⚠️ 音訊回收的 e2e 第一版是假的——它拿「重新加入時有沒有抓音檔」當判準，
+  但那次加回來的檔案本來就沒被快取過。破壞驗證照樣全綠才發現，改成比對
+  **同一個檔案**的抓取次數。
+  測試 751 → 758，e2e 77 → 78
 
 - **2026-08-28（下午）**：**跑馬燈與對齊分佈**——兩個從專業軟體借來的功能。
   **跑馬燈**是燈光台（grandMA / Chamsys）最常用的效果：同一個色塊貼到七位舞者

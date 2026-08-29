@@ -67,7 +67,6 @@ export function flushPersist() {
 const EPHEMERAL_FIELDS = [
   "history",
   "redoStack",
-  "timelineBlocks",
   "multiSelectedBlocks",
   "clipboard",
   "isColorChangeActive",
@@ -81,7 +80,6 @@ const EPHEMERAL_FIELDS = [
 const EPHEMERAL_DEFAULTS = {
   history: [],
   redoStack: [],
-  timelineBlocks: {},
   multiSelectedBlocks: [],
   clipboard: {
     type: null,

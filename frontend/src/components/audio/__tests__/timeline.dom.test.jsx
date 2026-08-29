@@ -52,55 +52,60 @@ describe("色塊渲染", () => {
     expect(blocks().some((el) => bgOf(el).includes("0, 255, 0"))).toBe(true);
   });
 
-  it("算出來的 timelineBlocks 會寫回 Redux", () => {
+  it("⚠️ 色塊是元件自己算的，不進 Redux", () => {
+    /*
+     * 舊版是 `buildTimelineBlocks` 算完 dispatch 進 store，再 useSelector
+     * 讀回來——寫的人和讀的人是同一個元件。那趟往返的代價是每次編輯多一個
+     * dispatch，而一次 dispatch 會通知整個 store 的訂閱者（154 條 Timeline
+     * 各約六個 selector），載入一份光表更是連續 154 次。
+     *
+     * 這一則守的是「不要有人再繞回去」。
+     */
     const store = createTestStore();
     mount(store);
 
-    const computed = store.getState().profiles.timelineBlocks?.[0]?.[0];
-    expect(Array.isArray(computed)).toBe(true);
-
-    // 每個色塊都要有起始時間與正的長度
-    computed.forEach((block) => {
-      expect(block.startTime).toBeGreaterThanOrEqual(0);
-      expect(block.durationTime).toBeGreaterThanOrEqual(0);
-    });
+    expect(blocks().length).toBeGreaterThan(0);
+    expect(store.getState().profiles.timelineBlocks).toBeUndefined();
   });
 
-  it("色塊的時間總長涵蓋到 duration", () => {
+  it("色塊在畫面上首尾相接涵蓋整條時間軸", () => {
+    // 寬度是 `durationTime / duration` 的百分比，加起來就該是 100%
     const store = createTestStore();
     mount(store);
 
-    const computed = store.getState().profiles.timelineBlocks[0][0];
-    const last = computed[computed.length - 1];
-    expect(last.startTime + last.durationTime).toBe(
-      store.getState().profiles.duration,
+    const total = blocks().reduce(
+      (sum, el) => sum + parseFloat(el.style.width),
+      0,
     );
+    expect(total).toBeCloseTo(100, 1);
   });
 
   it("空白部位是一整條空隙", () => {
     const store = createTestStore();
     mount(store, { partIndex: 5 });
 
-    const computed = store.getState().profiles.timelineBlocks[0][5];
-    expect(computed).toHaveLength(1);
-    expect(computed[0]).toMatchObject({ segmentId: null, startTime: 0 });
+    const all = blocks();
+    expect(all).toHaveLength(1);
+    expect(all[0].dataset.gap).toBe("true");
+    expect(all[0].dataset.segmentId).toBeUndefined();
   });
 
-  it("每個色塊都帶著自己的 segmentId，空隙是 null", () => {
+  it("每個色塊都帶著自己的 segmentId，空隙沒有", () => {
     const store = createTestStore();
     mount(store);
 
-    const computed = store.getState().profiles.timelineBlocks[0][0];
     const segments = store.getState().profiles.data.actionTable[0][0];
+    const ids = blocks()
+      .map((el) => el.dataset.segmentId)
+      .filter(Boolean);
 
     // 有色的 block 一一對應到 store 裡的 segment
-    const ids = computed.map((b) => b.segmentId).filter(Boolean);
     expect(ids).toEqual(segments.map((s) => s.id));
 
-    // 空隙沒有 id
-    computed
-      .filter((b) => b.segmentId === null)
-      .forEach((gap) => expect(gap.color).toMatchObject({ R: 0, G: 0, B: 0 }));
+    // 空隙沒有 id，而且標成 gap（不要從顏色反推——純黑是合法的燈色）
+    blocks()
+      .filter((el) => !el.dataset.segmentId)
+      .forEach((gap) => expect(gap.dataset.gap).toBe("true"));
   });
 
   it("沒有 hidden 這回事——軌道永遠是可見可點的", () => {

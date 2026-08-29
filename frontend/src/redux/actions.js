@@ -3,7 +3,6 @@ export const UPDATEFULLPEAKS = "UPDATEFULLPEAKS";
 export const UPDATEDURATION = "UPDATEDURATION";
 export const UPDATEACTIONTABLE = "UPDATEACTIONTABLE";
 export const UPDATEMUSICFILENAME = "UPDATEMUSICFILENAME";
-export const UPDATETIMELINEBLOCKS = "UPDATETIMELINEBLOCKS";
 export const UPDATECHOSENCOLOR = "UPDATECHOSENCOLOR";
 export const UPDATECURRENTTIME = "UPDATECURRENTTIME";
 export const UPDATEACCESSTOKEN = "UPDATEACCESSTOKEN";
@@ -54,10 +53,6 @@ export const updateAudioOverlap = (overlapMs) => ({
   payload: overlapMs,
 });
 
-export const updateTimelineBlocks = ({ armorIndex, partIndex, value }) => ({
-  type: UPDATETIMELINEBLOCKS,
-  payload: { armorIndex, partIndex, value },
-});
 export const updateChosenColor = (value) => ({
   type: UPDATECHOSENCOLOR,
   payload: value,

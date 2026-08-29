@@ -43,7 +43,7 @@ describe("persist 的其他不變式", () => {
         history: [1, 2, 3],
         redoStack: [4],
         currentTime: 500,
-        timelineBlocks: { 0: {} },
+        multiSelectedBlocks: [{ armorIndex: 0 }],
       },
       "profiles",
     );
@@ -51,7 +51,7 @@ describe("persist 的其他不變式", () => {
     expect(inbound.history).toBeUndefined();
     expect(inbound.redoStack).toBeUndefined();
     expect(inbound.currentTime).toBeUndefined();
-    expect(inbound.timelineBlocks).toBeUndefined();
+    expect(inbound.multiSelectedBlocks).toBeUndefined();
     expect(inbound.data).toBeDefined();
   });
 });
