@@ -94,8 +94,20 @@ export function createAudioEngine({
       const ctx = getContext();
       const data = await fetchAudio(url);
       const buffer = await ctx.decodeAudioData(data);
-      cache.buffers.set(url, buffer);
-      cache.inflight.delete(url);
+
+      /*
+       * ⚠️ 解碼到一半被 `keepOnly` 丟掉的話**不要塞回快取**。
+       *
+       * 只從 `inflight` 移除是不夠的：那個 promise 還在跑，解完照樣會
+       * `buffers.set()`，於是剛丟掉的東西自己長回來——而回收看起來有做，
+       * 記憶體卻沒有降。用「我還是登記中的那一個嗎」判斷。
+       *
+       * 呼叫端要的東西照樣回給它（它現在確實需要），只是不留在快取裡。
+       */
+      if (cache.inflight.get(url) === task) {
+        cache.buffers.set(url, buffer);
+        cache.inflight.delete(url);
+      }
       return buffer;
     })();
 
@@ -188,6 +200,43 @@ export function createAudioEngine({
 
     getClips: () => clips,
     durationMs: () => totalDuration(clips),
+
+    /**
+     * 丟掉不再需要的解碼結果。
+     *
+     * ⚠️ **解碼後的音訊是這個編輯器最大的記憶體項目，比光表大兩個數量級。**
+     * 它在記憶體裡是 Float32：`時長 × 取樣率 × 聲道 × 4 bytes`，也就是
+     * 立體聲 44.1kHz **每分鐘約 17MB**。試聽過的十首歌就是好幾百 MB。
+     *
+     * 舊版只有 `dispose()`（離開編輯器）會清，所以同一次工作階段裡點開過的
+     * 每一首都一直留著——包含早就從播放清單移除的那些。低配機器上那是會拖垮
+     * 整個分頁的量，而畫面上完全看不出來（只覺得越用越卡）。
+     *
+     * 波形那邊的峰值快取本來就是照播放清單淘汰的（`waveform.jsx`），
+     * 「哪些檔案還需要」的資訊就在同一個呼叫點上，這裡只是把它一併用上。
+     *
+     * @param {Iterable<string>} keep 還要留著的 URL
+     * @returns {number} 丟掉幾份
+     */
+    keepOnly(keep) {
+      const wanted = keep instanceof Set ? keep : new Set(keep ?? []);
+      let dropped = 0;
+
+      for (const url of [...cache.buffers.keys()]) {
+        if (wanted.has(url)) continue;
+        cache.buffers.delete(url);
+        dropped++;
+      }
+      // 還在下載/解碼中的也一併放掉，否則它解完又會塞回 buffers
+      for (const url of [...cache.inflight.keys()]) {
+        if (!wanted.has(url)) cache.inflight.delete(url);
+      }
+
+      return dropped;
+    },
+
+    /** 目前留著幾份解碼結果（測試與診斷用） */
+    cachedCount: () => cache.buffers.size,
 
     /**
      * 抓下來並解碼一個音檔（有快取）。

@@ -208,6 +208,19 @@ const run = async () => {
   let promptAnswer = "";
   page.on("dialog", (d) => d.accept(promptAnswer));
 
+  /*
+   * 音檔的抓取次數 —— 用來驗「解碼後的音訊有沒有被回收」。
+   *
+   * 解碼結果是這個編輯器最大的記憶體項目（立體聲每分鐘約 17MB），舊版只有
+   * 離開編輯器才清，試聽過的每一首都一直留著。回收本身在記憶體裡看不到，
+   * 但有一個乾淨的觀察點：**被丟掉的檔案下次要用會重新抓一次**。
+   */
+  const musicFetches = [];
+  page.on(
+    "request",
+    (r) => r.url().includes("/api/get_music/") && musicFetches.push(r.url()),
+  );
+
   const uploads = [];
   page.on(
     "request",
@@ -1670,6 +1683,7 @@ const run = async () => {
     );
 
     // 加回來，後面的 Output 與 /edit 兩項才有音樂可用
+    const fetchesBeforeReadd = musicFetches.length;
     await page.selectOption("[data-testid='playlist-panel'] select", { index: 0 });
     await page.click("[data-testid='playlist-panel'] .playlist-add button");
     await page.waitForTimeout(1500);
@@ -1678,6 +1692,36 @@ const run = async () => {
       "加回來之後時間軸恢復",
       Math.abs((await durationOf()) - oneSong) < 200,
       `${Math.round(await durationOf())}ms`,
+    );
+
+    /*
+     * 移除之後解碼結果要被丟掉，所以加回來時**必須重新抓一次**。
+     *
+     * 這是「有沒有回收」唯一乾淨的觀察點：記憶體本身在測試裡量不準，但
+     * 「還在快取裡就不會重抓」是確定的行為。沒回收的話這裡是 0 次。
+     */
+    /*
+     * 移除之後解碼結果要被丟掉，所以**同一首歌**加回來時必須重新抓一次。
+     *
+     * ⚠️ 這裡一定要比對**同一個檔案**。第一版是拿「重新加入時有沒有抓」當
+     * 判準，但那次加回來的是 `test.wav`，而先前載入的是 `2026_show.mp3`
+     * ——它本來就沒被快取過，所以不管有沒有回收都會抓，那則測試等於沒驗到。
+     * 破壞驗證（把 keepOnly 拿掉）照樣全綠才發現的。
+     */
+    const readded = musicFetches.at(-1);
+    await page.click(".playlist-item:nth-child(1) .ld-btn--danger");
+    await page.waitForTimeout(1000);
+
+    const beforeSecondAdd = musicFetches.filter((u) => u === readded).length;
+    await page.selectOption("[data-testid='playlist-panel'] select", { index: 0 });
+    await page.click("[data-testid='playlist-panel'] .playlist-add button");
+    await page.waitForTimeout(1500);
+    const afterSecondAdd = musicFetches.filter((u) => u === readded).length;
+
+    record(
+      "移除的歌會連解碼結果一起丟掉（同一首加回來要重抓）",
+      afterSecondAdd > beforeSecondAdd,
+      `同一個檔案抓取次數 ${beforeSecondAdd} → ${afterSecondAdd}`,
     );
 
     /*

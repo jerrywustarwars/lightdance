@@ -134,10 +134,14 @@ const StripEphemeralTransform = createTransform(
  * TypedArray 保持二進位，同樣的操作降到 0.5 ms。
  */
 const PeaksTransform = createTransform(
-  // 進入儲存前 (Inbound)
+  /*
+   * 進入儲存前：確保是 Float32Array。
+   *
+   * `computePeaks` 現在直接產生 Float32Array，所以多數情況這裡什麼都不用做；
+   * 留著這一段是為了**舊的 persist 資料**——它們存的是一般陣列。
+   */
   (inboundState, key) => {
     if (key === "profiles" && Array.isArray(inboundState.fullPeaks)) {
-      // console.log("💾 將 fullPeaks 轉換為二進制格式儲存...");
       return {
         ...inboundState,
         fullPeaks: new Float32Array(inboundState.fullPeaks),
@@ -145,13 +149,21 @@ const PeaksTransform = createTransform(
     }
     return inboundState;
   },
-  // 從儲存讀取時 (Outbound)
+  /*
+   * 從儲存讀取時：**維持 Float32Array，不要轉回一般陣列**。
+   *
+   * 舊版這裡做 `Array.from(...)`，於是重新整理之後 20 萬個峰值又變回每格
+   * 8 bytes 的一般陣列（1.6MB → 0.8MB 的省法整個失效）。所有讀取端都已經
+   * 改成用 `ArrayBuffer.isView` 也認得的判斷（見 `utils/audio/peaks.js`
+   * 的 `isPeaks`），所以不必再轉。
+   *
+   * 舊資料存的是一般陣列，這裡順手升上去。
+   */
   (outboundState, key) => {
-    if (key === "profiles" && (outboundState.fullPeaks instanceof Float32Array || ArrayBuffer.isView(outboundState.fullPeaks))) {
-      // console.log("📂 從二進制還原 fullPeaks...");
+    if (key === "profiles" && Array.isArray(outboundState.fullPeaks)) {
       return {
         ...outboundState,
-        fullPeaks: Array.from(outboundState.fullPeaks),
+        fullPeaks: new Float32Array(outboundState.fullPeaks),
       };
     }
     return outboundState;

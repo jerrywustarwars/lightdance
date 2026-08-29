@@ -9,11 +9,36 @@ import {
   visibleRange,
 } from "../peaks.js";
 
+/**
+ * 峰值是 `Float32Array`（見 `computePeaks` 的說明：一般陣列每格 8 bytes，
+ * 20 萬個桶就多花 0.8MB／首）。所以比較內容時要：
+ *
+ * - 攤成一般陣列再比（`toEqual` 分得出 Float32Array 與 Array）
+ * - 用 `toBeCloseTo` 而不是精確相等（0.9 存成單精度是 0.89999997…）
+ */
+const near = (peaks, expected, precision = 6) => {
+  const actual = Array.from(peaks);
+  expect(actual).toHaveLength(expected.length);
+  actual.forEach((value, i) => expect(value).toBeCloseTo(expected[i], precision));
+};
+
 describe("算峰值", () => {
   it("每個桶取絕對值的最大值", () => {
     // 8 個取樣點分成 4 桶：每桶兩個
     const data = [0.1, -0.9, 0.2, 0.3, -0.5, 0.4, 0.05, 0.05];
-    expect(computePeaks(data, 4)).toEqual([0.9, 0.3, 0.5, 0.05]);
+    near(computePeaks(data, 4), [0.9, 0.3, 0.5, 0.05]);
+  });
+
+  it("回傳的是 Float32Array（記憶體是一般陣列的一半）", () => {
+    /*
+     * 型別本身是要守的東西：改回一般陣列的話功能完全正常，只是每首歌多吃
+     * 0.8MB，而那要換過十幾首歌才感覺得出來。
+     */
+    expect(computePeaks([0.1, 0.2], 2)).toBeInstanceOf(Float32Array);
+    expect(normalizePeaks(computePeaks([0.1, 0.2], 2))).toBeInstanceOf(
+      Float32Array,
+    );
+    expect(resamplePeaks([0, 1, 0, 1], 2)).toBeInstanceOf(Float32Array);
   });
 
   it("桶比取樣點還細時每桶至少取一個點", () => {
@@ -32,7 +57,7 @@ describe("算峰值", () => {
 
 describe("正規化", () => {
   it("最大值變成 1", () => {
-    expect(normalizePeaks([0.25, 0.5])).toEqual([0.5, 1]);
+    near(normalizePeaks([0.25, 0.5]), [0.5, 1]);
   });
 
   /*
@@ -42,7 +67,7 @@ describe("正規化", () => {
    */
   it("全靜音不會產生 NaN", () => {
     const out = normalizePeaks([0, 0, 0]);
-    expect(out).toEqual([0, 0, 0]);
+    near(out, [0, 0, 0]);
     expect(out.every(Number.isFinite)).toBe(true);
   });
 
@@ -100,11 +125,11 @@ describe("可視範圍", () => {
 describe("降取樣", () => {
   it("每根柱取區間的平均", () => {
     // 取平均而不是取最大：取最大會讓整片波形貼齊上緣，看不出強弱
-    expect(resamplePeaks([0, 1, 0, 1], 2)).toEqual([0.5, 0.5]);
+    near(resamplePeaks([0, 1, 0, 1], 2), [0.5, 0.5]);
   });
 
   it("來源比目標短時原樣回傳，不補值", () => {
-    expect(resamplePeaks([1, 2, 3], 10)).toEqual([1, 2, 3]);
+    near(resamplePeaks([1, 2, 3], 10), [1, 2, 3]);
   });
 
   it("回傳的是新陣列，不會被呼叫端改到", () => {

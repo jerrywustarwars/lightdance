@@ -391,3 +391,78 @@ describe("換內容", () => {
     expect(engine.durationMs()).toBe(35000);
   });
 });
+
+describe("解碼結果的回收", () => {
+  /*
+   * ⚠️ 這一組守的是**整個編輯器最大的記憶體項目**。
+   *
+   * 解碼後的音訊在記憶體裡是 Float32：`時長 × 取樣率 × 聲道 × 4 bytes`，
+   * 立體聲 44.1kHz 每分鐘約 17MB。舊版只有 `dispose()`（離開編輯器）才清，
+   * 所以同一次工作階段裡試聽過的每一首都一直留著——換過十首歌就是好幾百 MB，
+   * 而畫面上完全看不出來，只覺得越用越卡。
+   */
+
+  it("留下還在用的，丟掉不在清單裡的", async () => {
+    const engine = makeEngine();
+    await engine.load("a.mp3");
+    await engine.load("b.mp3");
+    await engine.load("c.mp3");
+    expect(engine.cachedCount()).toBe(3);
+
+    const dropped = engine.keepOnly(["a.mp3", "c.mp3"]);
+
+    expect(dropped).toBe(1);
+    expect(engine.cachedCount()).toBe(2);
+  });
+
+  it("被丟掉的那份下次要用會重新抓", async () => {
+    const engine = makeEngine();
+    await engine.load("a.mp3");
+    engine.keepOnly([]);
+
+    fetched.length = 0;
+    await engine.load("a.mp3");
+    expect(fetched).toEqual(["a.mp3"]);
+  });
+
+  it("還留著的那份不會重抓（快取仍然有效）", async () => {
+    const engine = makeEngine();
+    await engine.load("a.mp3");
+    engine.keepOnly(["a.mp3"]);
+
+    fetched.length = 0;
+    await engine.load("a.mp3");
+    expect(fetched).toEqual([]);
+  });
+
+  it("Set 與陣列都收", async () => {
+    const engine = makeEngine();
+    await engine.load("a.mp3");
+    await engine.load("b.mp3");
+
+    expect(engine.keepOnly(new Set(["a.mp3"]))).toBe(1);
+    expect(engine.cachedCount()).toBe(1);
+  });
+
+  it("沒給參數時全部丟掉，而不是全部留著", () => {
+    /*
+     * 這個方向很重要：漏傳參數若被當成「留全部」，那這個功能等於沒開，
+     * 而且完全沒有症狀。寧可丟掉（下次用再抓一次，只是慢一點）。
+     */
+    const engine = makeEngine();
+    expect(() => engine.keepOnly()).not.toThrow();
+    expect(engine.cachedCount()).toBe(0);
+  });
+
+  it("正在解碼中的也一併放掉，否則它解完又會塞回去", async () => {
+    const engine = makeEngine();
+    const pending = engine.load("a.mp3");
+    engine.keepOnly([]);
+    await pending;
+
+    // inflight 被移除，所以下一次 load 是重新抓一份
+    fetched.length = 0;
+    await engine.load("a.mp3");
+    expect(fetched).toEqual(["a.mp3"]);
+  });
+});

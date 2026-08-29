@@ -33,12 +33,26 @@
  * @param {number} buckets 要分成幾個桶
  * @returns {number[]} 每個桶的峰值，尚未正規化
  */
+/**
+ * 峰值容器的判斷 —— 一般陣列與 TypedArray 都算。
+ *
+ * `Array.isArray` 對 `Float32Array` 回傳 false，所以改用型別之後每一個
+ * 守衛都要跟著換，不然整條路徑會靜靜地退化成「沒有峰值」而畫出空白波形。
+ */
+const isPeaks = (value) =>
+  Array.isArray(value) || ArrayBuffer.isView(value);
+
 export function computePeaks(channelData, buckets = 200000) {
   const length = channelData?.length ?? 0;
   if (!length || buckets <= 0) return [];
 
   const blockSize = length / buckets;
-  const peaks = new Array(buckets);
+  /*
+   * `Float32Array` 而不是一般陣列：峰值只是 0..1 的振幅，單精度綽綽有餘，
+   * 而一般陣列每格 8 bytes。20 萬個桶就是 1.6MB → 0.8MB，一首歌省一半，
+   * 而且掃描的迴圈跑在 typed array 上也比較快。
+   */
+  const peaks = new Float32Array(buckets);
 
   for (let i = 0; i < buckets; i++) {
     const start = Math.floor(i * blockSize);
@@ -63,7 +77,7 @@ export function computePeaks(channelData, buckets = 200000) {
  * `NaN`，而 `NaN` 傳進 `fillRect` 不會報錯，只是什麼都不畫。
  */
 export function normalizePeaks(peaks) {
-  if (!Array.isArray(peaks) || peaks.length === 0) return [];
+  if (!isPeaks(peaks) || peaks.length === 0) return [];
 
   let max = 0;
   for (const peak of peaks) if (peak > max) max = peak;
@@ -93,12 +107,13 @@ export function stitchPeaks(pieces, { durationMs = 0, buckets = 200000 } = {}) {
   if (!Array.isArray(pieces) || pieces.length === 0) return [];
   if (!(durationMs > 0) || !(buckets > 0)) return [];
 
-  const out = new Array(buckets).fill(0);
+  // Float32Array 預設就是 0，不必再 fill 一次
+  const out = new Float32Array(buckets);
 
   for (const piece of pieces) {
     const peaks = piece?.peaks;
     const lengthMs = piece?.lengthMs ?? 0;
-    if (!Array.isArray(peaks) || peaks.length === 0 || !(lengthMs > 0)) continue;
+    if (!isPeaks(peaks) || peaks.length === 0 || !(lengthMs > 0)) continue;
 
     /*
      * 桶的範圍由**起點與終點各自換算**，不是「起點 + 長度換算出來的桶數」。
@@ -177,11 +192,11 @@ export function visibleRange({
  * 呼叫端依實際長度分配柱寬即可。
  */
 export function resamplePeaks(peaks, targetCount) {
-  if (!Array.isArray(peaks) || peaks.length === 0 || targetCount <= 0) return [];
+  if (!isPeaks(peaks) || peaks.length === 0 || targetCount <= 0) return [];
   if (peaks.length <= targetCount) return peaks.slice();
 
   const factor = peaks.length / targetCount;
-  const out = new Array(targetCount);
+  const out = new Float32Array(targetCount);
 
   for (let i = 0; i < targetCount; i++) {
     const start = Math.floor(i * factor);

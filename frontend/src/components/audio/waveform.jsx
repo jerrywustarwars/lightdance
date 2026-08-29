@@ -174,6 +174,27 @@ const AudioWaveform = ({
      * redux 的 `duration` 還是舊值、`fullPeaks` 還是舊波形——畫面上看起來
      * 一切正常，只是那條時間軸已經不對應任何音訊了。
      */
+    /*
+     * 先算出「現在還需要哪些檔案」，兩份快取一起照它淘汰。
+     *
+     * ⚠️ **這件事必須在 early return 之前做。** 移除最後一首會走到下面那個
+     * 早退分支，而那正是最該回收的時刻——第一版把回收寫在載入成功之後，
+     * 於是「清空播放清單」反而什麼都沒放掉。
+     *
+     * 解碼後的音訊是這個編輯器最大的記憶體項目：`時長 × 取樣率 × 聲道 ×
+     * 4 bytes`，立體聲 44.1kHz **每分鐘約 17MB**。舊版只有離開編輯器才清，
+     * 試聽過的每一首都一直留著，換過十首歌就是好幾百 MB——低配機器上會把
+     * 整個分頁拖到卡頓，而畫面上完全看不出來。峰值一首約 0.8MB，同一個道理
+     * 但小二十倍。
+     */
+    const files = [...new Set(clips.map((clip) => clip.sourceFile))];
+    const wanted = new Set(files);
+
+    engine.keepOnly(wanted);
+    for (const file of peaksCacheRef.current.keys()) {
+      if (!wanted.has(file)) peaksCacheRef.current.delete(file);
+    }
+
     if (clips.length === 0) {
       engine.setClips([]);
       dispatch(updateDuration(0));
@@ -181,8 +202,6 @@ const AudioWaveform = ({
       dispatch(updateCurrentTime(0));
       return;
     }
-
-    const files = [...new Set(clips.map((clip) => clip.sourceFile))];
 
     Promise.all(
       files.map((file) =>
@@ -204,15 +223,8 @@ const AudioWaveform = ({
 
         /*
          * 峰值逐檔快取：換順序、調接縫只是把同一份峰值重新拼一次，不必為了畫圖
-         * 再把幾百萬個取樣點掃過一遍。
-         *
-         * 同時**清掉已經不在清單裡的**——每首歌的峰值是 20 萬個數字（約 1.6MB），
-         * 換過十幾首歌之後留著全部等於白佔十幾 MB。
+         * 再把幾百萬個取樣點掃過一遍。（淘汰在 effect 開頭一起做了。）
          */
-        const wanted = new Set(files);
-        for (const file of peaksCacheRef.current.keys()) {
-          if (!wanted.has(file)) peaksCacheRef.current.delete(file);
-        }
         for (const [file, buffer] of entries) {
           if (!peaksCacheRef.current.has(file)) {
             peaksCacheRef.current.set(file, getPeaks(buffer));
