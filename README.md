@@ -71,6 +71,8 @@ actionTable[armor][part] = [
 
 前端的 `src/components/audio/` 是編輯器的主體。`audioplayer.jsx` 現在只是外殼（狀態容器加版面組合），有快捷鍵的功能一律拆成 hook 放邏輯、元件放 UI，這樣按鈕和鍵盤共用同一組函式，不會出現「按鈕修好了但快捷鍵還是舊行為」。`hooks/useKeyboardShortcuts.js` 是全站唯一的 keydown 註冊點。
 
+`src/utils/audio/` 是音訊的核心，同樣一個檔案一件事：`peaks.js` 算波形峰值、`clock.js` 是「現在播到第幾毫秒」的唯一算法、`clips.js` 是播放清單的形狀與不變式、`engine.js` 收掉所有 Web Audio 狀態。`engine.js` **刻意不是 hook 也不認得 React**——這樣才能拿一個假的 AudioContext 在 jsdom 裡驗排程，而「你把這個 source 排在第幾秒」在真瀏覽器裡問不到。
+
 `src/utils/segments/` 是資料模型的核心。`core.js` 刻意不 import 任何跟顏色有關的東西——長期目標是讓音軌也用同一套段落模型做多軌剪貼，所以核心必須對 payload 無知。`convert.js` 是新舊格式的雙向轉換器，載入舊資料時會用到。
 
 `src/styles/tokens.css` 是全站**唯一**可以出現寫死顏色的地方，其他 CSS 一律 `var()` 引用。有測試掃描所有 CSS 把違規的抓出來，目前是 0 處。這條規則的理由很現實：在收斂之前 14 個 CSS 檔裡有 287 個寫死的顏色值、同一個灰有 25 個副本，想把背景調暗一階要改 25 個地方，漏一個就花掉。
@@ -83,7 +85,7 @@ actionTable[armor][part] = [
 
 ```bash
 cd frontend
-npm test          # 542 項
+npm test          # 758 項
 npm run build
 ```
 
@@ -91,13 +93,16 @@ npm run build
 
 ```bash
 npm run dev            # 另一個終端機
-npm run e2e            # 45 項功能驗收
-npm run audit:layout   # 版面稽核
+npm run e2e            # 78 項功能驗收
+npm run audit:layout   # 版面稽核（5 項）
+npm run audit:bundle   # 初始 JS 的大小預算（自己跑一次 build，不需要 dev server）
 ```
 
 這兩支不是裝飾。實測抓到過單元測試全綠但實際完全不能用的東西：Ctrl+數字被防彈跳吃掉（因為 `Control` 自己那一下 keydown 佔掉了名額，所有 Ctrl+數字在瀏覽器上按不動，但 jsdom 測試直接送最終那一下所以全過）、按鈕階層被 Bootstrap 的 `.btn` 蓋掉、17 則工具提示有 12 則被 `overflow` 裁光——被裁掉的提示不會報錯，hover 就是什麼都不出現。
 
-版面稽核問瀏覽器四個問題：每個可互動元素的中心點 `document.elementFromPoint()` 回傳的是不是它自己（不是就代表被蓋住，使用者點不到），有沒有元素溢出容器，有沒有提示被祖先的 `overflow` 裁掉，以及該對齊的成對元素（舞者開關與光衣）中心有沒有對上。1600×950 與 1280×800 各跑一次。
+版面稽核問瀏覽器五個問題：每個可互動元素的中心點 `document.elementFromPoint()` 回傳的是不是它自己（不是就代表被蓋住，使用者點不到），有沒有元素溢出容器，有沒有提示或標籤被祖先的 `overflow` 裁掉**或被折行**，成對的元素有沒有對齊（包含左側軌名列與右側時間軸的**逐列**比對——那一項偏掉的話捲到下面軌名就對到隔壁那條軌，而畫面上完全看不出來），以及各塊的邊緣與各排內容的左緣有沒有對齊。1600×950 與 1280×800 各跑一次。
+
+`audit:bundle` 守的是另一個只會往上爬的數字：開編輯器要下載多少 JS。曾經爬到 1817 KB，其中 746 KB 是 `/model` 那一頁的 3D 函式庫——排燈的人從頭到尾不會打開那一頁。切成路由層 lazy 之後是 475 KB，超過預算就 exit 1。
 
 如果跑 e2e 時看到「編輯器一直載入不了」或「一直被彈回首頁」，**先重開 `npm run dev` 再判斷**。連續改一堆 CSS 之後 vite 的 HMR 狀態會累積到 `/home` 載不起來，那是開發伺服器的問題不是程式碼的問題。
 
@@ -105,7 +110,7 @@ npm run audit:layout   # 版面稽核
 
 只需要改 `frontend/src/constants/parts.js`。改人數就是改 `PLAYER_COUNT` 一個數字，初始光表、舞者顯示開關、全選欄位、要渲染幾套光衣全部由它推導；改部位就是在 `PARTS` 增刪一列。
 
-有三件事不會自動跟上，`constants/__tests__/partsConfig.test.js` 會在改壞時指出是哪一項：韌體 ABI（`PART_KEYS` 的順序就是上傳每一列的欄位順序，韌體那端要同步改），光衣 SVG（`Armor.jsx` 的圖形是手繪的，新增身體部位要自己畫），以及飾品索引（`config/accessoryConfig.js` 的 `indices` 會隨身體部位增減而位移）。
+有三件事不會自動跟上，`constants/__tests__/partsConfig.test.js` 會在改壞時指出是哪一項：韌體 ABI（`PART_KEYS` 的順序就是上傳每一列的欄位順序，韌體那端要同步改），光衣圖形（幾何在 `config/armorShapes.js`，一張表、索引就是身體部位索引，新增部位要自己補一列座標），以及飾品索引（`config/accessoryConfig.js` 的 `indices` 會隨身體部位增減而位移）。
 
 ## 常用指令
 
@@ -127,7 +132,21 @@ cd backend && ./mongo-backup.sh                        # 手動備份資料庫
 
 ## 安全性
 
-這是開發版本，正式部署前有四件事一定要修：密碼目前是**明文儲存**，要換成 bcrypt 或 Argon2；token 機制過於簡單，要改用 JWT；使用者輸入的驗證不足；CORS 設定過寬。細節與改進方案在 `docs/technical-analysis.md` 第五章。
+原本那四個洞已經補掉了。密碼改成 bcrypt（cost 12），舊的明文在**登入成功的當下就地換成雜湊**，所以不停機、不用遷移腳本、沒有人被鎖在外面——代價是你不知道什麼時候遷移完，`backend/audit_passwords.py --list` 可以查（唯讀，只印帳號名稱）。權杖改成 HS256 簽章的 JWT；先前的權杖**就是使用者名稱**，也就是送 `Authorization: Bearer <某個帳號名>` 就通過，密碼完全不需要——帳號名稱不是秘密，所以那不是「權杖不夠強」，是整條驗證等於不存在。CORS 收到 `CORS_ORIGINS` 環境變數。另外修掉三支音樂端點的路徑穿越（`/api/get_music/%2e%2e/secret.txt` 實測回 200 並吐出音樂根目錄外面的檔案，而且連登入都不用），防線收在 `backend/paths.py`。
+
+正式部署時有兩個環境變數不能漏：`AUTH_SECRET`（`docker-compose.prod.yml` 設了 `REQUIRE_AUTH_SECRET=1`，漏設會**啟動失敗**而不是臨時產生一把，因為後者的症狀是每次重啟把所有人登出，看起來像網站不穩），以及 `REGISTER_CODE`（沒設不是開放註冊而是**關閉**註冊，`/api/register` 回 503）。這兩個都是同一個原則：漏設一個環境變數的後果不該是最寬鬆的那個狀態。
+
+⚠️ **`.env.deployment` 裡那組 MongoDB root 帳密曾經被 commit 進這個 public fork。** 檔案已經移出版控，但**移出版控不等於收回**——git 歷史、GitHub 的 fork 與快取都還在，那組密碼必須換掉。同理，`db/dump_data/**/users.bson` 裡有七組帳號的明文密碼，那個檔案永遠不得 commit、不得 import 進測試 fixture（`frontend/scripts/import-mongo-fixtures.mjs` 的白名單只允許 `raw_json` 與 `color`，不要繞過）。
+
+還沒做的只剩其他端點的輸入驗證（上傳 payload 的內容、query 參數的範圍）。細節在 `docs/technical-analysis.md` 第五章。
+
+## 已知缺陷
+
+兩個 2026-09-03 稽核時抓到、還沒修的，都屬於「壞掉時畫面上完全看不出來」那一類：
+
+`isPartAllowed` 從來沒有守在**輸出路徑**上——它只出現在畫面上「要不要讓你點」的判斷裡，而跨軌貼上的落點是二維座標差推出來的，所以燈可以落在根本沒帶那件道具的舞者身上，一路上傳成功、版本清單正常，演出當天那盞燈不會亮而且查不出原因。另一個是播放時時間軸不跟著紅線捲動（捲動 effect 讀了 `currentTime` 卻沒把它放進相依陣列，只在縮放時置中一次），放大之後紅線幾秒鐘就跑出視窗。
+
+CLAUDE.md 的「輸出前沒有人在把關」「播放時時間軸不跟著紅線」兩節有完整的成因與修法，「編輯操作還缺的東西」則列了操作面待補的九項。
 
 ## 文件
 
