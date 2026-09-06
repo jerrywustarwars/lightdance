@@ -33,3 +33,6 @@ logs/
 
 # 部署用的真實憑證。範本在 .env.deployment.example
 .env.deployment
+
+# graphify 掃描產生的知識圖譜輸出（工具產物，不進版控）
+graphify-out/
