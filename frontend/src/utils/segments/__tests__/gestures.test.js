@@ -63,12 +63,28 @@ describe("moveSegment", () => {
   });
 
   it("被左右夾死時整個不動（不會算出負的可用範圍）", () => {
+    // 真正的「夾死」是前後都已經首尾相接——再動就會重疊。
+    // （這裡刻意不是「前後各隔 50ms」：那是有一格空間可以走的，
+    //   舊版把它也當成夾死，正是「看得到空隙卻推不動」那個 bug。）
     const tight = [
+      { id: "l", start: 0, end: 1000 },
+      { id: "m", start: 1000, end: 2000 },
+      { id: "r", start: 2000, end: 3000 },
+    ];
+    expect(moveSegment(tight, "m", 500, opts)).toBe(tight);
+  });
+
+  it("⚠️ 只隔一格時仍然推得動（最後一格不可以是拖不到的）", () => {
+    // 迴歸測試：`MIN_BLOCK_GAP_MS` 曾經等於 `TICK_MS`，於是「與鄰居至少留
+    // 一格」正好把唯一剩下的那一步吃掉——使用者看得到 50ms 的空隙，
+    // 卻連一格都推不過去，而擋住他的東西在 1 倍率下只有 0.25px。
+    const oneTick = [
       { id: "l", start: 0, end: 1000 },
       { id: "m", start: 1050, end: 2000 },
       { id: "r", start: 2050, end: 3000 },
     ];
-    expect(moveSegment(tight, "m", 500, opts)).toBe(tight);
+    const next = moveSegment(oneTick, "m", 500, opts);
+    expect(next[1]).toMatchObject({ start: 1100, end: 2050 });
   });
 
   it("沒有實際位移時回傳原陣列（reference 相同 → 不會佔一格 undo）", () => {
@@ -189,7 +205,7 @@ describe("movableRange", () => {
     // A 1000~2000、B 4000~5000，總長 10000
     expect(movableRange(makeSegments(), ["a"], opts)).toEqual({
       min: -1000, // 往左頂到 0
-      max: 1950, // 往右頂到 B 起點前 50ms
+      max: 2000, // 往右頂到與 B 貼齊（模型允許 a.end === b.start）
     });
   });
 
@@ -199,14 +215,23 @@ describe("movableRange", () => {
     expect(range).toEqual({ min: -1000, max: 5000 });
   });
 
-  it("被夾死時回傳 null", () => {
+  it("被夾死時收斂成 {0,0}，沒選到東西才回傳 null", () => {
+    // 前後都貼齊 = 真的動不了（再動就重疊）
     const tight = [
+      { id: "l", start: 0, end: 1000 },
+      { id: "m", start: 1000, end: 2000 },
+      { id: "r", start: 2000, end: 3000 },
+    ];
+    expect(movableRange(tight, ["m"], opts)).toEqual({ min: 0, max: 0 });
+    expect(movableRange(tight, [], opts)).toBe(null);
+
+    // 前後各隔一格 → 兩邊各還有一格可以走，不是夾死
+    const oneTick = [
       { id: "l", start: 0, end: 1000 },
       { id: "m", start: 1050, end: 2000 },
       { id: "r", start: 2050, end: 3000 },
     ];
-    expect(movableRange(tight, ["m"], opts)).toEqual({ min: 0, max: 0 });
-    expect(movableRange(tight, [], opts)).toBe(null);
+    expect(movableRange(oneTick, ["m"], opts)).toEqual({ min: -50, max: 50 });
   });
 
   it("色塊首尾相接時，拖 0 仍然是 0（不會自己彈開）", () => {
@@ -261,10 +286,10 @@ describe("moveSegments（多段一起搬）", () => {
     ];
     const next = moveSegments(withMiddle, ["a", "b"], 99_999, opts);
 
-    // A 只能推到 M 起點前 50ms（+950），B 雖然還很空也只能跟著 +950
-    expect(next[0]).toMatchObject({ id: "a", start: 950, end: 1950 });
+    // A 只能推到與 M 貼齊（+1000），B 雖然還很空也只能跟著 +1000
+    expect(next[0]).toMatchObject({ id: "a", start: 1000, end: 2000 });
     expect(next[1]).toBe(withMiddle[1]); // M 沒被選到，reference 都沒換
-    expect(next[2]).toMatchObject({ id: "b", start: 4950, end: 5950 });
+    expect(next[2]).toMatchObject({ id: "b", start: 5000, end: 6000 });
 
     // 夾緊保證整批不會越過未選取的鄰居，所以陣列不需要重排也仍然有序
     for (let i = 1; i < next.length; i++) {
@@ -349,8 +374,8 @@ describe("movableRangeAcross / moveAcross（跨軌一起搬）", () => {
     ];
 
     const range = movableRangeAcross(groups, { duration: 100000 });
-    // 第二條只能移到 3000-50（最小間距）為止 → +950
-    expect(range.max).toBe(950);
+    // 第二條只能移到與 wall 貼齊（3000）為止 → +1000
+    expect(range.max).toBe(1000);
     expect(range.min).toBe(-1000);
   });
 
@@ -385,9 +410,9 @@ describe("movableRangeAcross / moveAcross（跨軌一起搬）", () => {
 
     const updates = moveAcross(groups, 5000, { duration: 100000 });
 
-    // 兩條都只走了 950（被第二條的鄰居夾住）
-    expect(updates[0].segments[0].start).toBe(1950);
-    expect(updates[1].segments.find((s) => s.id === "b").start).toBe(1950);
+    // 兩條都只走了 1000（被第二條的鄰居夾住）
+    expect(updates[0].segments[0].start).toBe(2000);
+    expect(updates[1].segments.find((s) => s.id === "b").start).toBe(2000);
   });
 
   it("沒有實際位移時回傳空陣列（呼叫端才不會佔一格 undo）", () => {
