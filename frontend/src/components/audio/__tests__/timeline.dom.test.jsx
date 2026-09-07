@@ -23,7 +23,6 @@ import {
 const mount = (store = createTestStore(), props = {}) =>
   renderWithStore(
     <Timeline
-      zoomValue={1}
       height={100}
       armorIndex={0}
       partIndex={0}
@@ -223,6 +222,49 @@ describe("選取", () => {
       .profiles.data.actionTable[0][0].find((s) => s.id === segmentId);
 
     expect(after.colorStart).toMatchObject({ R: 0, G: 255, B: 0 });
+  });
+});
+
+describe("極窄的色塊仍然看得見", () => {
+  /*
+   * 一個 50ms 的段在 282 秒的表演裡是 0.0177%，1 倍率下約 0.25px ——
+   * 畫得出來但看不見，也點不到。而它是真的資料，`movableRange` 會把它當
+   * 鄰居，於是拖曳被一個畫面上不存在的東西擋住。這種碎片是 `clearRange`
+   * 的 trim 產生的，一次普通的貼上就會留下。
+   *
+   * jsdom 沒有版面，量不到「渲染出來幾像素」，所以這裡守的是規則本身：
+   * 真的色塊有最小寬度、空隙沒有。真正的像素只有 `npm run e2e` 驗得到。
+   */
+  it("真的色塊有最小寬度，空隙沒有", () => {
+    mount();
+
+    const all = blocks();
+    expect(all.length).toBeGreaterThan(0);
+
+    const segments = all.filter((el) => el.dataset.segmentId);
+    const gaps = all.filter((el) => el.dataset.gap === "true");
+    expect(segments.length).toBeGreaterThan(0);
+    expect(gaps.length).toBeGreaterThan(0);
+
+    // 有 id 的是真的資料 —— 再窄都要留得住一條看得見的痕跡
+    segments.forEach((el) => expect(el.style.minWidth).toBe("2px"));
+
+    // 空隙本來就該看不見。撐大它反而會蓋掉旁邊真正的碎片
+    gaps.forEach((el) => expect(el.style.minWidth).toBe(""));
+  });
+
+  it("位置由 left 決定，不是靠前後相接排出來的", () => {
+    /*
+     * 舊版是 flex + 百分比寬度，色塊的位置來自前面每一塊的寬度總和 ——
+     * 所以任何一塊撐大都會推到後面每一塊，給碎片一個最小寬度會讓整列
+     * 跟播放頭錯位。改成絕對定位之後每一塊的 left 各自獨立。
+     */
+    mount();
+
+    blocks().forEach((el) => {
+      expect(el.style.position).toBe("absolute");
+      expect(el.style.left).toMatch(/%$/);
+    });
   });
 });
 

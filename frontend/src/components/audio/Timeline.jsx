@@ -48,7 +48,7 @@ const colorDistance = (color1, color2) => {
 // Timeline 組件
 const Timeline = forwardRef(
   (
-    { zoomValue, height, armorIndex, partIndex, isCopying, tracks, rowIndex },
+    { height, armorIndex, partIndex, isCopying, tracks, rowIndex },
     timelineRef,
   ) => {
     const dispatch = useDispatch();
@@ -137,6 +137,7 @@ const Timeline = forwardRef(
     const resizedIdRef = useRef(null);         // 被 resize 的 segmentId
     const resizedDomRef = useRef(null);        // 被 resize 的 DOM 元素
     const resizeOrigPctRef = useRef(0);        // 原始寬度（% of timeline width）
+    const resizeOrigLeftPctRef = useRef(0);    // 原始左緣（% of timeline width）
     const minResizePxRef = useRef(0);          // 拖曳最小值（px，負數為向左）
     const maxResizePxRef = useRef(0);          // 拖曳最大值（px，正數為向右）
     const resizeDragPixelsRef = useRef(0);     // 目前拖曳偏移量（px）
@@ -414,6 +415,12 @@ const Timeline = forwardRef(
      * 死掉還在花錢：那個 effect 掛在 `[timelineRef, zoomValue]` 上，所以
      * **每動一次縮放，154 條 Timeline 各多一次 setState 造成的重繪**。
      * 拖縮放滑桿會連續產生很多次縮放變更，每一次都白繪 154 個元件。
+     *
+     * ⚠️ effect 刪掉之後 `zoomValue` **這個 prop 還留著**，於是帳單沒有真的
+     * 消失：這個元件是 `memo` 的，而 zoomValue 每動一格縮放就變一次，
+     * 154 個實例照樣全部被喚醒——為了一個元件裡沒有任何地方讀取的值。
+     * 現在連 prop 一起移除了。縮放是靠外層容器的 `width: 100 * zoomLevel %`
+     * 做的，時間軸的色塊用百分比寬度，本來就不需要知道倍率。
      */
 
 
@@ -656,13 +663,11 @@ const Timeline = forwardRef(
       const domEl = blockDomRefs.current[tlIdx];
       if (!domEl) return;
 
-      // 右拖：同步縮小下一個空隙；左拖：同步縮小上一個空隙（避免 flex 重分配）
-      const nextBlackDom     = edge === 'right' ? (blockDomRefs.current[tlIdx + 1] ?? null) : null;
-      const nextBlackBlock   = edge === 'right' ? (timelineBlocks[tlIdx + 1] ?? null) : null;
-      const nextBlackOrigPct = nextBlackBlock ? (nextBlackBlock.durationTime / duration) * 100 : 0;
-      const prevBlackDom     = edge === 'left'  ? (blockDomRefs.current[tlIdx - 1] ?? null) : null;
-      const prevBlackBlock   = edge === 'left'  ? (timelineBlocks[tlIdx - 1] ?? null) : null;
-      const prevBlackOrigPct = prevBlackBlock ? (prevBlackBlock.durationTime / duration) * 100 : 0;
+      /*
+       * 舊版在這裡抓相鄰的空隙 DOM，拖曳時反向縮放它來維持 flex 總寬，
+       * 否則後面每一塊都會跟著位移。色塊改成絕對定位之後，撐大這一塊不會
+       * 動到任何其他塊，那組補償整個不需要了。
+       */
 
       resizeEdgeRef.current      = edge;
       resizeDragStartRef.current = e.clientX;
@@ -670,6 +675,7 @@ const Timeline = forwardRef(
       resizedDomRef.current      = domEl;
       resizeDragPixelsRef.current = 0;
       resizeOrigPctRef.current   = (block.durationTime / duration) * 100;
+      resizeOrigLeftPctRef.current = (block.startTime / duration) * 100;
       domEl.style.zIndex = '100';
 
       resizeBlockStartRef.current = blockStartTime;
@@ -705,20 +711,14 @@ const Timeline = forwardRef(
         const clamped  = Math.max(minResizePxRef.current, Math.min(maxResizePxRef.current, rawDelta));
         resizeDragPixelsRef.current = clamped;
         const origPct = resizeOrigPctRef.current;
+        const origLeftPct = resizeOrigLeftPctRef.current;
         if (resizeEdgeRef.current === 'right') {
-          // 右拖：擴大此 block 同時縮小緊鄰的下一個 black block，
-          // 使 flex 總寬不變，避免後面的 block 跟著位移
+          // 右拖：右緣跟著游標，左緣不動 → 只改寬度
           resizedDomRef.current.style.width = `calc(${origPct}% + ${clamped}px)`;
-          if (nextBlackDom) {
-            nextBlackDom.style.width = `calc(${nextBlackOrigPct}% - ${clamped}px)`;
-          }
         } else {
-          // 左拖：縮小上一個 black block 同時調整此 block 寬度（對稱於右拖邏輯）
-          // prevBlack(+clamped) + colored(-clamped) = 常數，flex 總寬不變
+          // 左拖：左緣跟著游標，右緣不動 → left 與 width 反向等量變動
+          resizedDomRef.current.style.left  = `calc(${origLeftPct}% + ${clamped}px)`;
           resizedDomRef.current.style.width = `calc(${origPct}% - ${clamped}px)`;
-          if (prevBlackDom) {
-            prevBlackDom.style.width = `calc(${prevBlackOrigPct}% + ${clamped}px)`;
-          }
         }
       };
 
@@ -769,37 +769,20 @@ const Timeline = forwardRef(
 
         if (resizedDomRef.current) {
           if (committedEnd !== null) {
-            // 右邊拉伸：新寬度 = (newEnd - blockStart) / dur
+            // 右邊拉伸：左緣沒動，只有寬度變成 (newEnd - blockStart) / dur
             resizedDomRef.current.style.width = `${((committedEnd - resizeBlockStartRef.current) / dur) * 100}%`;
           } else if (committedStart !== null) {
-            // 左邊拉伸：新寬度 = (blockEnd - newStart) / dur
+            // 左邊拉伸：右緣沒動，left 與 width 都要寫成最終值
+            resizedDomRef.current.style.left = `${(committedStart / dur) * 100}%`;
             resizedDomRef.current.style.width = `${((resizeBlockEndRef.current - committedStart) / dur) * 100}%`;
           } else {
+            resizedDomRef.current.style.left = '';
             resizedDomRef.current.style.width = '';
           }
-          resizedDomRef.current.style.marginLeft = '';
-          resizedDomRef.current.style.zIndex     = '';
+          resizedDomRef.current.style.zIndex = '';
         }
 
-        if (nextBlackDom) {
-          if (committedEnd !== null) {
-            // 右拉：相鄰黑色 block 新寬度 = (nextColoredStart - newEnd) / dur
-            const nextColoredStart = resizeRightBoundRef.current;
-            nextBlackDom.style.width = `${((nextColoredStart - committedEnd) / dur) * 100}%`;
-          } else {
-            nextBlackDom.style.width = '';
-          }
-        }
-
-        if (prevBlackDom) {
-          if (committedStart !== null) {
-            // 左拉：相鄰黑色 block 新寬度 = (newStart - prevColoredEnd) / dur
-            const prevColoredEnd = resizeLeftBoundRef.current;
-            prevBlackDom.style.width = `${((committedStart - prevColoredEnd) / dur) * 100}%`;
-          } else {
-            prevBlackDom.style.width = '';
-          }
-        }
+        // 相鄰的空隙不必再校正——絕對定位下它們的位置與這一塊無關
 
         resizeEdgeRef.current       = null;
         resizeDragStartRef.current  = null;
@@ -834,8 +817,20 @@ const Timeline = forwardRef(
           // `100 / 軌道數 %`，加一條軌道會讓其他每一條都變矮
           flex: `0 0 ${height}px`,
           width: "100%",
-          display: "flex",
-          alignItems: "center",
+          /*
+           * 色塊改成絕對定位，這一列是它們的定位基準。
+           *
+           * 舊版是 flex + 百分比寬度，色塊靠前後相接排出位置——所以「空隙也
+           * 必須是一個 block」，否則後面的色塊會往前擠、和紅線對不上。代價是
+           * **任何一塊的寬度變動都會推到其他每一塊**：resize 預覽為此要同步
+           * 反向縮放相鄰的空隙來維持總寬，而想給極窄的色塊一個最小寬度更是
+           * 做不到（總寬超過 100%，flex 會把所有色塊等比壓縮，整列跟播放頭
+           * 錯位）。
+           *
+           * 絕對定位之後每一塊的 `left` 與 `width` 各自獨立：撐大某一塊不會
+           * 移動任何其他塊，與紅線的對齊是逐塊保證的而不是靠總和剛好 100%。
+           */
+          position: "relative",
           overflow: moveMode ? "visible" : "hidden", // move mode 時允許 block 超出容器邊界顯示
           border: "1px solid rgb(63, 63, 63)",
           boxSizing: "border-box",
@@ -909,13 +904,35 @@ const Timeline = forwardRef(
 
           // 設定 blockStyle
           const blockStyle = {
-            display: "inline-block",
             background: backgroundStyle,
+            // 位置與寬度各自獨立（見容器上的說明），不再靠前後相接排出來
+            position: "absolute",
+            left: `${(block.startTime / duration) * 100}%`,
             width: `${(block.durationTime / duration) * 100}%`,
+            top: "5%",
             height: "90%",
-            position: "relative",
+            /*
+             * ⚠️ 極窄的色塊要有一個最小可見寬度。
+             *
+             * 一個 50ms 的段在 282 秒的表演裡是 0.0177%，1 倍率下約 **0.25px**
+             * ——畫得出來但看不見，也點不到。而它是真的資料：`movableRange`
+             * 會把它當鄰居，於是使用者的拖曳被一個畫面上不存在的東西擋住。
+             * 這種碎片是 `clearRange` 的 trim 產生的，一次普通的貼上就會留下。
+             *
+             * 空隙不給最小寬度：它本來就該是看不見的，撐大反而會蓋住旁邊真正
+             * 的碎片。
+             */
+            ...(isGapBlock ? null : { minWidth: "2px" }),
             borderRadius: "var(--radius-sm)",
-            zIndex: isPasteTarget ? 12 : isCopySource || isNormalSelected ? 10 : 1,
+            // 空隙墊在最底層，否則同 z-index 時 DOM 順序在後的空隙會蓋掉
+            // 前面那個被撐到 2px 的碎片
+            zIndex: isPasteTarget
+              ? 12
+              : isCopySource || isNormalSelected
+                ? 10
+                : isGapBlock
+                  ? 0
+                  : 1,
             boxShadow,
             // 複製來源用虛線區分——它和普通選取都是「被選中」，差在接下來會發生什麼
             outline: isCopySource ? "2px dashed var(--ring-selected)" : "none",

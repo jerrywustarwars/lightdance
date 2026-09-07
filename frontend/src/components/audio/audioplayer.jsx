@@ -398,7 +398,6 @@ function AudioPlayer({ setButtonState, timelineRef }) {
       key={setting.id}
       armorIndex={setting.armorIndex}
       partIndex={setting.partIndex}
-      zoomValue={zoomLevel}
       ref={elRefs.current[index]}
       height={trackHeight(setting, rowHeight)}
       isCopying={copyPaste.isCopying}
