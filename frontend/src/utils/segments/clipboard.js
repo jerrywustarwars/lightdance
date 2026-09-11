@@ -45,6 +45,7 @@
  * phaseMs 為負就是反方向。
  */
 import { TICK_MS } from "../../constants/time.js";
+import { isPartAllowed } from "../../config/accessoryConfig.js";
 import { clearRange, createId, roundToTick } from "./core.js";
 
 /** 剪貼簿內容的格式標記。舊格式（單軌、或更早的 keyframe 陣列）一律視為空 */
@@ -178,6 +179,20 @@ export function planPaste(table, clipboard, target) {
     const existing = table[armorIndex]?.[partIndex];
     if (!Array.isArray(existing)) continue;
 
+    /*
+     * ⚠️ **落在那位舞者沒有的部位也整條丟掉。**
+     *
+     * 光表是 7×22 的滿陣列，所以上面那個 `Array.isArray` 對 22 個部位全部為真
+     * ——它擋的是「平移出表外」，擋不到「這位舞者沒帶那件道具」。於是把七位
+     * 舞者的 acc3 一起複製、往下貼一格，資料就會落在沒有那件道具的人身上。
+     *
+     * 那種錯完全沒有症狀：編輯器裡看得到色塊、上傳成功、清單正常，只有演出
+     * 當天那盞不存在的燈不會亮。`buildPlayers` 那邊有最後一道防線（載入舊
+     * 光表也可能帶進這種資料），但擋在這裡才看得出來——呼叫端會知道「有幾條
+     * 沒貼上」，而寫進去之後就只是資料裡多了一塊沒有人會發現的東西。
+     */
+    if (!isPartAllowed(armorIndex, partIndex)) continue;
+
     // 跑馬燈：這一條再往後推「名次 × phaseMs」
     const shift =
       offset + phaseOf(ranks, part, target.phaseMs, clipboard.parts.length);
@@ -226,7 +241,9 @@ export function planOverwrite(table, clipboard, target) {
   for (const part of clipboard.parts) {
     const armorIndex = part.armorIndex + armorShift;
     const partIndex = part.partIndex + partShift;
+    // 和 planPaste 同一套：出表外、或那位舞者沒有這個部位，都整條丟掉
     if (!Array.isArray(table[armorIndex]?.[partIndex])) continue;
+    if (!isPartAllowed(armorIndex, partIndex)) continue;
 
     const pasted = part.segments.map((segment) => ({
       ...segment,

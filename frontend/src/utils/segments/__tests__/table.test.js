@@ -293,3 +293,68 @@ describe("moveSegmentsToTracks", () => {
     expect(moveSegmentsToTracks(before, []).table).toBe(before);
   });
 });
+
+describe("換軌落在舞者沒有的部位上", () => {
+  /*
+   * ⚠️ 這一組守的是**資料會不會憑空消失**，不只是「有沒有擋下來」。
+   *
+   * `moveSegmentsToTracks` 是兩階段的：先把段從來源移除，再插進目標。
+   * 所以「插入那邊放棄」等於段被刪掉了——來源已經清空，落點沒有接住，
+   * 而使用者看到的是「我拖了一下，色塊不見了」。目標的合法性必須在移除
+   * 之前就問完。
+   *
+   * `ACCESSORY_CONFIGS`：舞者 0 與 5 沒帶道具、舞者 6 是匕首（14-18）、
+   * 舞者 3 是刀（14-21 全有）。
+   */
+  const fullTable = () =>
+    Array.from({ length: 7 }, () => Array.from({ length: 22 }, () => []));
+
+  const withSegment = (armorIndex, partIndex) => {
+    const table = fullTable();
+    table[armorIndex][partIndex] = [{ id: "x", start: 1000, end: 2000 }];
+    return table;
+  };
+
+  const moveTo = (table, from, to) => ({
+    armorIndex: from.armorIndex,
+    partIndex: from.partIndex,
+    segmentIds: new Set(["x"]),
+    segments: table[from.armorIndex][from.partIndex],
+    to,
+  });
+
+  it("目標是那位舞者沒有的部位時整個放棄，來源不會被清掉", () => {
+    const before = withSegment(3, 14); // 舞者 3 的刀身
+    const { table: after } = moveSegmentsToTracks(before, [
+      moveTo(before, { armorIndex: 3, partIndex: 14 }, { armorIndex: 0, partIndex: 14 }),
+    ]);
+
+    // 沒搬成 → 原本那一段要還在原地，不能不見
+    expect(after[3][14].map((s) => s.id)).toEqual(["x"]);
+    expect(after[0][14]).toEqual([]);
+    expect(after).toBe(before); // 什麼都沒變，連 reference 都不該換
+  });
+
+  it("舞者 6 只有 14-18，搬到 19 會被擋下來", () => {
+    const before = withSegment(6, 18);
+    const { table: after } = moveSegmentsToTracks(before, [
+      moveTo(before, { armorIndex: 6, partIndex: 18 }, { armorIndex: 6, partIndex: 19 }),
+    ]);
+
+    expect(after[6][18].map((s) => s.id)).toEqual(["x"]);
+    expect(after[6][19]).toEqual([]);
+  });
+
+  it("合法的目標照常搬，選取跟著走", () => {
+    const before = withSegment(6, 18);
+    const { table: after, selections } = moveSegmentsToTracks(before, [
+      moveTo(before, { armorIndex: 6, partIndex: 18 }, { armorIndex: 6, partIndex: 17 }),
+    ]);
+
+    expect(after[6][18]).toEqual([]);
+    expect(after[6][17].map((s) => s.id)).toEqual(["x"]);
+    expect(selections).toEqual([
+      { armorIndex: 6, partIndex: 17, segmentId: "x" },
+    ]);
+  });
+});

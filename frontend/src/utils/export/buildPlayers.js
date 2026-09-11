@@ -1,5 +1,6 @@
 import { TICK_MS } from "../../constants/time.js";
 import { PART_KEYS } from "../../constants/parts.js";
+import { isPartAllowed } from "../../config/accessoryConfig.js";
 
 /**
  * buildPlayers — 把編輯器的 actionTable 壓平成韌體吃的 PlayerData 陣列。
@@ -22,6 +23,8 @@ export function buildPlayers(actionTable) {
   for (let i = 0; i < armorIndices.length; i++) {
     const armorIndex = armorIndices[i];
     const partGroup = actionTable[armorIndex];
+    // 物件的 key 是字串，而 isPartAllowed 要比的是舞者編號
+    const armor = Number(armorIndex);
 
     // 收集這位舞者所有部位的關鍵格時間，對齊到 50ms 網格後去重
     let times = new Set();
@@ -124,7 +127,31 @@ export function buildPlayers(actionTable) {
       // 欄位順序即韌體 ABI，由 constants/parts.js 的 PART_KEYS 決定，不可調換
       const row = { time: mergedItem.time };
       PART_KEYS.forEach((partKey, partIndex) => {
-        row[partKey] = mergedItem[partIndex] ?? 0;
+        /*
+         * ⚠️ 這位舞者沒有的部位一律輸出 0（黑、亮度 0）——**這是最後一道防線**。
+         *
+         * `isPartAllowed` 原本只用在「畫面上要不要讓你點」（ControlPanel 與
+         * /edit 的表格），輸出路徑完全沒有檢查。跨軌貼上之後那個缺口變得踩得到：
+         * 落點是 (舞者, 部位) 的座標差推出來的，而唯一的檢查是「這個部位是不是
+         * 一個陣列」——22 個部位全部為真。於是把七位舞者的 acc3 一起複製、往下
+         * 貼一格，資料就會落在根本沒帶那件道具的舞者身上。
+         *
+         * 那種錯的症狀是**沒有症狀**：上傳成功、版本清單正常、編輯器裡看得到
+         * 色塊，只有演出當天那盞不存在的燈不會亮。落點那邊也擋了（見
+         * clipboard.js 與 table.js），但載入舊光表一樣可能帶進這種資料，
+         * 所以最後這一關不能省。
+         */
+        const packed = mergedItem[partIndex] ?? 0;
+        /*
+         * 清的是 **RGB，不是整個欄位**。黑色乘上任何亮度還是黑色，所以留著
+         * 低位元組（亮度 7 bit + 漸變旗標）就足以保證那盞燈不會亮，而原本
+         * 就是暗的欄位輸出**一個 bit 都不會變**——把整個欄位歸零的話，
+         * 每一位舞者每一列的八個飾品欄位都會從 254（黑、亮度 100%）變成 0，
+         * 那是在沒有必要的情況下動到韌體契約。
+         */
+        row[partKey] = isPartAllowed(armor, partIndex)
+          ? packed
+          : packed & 0x000000ff;
       });
       mergedResults.push(row);
     }

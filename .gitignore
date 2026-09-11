@@ -33,3 +33,7 @@ logs/
 
 # 部署用的真實憑證。範本在 .env.deployment.example
 .env.deployment
+
+# macOS 的資源分叉，不是真的檔案
+._*
+.DS_Store
