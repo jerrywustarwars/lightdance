@@ -1,3 +1,4 @@
+import { isPartAllowed } from "../../config/accessoryConfig.js";
 import { clearRange } from "./core.js";
 
 /**
@@ -179,6 +180,21 @@ export function moveSegmentsToTracks(table, moves, { deltaMs = 0 } = {}) {
     const moving = segments.filter((segment) => segmentIds.has(segment.id));
     if (moving.length === 0) continue;
 
+    /*
+     * ⚠️ **目標能不能收，要在移除之前就問清楚。**
+     *
+     * 移除是第一階段、插入是第二階段，所以「插入那邊放棄」等於**段被刪掉了**
+     * ——來源已經清掉，而落點沒有接住。使用者看到的是「我拖了一下，色塊消失了」。
+     *
+     * 兩個條件：目標部位要存在於光表裡，而且那位舞者真的有那個部位
+     * （`isPartAllowed`；光表是 7×22 的滿陣列，所以只檢查陣列存不存在的話，
+     * 沒帶道具的舞者也會照單全收，而那些燈永遠不會亮）。
+     */
+    const target = table[to?.armorIndex]?.[to?.partIndex];
+    if (!Array.isArray(target) || !isPartAllowed(to.armorIndex, to.partIndex)) {
+      continue;
+    }
+
     removals.push({
       armorIndex,
       partIndex,
@@ -204,9 +220,8 @@ export function moveSegmentsToTracks(table, moves, { deltaMs = 0 } = {}) {
   const selections = [];
 
   for (const { to, segments } of landings) {
-    const existing = stripped[to.armorIndex]?.[to.partIndex];
-    if (!Array.isArray(existing)) continue; // 目標不存在（呼叫端應該先夾好）
-
+    // 目標的合法性在第一階段就問過了（見上面的註解），這裡不必再檢查一次
+    const existing = stripped[to.armorIndex][to.partIndex];
     const from = segments[0].start;
     const until = segments[segments.length - 1].end;
 

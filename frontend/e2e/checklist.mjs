@@ -147,12 +147,23 @@ const stubApi = (context) =>
     return json({});
   });
 
+/*
+ * ⚠️ 用 `data-part` 指名，不要用「第 N 個有 fill 的元素」。
+ *
+ * 一個部位可以由多個形狀組成（帽子 = 帽冠 + 帽簷，領帶 = 長方形 + 三角形），
+ * 所以攤平之後的第 N 個元素和第 N 個**部位**不是同一件事——`.nth(1)` 拿到的
+ * 是帽簷（還是部位 0），不是臉。先前六個呼叫端剛好全部傳 0 所以沒有中，
+ * 而第一個寫 `clickArmorPart(page, 0, 1)` 以為在點臉的人就會踩到，
+ * 且不會有任何錯誤。單元測試早就改用 data-part 了，這裡漏掉。
+ *
+ * `.first()` 是因為同一個部位的每個形狀都帶著相同的 data-part。
+ */
 const clickArmorPart = (page, armor, part) =>
   page
     .locator(".personBackGround")
     .nth(armor)
-    .locator("svg [fill]:not([fill='none'])")
-    .nth(part)
+    .locator(`svg [data-part="${part}"]`)
+    .first()
     .click();
 
 /**
@@ -1276,8 +1287,82 @@ const run = async () => {
     lowEnd,
   );
 
+  /*
+   * ── 播放時跟著紅線捲動 ──────────────────────────────
+   *
+   * 舊版的捲動 effect 讀了 currentTime，但相依陣列裡沒有它，所以只在縮放的
+   * 那一瞬間置中一次。1 倍率下看不出來（整場都在畫面上），放大之後紅線幾秒
+   * 就跑出視窗——而那正是使用者在對拍的時候。
+   *
+   * 換算本身有單元測試（utils/audio/__tests__/follow.test.js），這裡驗的是
+   * 接線：rAF 迴圈真的有捲、而且使用者自己捲走之後真的會放手。
+   */
+  const scroller = page.locator(".scroll-container");
+  const scrollLeft = () => scroller.evaluate((el) => el.scrollLeft);
+
+  /*
+   * ⚠️ **先把播放頭放好，再放大。**
+   *
+   * `clickRulerAt` 是按「刻度尺這個元素的寬度乘上比例」算座標的，而
+   * `page.mouse.click` 收的是**視窗座標**——放大之後刻度尺比視窗寬得多，
+   * 那個座標早就不在畫面上了，點下去會落在完全不相干的時間（實測會把播放頭
+   * 丟到歌尾，於是後面「點道具燈放色」那一項在歌曲長度外面插色塊，燈是黑的
+   * 而看起來像放色壞了）。
+   */
   await zoomSlider.fill("0");
   await page.waitForTimeout(200);
+  await clickRulerAt(0.1); // 1 倍率下才對得準，約第 3 秒
+  await zoomSlider.fill("0.5"); // 再放大到 10 倍，整場放不進一個畫面
+  await page.waitForTimeout(200);
+
+  const beforePlay = await scrollLeft();
+  await page.locator(".play-button").click();
+  await page.waitForTimeout(2500);
+  const whilePlaying = await scrollLeft();
+
+  record(
+    "播放時時間軸會跟著紅線捲動",
+    whilePlaying > beforePlay,
+    `scrollLeft ${beforePlay} → ${whilePlaying}`,
+  );
+
+  /*
+   * 使用者自己捲走之後就不要再跟。
+   *
+   * 這一項和上一項是**互相對立**的：一直置中的實作會通過上面那一項卻在這裡
+   * 失敗，而完全不跟的實作反過來。兩項一起才描述得出正確行為。
+   */
+  await scroller.evaluate((el) => {
+    el.scrollLeft = 0;
+  });
+  await page.waitForTimeout(1200);
+  const afterUserScroll = await scrollLeft();
+
+  record(
+    "使用者自己捲走之後不會被扯回去",
+    afterUserScroll < 400,
+    `scrollLeft ${afterUserScroll}（期望停在 0 附近）`,
+  );
+
+  // 再按一次播放要恢復跟隨
+  await page.locator(".play-button").click(); // 暫停
+  await page.waitForTimeout(200);
+  await page.locator(".play-button").click(); // 再播
+  await page.waitForTimeout(2000);
+  const afterReplay = await scrollLeft();
+
+  record(
+    "重新按播放會恢復跟隨",
+    afterReplay > afterUserScroll,
+    `scrollLeft ${afterUserScroll} → ${afterReplay}`,
+  );
+
+  await page.locator(".play-button").click(); // 收尾：停下來
+  await page.waitForTimeout(200);
+  await zoomSlider.fill("0");
+  await page.waitForTimeout(200);
+  // 播放頭留在歌曲前段，後面的項目才有地方放色塊
+  await clickRulerAt(0.1);
 
   /*
    * ── 舞者的隱藏與恢復 ────────────────────────────────

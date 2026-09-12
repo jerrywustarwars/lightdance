@@ -36,3 +36,7 @@ logs/
 
 # graphify 掃描產生的知識圖譜輸出（工具產物，不進版控）
 graphify-out/
+
+# macOS 的資源分叉，不是真的檔案
+._*
+.DS_Store

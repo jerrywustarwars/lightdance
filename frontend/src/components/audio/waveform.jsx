@@ -12,6 +12,7 @@ import {
   sameClipTimeline,
 } from "../../utils/audio/clips.js";
 import { totalDuration } from "../../utils/audio/schedule.js";
+import { followScroll } from "../../utils/audio/follow.js";
 import { useAudioClips } from "../../hooks/useAudioClips.js";
 import { TICK_MS } from "../../constants/time.js";
 
@@ -82,11 +83,41 @@ const AudioWaveform = ({
   // 整條音訊會被重新載入。用 ref 讀最新值即可
   const currentTimeRef = useRef(currentTime);
   currentTimeRef.current = currentTime;
+  /*
+   * 播放時跟著紅線捲動（判斷在 `utils/audio/follow.js`）。
+   *
+   * 兩個 ref 就夠：要不要跟、以及**上一次是我們自己捲的捲到哪**。後者是用來
+   * 分辨「這個 scroll 事件是使用者發的還是我們發的」——捲動事件不分來源，
+   * 少了它，我們自己每推一頁都會被判成「使用者接手了」而立刻停止跟隨。
+   */
+  const followRef = useRef(true);
+  const selfScrollRef = useRef(null);
+
+  /** 我們自己捲，並記下捲到哪 */
+  const scrollSelf = (container, value) => {
+    selfScrollRef.current = value;
+    container.scrollLeft = value;
+  };
+
   // 監聽滾動並更新`scrollPosition`
   useEffect(() => {
     const handleScroll = () => {
       if (!scrollRef.current) return;
-      setScrollPosition(scrollRef.current.scrollLeft);
+      const { scrollLeft } = scrollRef.current;
+      setScrollPosition(scrollLeft);
+
+      /*
+       * 使用者自己捲過就不要再跟——播放中想看別的地方卻一直被扯回去，
+       * 比不跟隨還糟。下一次按播放才恢復。
+       *
+       * 比的是數值而不是用一個布林旗標：捲動事件是非同步的，而我們每一幀都
+       * 可能寫一次，旗標很容易對不上（我們寫了兩次、事件只來一次，第二次就
+       * 被當成使用者捲的）。瀏覽器捲動位置可能有小數，所以留 1px 的容忍。
+       */
+      const mine =
+        selfScrollRef.current !== null &&
+        Math.abs(scrollLeft - selfScrollRef.current) <= 1;
+      if (!mine) followRef.current = false;
     };
     scrollRef.current?.addEventListener("scroll", handleScroll);
     return () => scrollRef.current?.removeEventListener("scroll", handleScroll);
@@ -142,9 +173,10 @@ const AudioWaveform = ({
       const maxScrollLeft = canvasWidth - container.clientWidth;
 
       // Clamp 範圍 [0, maxScrollLeft]
-      container.scrollLeft = Math.max(
-        0,
-        Math.min(newScrollLeft, maxScrollLeft)
+      // 走 scrollSelf：這一下是縮放造成的，不是使用者捲的，不該關掉跟隨
+      scrollSelf(
+        container,
+        Math.max(0, Math.min(newScrollLeft, maxScrollLeft)),
       );
     }
   }, [zoomValue, canvasWidth, duration, scrollRef]);
@@ -299,6 +331,9 @@ const AudioWaveform = ({
   useEffect(() => {
     if (isPlaying) {
       lastDispatchRef.current = 0; // 重置節流計數器
+      // 每次按下播放都重新開始跟隨——上一段播放中使用者捲走過，
+      // 不該讓那個決定一直留著（他按播放就是要看接下來的內容）
+      followRef.current = true;
       animationRef.current = requestAnimationFrame(updateProgress);
     } else {
       cancelAnimationFrame(animationRef.current);
@@ -336,7 +371,26 @@ const AudioWaveform = ({
 
       // 紅線：每幀直接操作 DOM（60fps，不經過 React；用 ref 確保 resize 後讀取最新寬度）
       if (redLineRef.current && duration > 0) {
-        redLineRef.current.style.left = `${(elapsed / duration) * canvasWidthRef.current}px`;
+        const lineX = (elapsed / duration) * canvasWidthRef.current;
+        redLineRef.current.style.left = `${lineX}px`;
+
+        /*
+         * 紅線快要離開視窗就推一頁。**和紅線走同一條路**——每幀直接寫 DOM，
+         * 不進 React：這裡是 60fps 的熱路徑，而且捲動位置本來就不是 React
+         * 該擁有的狀態。
+         *
+         * `followScroll` 在不需要捲時回傳 null，所以平常這裡什麼都不做。
+         */
+        const container = scrollRef?.current;
+        if (followRef.current && container) {
+          const next = followScroll({
+            lineX,
+            scrollLeft: container.scrollLeft,
+            viewportWidth: container.clientWidth,
+            contentWidth: canvasWidthRef.current,
+          });
+          if (next !== null) scrollSelf(container, next);
+        }
       }
 
       // 進度條：每幀透過 callback 通知 AudioPlayer 直接操作 DOM（60fps）

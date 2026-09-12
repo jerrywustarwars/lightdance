@@ -448,3 +448,77 @@ describe("相位偏移（跑馬燈）", () => {
     expect(clipboardSpanMs(clipboard, -100)).toBe(1200);
   });
 });
+
+describe("落點在舞者沒有的部位上", () => {
+  /*
+   * 光表是 7×22 的滿陣列，所以「這個部位是不是一個陣列」對 22 個部位全部為真
+   * ——它擋的是平移出表外，擋不到「這位舞者沒帶那件道具」。而貼上的落點是
+   * (舞者, 部位) 的座標差推出來的，所以把七位舞者的飾品一起複製再往下貼一格，
+   * 就會落在沒有那件道具的人身上。
+   *
+   * 症狀是**沒有症狀**：編輯器裡看得到色塊、上傳成功、清單正常，只有演出當天
+   * 那盞不存在的燈不會亮。`ACCESSORY_CONFIGS` 裡舞者 0 與 5 沒帶道具，
+   * 舞者 6 是匕首（14-18）。
+   */
+  const fullTable = () =>
+    Array.from({ length: 7 }, () => Array.from({ length: 22 }, () => []));
+
+  const clipboardAt = (armorIndex, partIndex) =>
+    packClipboard([groupOf(armorIndex, partIndex, [seg("a", 1000, 2000)])], {
+      armorIndex,
+      partIndex,
+    });
+
+  it("貼到沒帶道具的舞者身上會整條丟掉", () => {
+    // 從舞者 3（刀，14-21 全有）的 acc0 複製，貼到舞者 0 的 acc0
+    const clipboard = clipboardAt(3, 14);
+    const plans = planPaste(fullTable(), clipboard, {
+      armorIndex: 0,
+      partIndex: 14,
+      timeOffset: 0,
+    });
+
+    expect(plans).toEqual([]);
+  });
+
+  it("同一次貼上裡合法的照貼、不合法的丟掉", () => {
+    // 舞者 3 的 acc4(18) 與 acc5(19) 一起複製，往下平移三位到舞者 6
+    // ——舞者 6 是匕首，只有 14-18，所以 19 那條不該貼進去
+    const clipboard = packClipboard(
+      [
+        groupOf(3, 18, [seg("a", 1000, 2000)]),
+        groupOf(3, 19, [seg("b", 1000, 2000)]),
+      ],
+      { armorIndex: 3, partIndex: 18 },
+    );
+
+    const plans = planPaste(fullTable(), clipboard, {
+      armorIndex: 6,
+      partIndex: 18,
+      timeOffset: 0,
+    });
+
+    expect(plans.map((p) => [p.armorIndex, p.partIndex])).toEqual([[6, 18]]);
+  });
+
+  it("整條覆蓋（Shift+V）走的是同一套規則", () => {
+    const clipboard = clipboardAt(3, 21); // 舞者 3 的刀，acc7 是他的
+    const plans = planOverwrite(fullTable(), clipboard, {
+      armorIndex: 0,
+      partIndex: 21, // 舞者 0 沒帶道具
+    });
+
+    expect(plans).toEqual([]);
+  });
+
+  it("身體部位人人都有，不可以被誤傷", () => {
+    const clipboard = clipboardAt(0, 0);
+    const plans = planPaste(fullTable(), clipboard, {
+      armorIndex: 5,
+      partIndex: 13,
+      timeOffset: 0,
+    });
+
+    expect(plans.map((p) => [p.armorIndex, p.partIndex])).toEqual([[5, 13]]);
+  });
+});

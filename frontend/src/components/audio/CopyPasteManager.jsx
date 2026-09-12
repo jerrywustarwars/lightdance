@@ -108,11 +108,25 @@ export function useCopyPaste() {
     };
   };
 
-  /** 把落點寫回光表，並把選取移到貼進去的那些段 */
-  const applyPlans = (plans) => {
+  /**
+   * 把落點寫回光表，並把選取移到貼進去的那些段。
+   *
+   * ⚠️ **少貼幾條要講出來。** 落點可能整條被丟掉（平移出光表範圍，或落在那位
+   * 舞者沒有的部位上——見 `clipboard.js`），而剩下的照樣會貼進去。不講的話
+   * 畫面上只是「怎麼少了幾條」，而使用者完全不知道該去哪裡找。
+   */
+  const applyPlans = (plans, expected = plans.length) => {
     if (plans.length === 0) {
-      console.warn("貼上的位置落在光表範圍外，沒有東西被貼上。");
+      alert(
+        "沒有東西被貼上：落點超出表演長度，或那幾位舞者沒有這些部位。",
+      );
       return;
+    }
+    if (plans.length < expected) {
+      alert(
+        `有 ${expected - plans.length} 條沒有貼上：落點超出表演長度，` +
+          `或那位舞者沒有這個部位（例如把道具的燈貼到沒帶道具的人身上）。`,
+      );
     }
 
     commit(updateParts(segmentTable, plans));
@@ -151,7 +165,10 @@ export function useCopyPaste() {
    */
   const pasteAtTarget = (target) => {
     if (!hasContent(clipboard) || !target) return;
-    applyPlans(planPaste(segmentTable, clipboard, { ...target, phaseMs }));
+    applyPlans(
+      planPaste(segmentTable, clipboard, { ...target, phaseMs }),
+      clipboard.parts.length,
+    );
   };
 
   /** Ctrl+V：以目標色塊的起點與部位為基準貼上 */
@@ -159,7 +176,7 @@ export function useCopyPaste() {
     if (!hasContent(clipboard)) return;
     const target = targetFor(true);
     if (!target) return;
-    applyPlans(planPaste(segmentTable, clipboard, target));
+    applyPlans(planPaste(segmentTable, clipboard, target), clipboard.parts.length);
   };
 
   /** Ctrl+Shift+V：保持原本的時間位置，只換軌道 */
@@ -167,7 +184,7 @@ export function useCopyPaste() {
     if (!hasContent(clipboard)) return;
     const target = targetFor(false);
     if (!target) return;
-    applyPlans(planPaste(segmentTable, clipboard, target));
+    applyPlans(planPaste(segmentTable, clipboard, target), clipboard.parts.length);
   };
 
   /** Shift+C：把選到的每一條 timeline 整條複製 */
@@ -210,6 +227,7 @@ export function useCopyPaste() {
         armorIndex: anchor.armorIndex,
         partIndex: anchor.partIndex,
       }),
+      clipboard.parts.length,
     );
   };
 
